@@ -2,6 +2,15 @@
 
 Topic: `download-roots`
 
+Completed local Tactical [241](../tactical/241-atomic-legacy-desktop-import.md)
+resolves desktop legacy root keys within each source profile and assigns new
+opaque destination IDs. Imported records keep exact path bindings; matching
+current identities remain unchanged. Existing settings and defaults, including
+an unset default, win. Missing roots remain registered for repair and the
+production startup hook preserves unavailable paths without creating them.
+The normal 32-root limit applies; overflow skips records without partial inserts.
+Installed legacy handoff remains unqualified.
+
 Status: Tactical
 [`191`](../tactical/191-direct-filesystem-storage.md) completes the direct
 root-relative content model across path, Android SAF, and qualified iOS roots.

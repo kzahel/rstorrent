@@ -2,6 +2,15 @@
 
 Topic: `android-jstorrent-replacement`
 
+Maintainer direction on 2026-09-30 permits temporary loss of ChromeOS
+extension control of the Rust Android app during the JSTorrent replacement.
+Standalone Android remains the usable fallback, with explicit extension copy
+directing users to the Android UI. Uninterrupted companion compatibility is
+not required to ship the desktop replacement or the initial Android transition.
+This narrows the rollout gates below; it does not retire Tactical 194's
+companion architecture or authorize store publication. Restoration timing and
+exact production extension/app versions remain open.
+
 Status: **Active as of 2026-09-01.** This is the authoritative readiness and
 feature-disposition ledger for eventually shipping the first-party Rust
 Android product as a normal update to the current JSTorrent Android
@@ -76,8 +85,8 @@ branding and the installed application audience. The replacement must:
   reauthorization flow;
 - never convert legacy completion or resume claims into verified content
   without the Rust engine's ordinary integrity checks;
-- keep the standalone Android and supported ChromeOS extension journeys
-  usable across the rollout; and
+- keep standalone Android usable and explicitly disclose a temporary
+  ChromeOS extension-control gap when that accepted rollout option is used; and
 - either implement, deliberately retire, or clearly disclose every current
   user-visible JSTorrent capability before the candidate is approved.
 
@@ -98,7 +107,8 @@ Android replacement is ready only when:
    selected;
 3. a production-equivalent old JSTorrent fixture upgrades through the actual
    signed Play lane without payload loss, false verified state, or an unusable
-   standalone/ChromeOS journey;
+   standalone journey; any temporary ChromeOS browser-control gap has clear
+   guidance to use the Android app;
 4. fresh install, upgrade, interrupted migration, missing/revoked root,
    process death, reboot, uninstall, and explicit data deletion have bounded
    outcomes; and
@@ -168,7 +178,8 @@ daemon architecture.
   JSTorrent extension expects the legacy raw I/O companion, while Tactical
   `194` intentionally selects a typed semantic connection to the Rust
   application owner. Choose and prove an extension-first, app-first-compatible,
-  or coordinated rollout that leaves no installed cohort stranded. Do not add
+  or coordinated rollout. A disclosed temporary browser-control gap with
+  standalone Android as the fallback is accepted. Do not add
   a permanent raw I/O compatibility daemon merely to avoid rollout planning.
 - [x] **JAR-006 — Add external Android torrent intake.** Completed Tactical
   [`197`](../tactical/197-android-external-torrent-intake.md) registers and bounds
@@ -497,8 +508,9 @@ excludes the production JSTorrent extension. Replacement therefore needs a
 coordinated rollout contract:
 
 1. identify every supported installed extension/app version pair;
-2. select which side can understand both the old and new launch/pairing state
-   during the transition, or require an explicit paired update;
+2. select an explicit update requirement or a disclosed temporary companion
+   gap with standalone Android fallback; dual-protocol compatibility is not
+   required;
 3. update production extension permissions, Android package/deep-link
    metadata, connection versioning, and recovery presentation;
 4. prove extension-first, app-first, stale-extension, revoked-pairing,

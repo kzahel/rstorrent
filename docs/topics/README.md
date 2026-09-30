@@ -48,7 +48,7 @@ Topics own the current truth for a continuing concern. Tactical docs under
   feature dispositions, Play/state/SAF handoff, and coordinated ChromeOS
   extension rollout.
 - [`desktop-jstorrent-replacement.md`](desktop-jstorrent-replacement.md):
-  desktop-first migration planning, legacy profile/source survey, support
+  desktop migration planning and atomic import, legacy source survey, support
   continuity, extension ownership transition, and installed replacement
   rehearsals through Machine Control.
 - [`runtime-configurations-and-headless-deployment.md`](runtime-configurations-and-headless-deployment.md):

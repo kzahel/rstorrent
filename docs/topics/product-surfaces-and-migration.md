@@ -2,6 +2,22 @@
 
 Topic: `product-surfaces-and-migration`
 
+Maintainer direction on 2026-09-30 simplifies the production transition:
+replace JSTorrent desktop through its existing branded update and import into
+a fresh successor catalog or an existing latest-format RSTorrent profile.
+Existing torrents/settings win; matching legacy torrents are reported as
+already present while distinct records continue importing. Older RSTorrent
+profile conversion, field merging and a general conflict-resolution UI are
+outside this allowance. The new
+extension may require users to update JSTorrent desktop, without maintaining
+the legacy engine/IO protocol. Temporary loss of Chromebook extension control
+of the Rust Android app is acceptable with clear guidance to use Android's
+own UI; restoring it and migrating Android state need not block desktop.
+These decisions supersede uninterrupted companion continuity as an initial
+rollout gate, while retaining the native-owner architecture and the existing
+companion implementation. Exact release/store order remains open. The
+[desktop replacement topic](desktop-jstorrent-replacement.md) owns the contract.
+
 Tactical [`234`](../tactical/234-desktop-user-intent-and-background-lifecycle.md)
 owns the accepted desktop lifetime follow-up: retain the tray/status-bar icon
 while the runtime runs, including idle/paused states; browser closure only
@@ -21,8 +37,9 @@ planning and test design. The source survey, proposed data/support contract,
 extension transition matrix and Machine Control rehearsal sequence now live in
 [`desktop-jstorrent-replacement.md`](desktop-jstorrent-replacement.md).
 This supersedes the historical statements below that migration planning is
-not current work. Import implementation, exact desktop transport and production
-rollout remain proposals to settle through discussion and bounded tacticals.
+not current work. Tactical [241](../tactical/241-atomic-legacy-desktop-import.md) now implements
+the bounded atomic native desktop import and dormant production startup hook.
+Installed legacy replacement and production rollout remain separate gates.
 Follow-up direction the same day selects familiar user-experience continuity
 as the North Star and desktop extension control as the first focus. Working
 campaign [`231`](../tactical/231-jstorrent-migration-working-campaign.md)
@@ -406,10 +423,12 @@ torrent.
 
 Android plus extension remains a useful option for people who prefer the
 extension's dense UI or want the same Android profile in both presentations.
-It is now a required migration-continuity lane for current JSTorrent companion
-users, but it should not dictate the primary ChromeOS flow while the two-action
-cold start remains. The promise is a familiar operating model after a fresh
-RSTorrent install, root grant, and pairing; it does not import JSTorrent
+It remains the intended companion lane for current JSTorrent users, but
+2026-09-30 direction permits a disclosed temporary browser-control gap during
+replacement and removes uninterrupted continuity as a desktop rollout gate.
+It should not dictate the primary ChromeOS flow while the two-action
+cold start remains. The implemented promise is a familiar operating model after
+a fresh RSTorrent install, root grant, and pairing; it does not import JSTorrent
 torrents, settings, tokens, or verified state.
 
 The selected security and topology boundary is deliberately local and narrow:
@@ -638,8 +657,10 @@ For the desktop migration campaign, Tactical `232` now has installed Linux,
 Windows and macOS control checkpoints. Continue its broader browser lifecycle,
 endurance and mixed-version/update-compatibility gates, tracked by Tactical
 `231` and [`desktop-jstorrent-replacement.md`](desktop-jstorrent-replacement.md).
-Tactical `233` retains Linux/Windows legacy fixtures for a separately bounded
-importer design and rehearsal; no importer or personal migration is implemented.
+Tactical `241` implements atomic import against `233`'s Linux/Windows exports
+with local crash, preservation and checker evidence. Next qualify installed
+legacy replacement, old-host relaunch fencing and support/privacy continuity.
+No personal migration has run.
 Existing independent release and platform campaigns below continue under
 their own gates.
 

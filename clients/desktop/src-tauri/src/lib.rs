@@ -2,6 +2,7 @@
 
 mod desktop_control;
 mod download_picker;
+mod legacy_migration;
 
 use std::collections::BTreeMap;
 use std::io::Read as _;
@@ -2177,10 +2178,39 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .map_err(|error| format!("resolve application data directory: {error}"))?;
-            let service = tauri::async_runtime::block_on(ApplicationService::open(
-                desktop_application_config_with_product_state(&app_data, product_state.clone()),
-            ))
-            .map_err(|error| error.to_string())?;
+            let migration = if app.config().identifier == "com.jstorrent.desktop" {
+                match legacy_migration::migrate_before_startup(
+                    &app.config().identifier,
+                    &app.path().config_dir().map_err(|error| error.to_string())?,
+                    &app_data,
+                ) {
+                    Ok(report) => report,
+                    Err(error) => {
+                        app.dialog().message(&error).title("JSTorrent migration")
+                            .kind(MessageDialogKind::Error).blocking_show();
+                        return Err(error.into());
+                    }
+                }
+            } else { None };
+            let mut application_config = desktop_application_config_with_product_state(&app_data, product_state.clone());
+            if migration.is_some() {
+                application_config = application_config.with_path_root_startup_policy(
+                    rstorrent_session::PathRootStartupPolicy::PreserveUnavailable,
+                );
+            }
+            let service = tauri::async_runtime::block_on(ApplicationService::open(application_config))
+                .map_err(|error| error.to_string())?;
+            if let Some(report) = migration.filter(|report| !report.already_completed) {
+                eprintln!("JSTorrent migration: imported={}, already_present={}, skipped={}, skipped_profiles={}",
+                    report.imported, report.already_present, report.skipped, report.skipped_profiles.len());
+                if report.skipped > 0 || !report.skipped_profiles.is_empty() || report.settings_need_attention {
+                    app.dialog().message(format!(
+                        "Imported {} torrents. {} were already present. {} legacy records and {} profiles could not be imported. Your legacy data is preserved.{}",
+                        report.imported, report.already_present, report.skipped, report.skipped_profiles.len(),
+                        if report.settings_need_attention { " Some legacy settings could not be imported; review settings before starting imported torrents." } else { "" },
+                    )).title("JSTorrent migration").kind(MessageDialogKind::Warning).blocking_show();
+                }
+            }
             let service = Arc::new(Mutex::new(service));
             tauri::async_runtime::block_on(ApplicationService::ensure_maintenance_owner(&service));
             let remote_runtime = tauri::async_runtime::block_on(open_desktop_remote_runtime(

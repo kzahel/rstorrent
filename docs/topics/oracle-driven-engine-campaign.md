@@ -1243,6 +1243,14 @@ checkpoint profile, Android cross-build, SAF rename-death AVD, reactive AVD,
 workspace, and web gates pass. The accepted same-length mutation risk remains
 explicit and Force-detectable.
 
+Tactical [241](../tactical/241-atomic-legacy-desktop-import.md) composes the
+existing direct-path/full-check gate for desktop legacy conversion. It changes
+no engine/checker semantics: exact source authentication, empty have evidence
+and pending verification commit before an engine exists. Local source-offline
+valid/corrupt payload tests pass; Android import is inapplicable to this desktop
+KV/path format. The next campaign action is installed legacy host fencing and
+replacement qualification, not a checker rewrite.
+
 Completed Tactical
 [`191`](../tactical/191-direct-filesystem-storage.md) is the current
 storage-model restart checkpoint. It retains `073`/`120`'s common checker,

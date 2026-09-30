@@ -1,9 +1,9 @@
 # Tactical 231: JSTorrent Migration Working Campaign
 
-Status: **Active planning, 2026-09-29.** This is the working tracker for
+Status: **Active planning, 2026-09-30.** This is the working tracker for
 “ripping the Band-Aid off.” Maintainer direction selects desktop extension
 control as the first implementation focus and user-experience continuity as
-the North Star. No migration implementation or production rollout has run.
+the North Star. Tactical 241 implements the bounded local importer; no production rollout has run.
 
 Topic: [`desktop-jstorrent-replacement`](../topics/desktop-jstorrent-replacement.md)
 
@@ -11,6 +11,18 @@ This parent campaign tracks decisions, rehearsals, evidence and follow-up
 slices. Each implementation slice has its own bounded tactical. The living
 topic owns the source survey and current migration contract; this document
 owns the executable work queue and acceptance ledger.
+
+Direction on 2026-09-30 narrows the initial migration to a branded JSTorrent
+replacement update with a fresh successor catalog or an existing latest-format
+RSTorrent profile. Keep existing torrents/settings, report duplicate legacy
+torrents as already present, and continue distinct imports. Field merging,
+older RSTorrent profile conversion and a general conflict-resolution UI are
+outside this allowance. The extension may
+require the desktop update outright, and a disclosed temporary Chromebook
+Android browser-control gap is acceptable with standalone Android as the
+fallback. Desktop and Android migration no longer require synchronized
+completion. Exact production ordering remains open; 241 implements local import, while
+installed legacy replacement and rollout remain unqualified.
 
 ## North Star
 
@@ -23,6 +35,8 @@ users should not have to understand the new process topology.
 Preserve useful behavior, not every pixel or legacy implementation detail.
 Record unavoidable changes, unsupported features and recovery steps explicitly.
 Do not force desktop-window use as the default replacement for the browser UI.
+An explicit desktop-update requirement and a temporary Android browser-control
+gap are accepted transition exceptions, rather than compatibility-bridge work.
 
 The deliberate exception to legacy workflow continuity is desktop profiles:
 there is one desktop library, with no profile picker or multi-profile product.
@@ -54,13 +68,17 @@ SQLite and payload writes remain native. No engine runs in the extension.
 | D-05 | Preserve JSTorrent production identity/updater trust at graduation; keep incubation identities during development. | Accepted direction; candidate/package mechanics remain open |
 | D-06 | Best-effort import preserves valuable intent and rechecks bytes; legacy completion claims are not trusted. | Accepted integrity rule; exact field/cohort mapping remains proposed |
 | D-07 | Local diagnostics and bug-report continuity precede a migration cohort. | Required outcome; reporting implementation remains open |
-| D-08 | Union all legacy desktop profiles into one library; no successor multi-profile support or source-profile chooser. | Accepted 2026-09-28; duplicate/conflict rules need importer design |
+| D-08 | Union all legacy desktop profiles into one library; no successor multi-profile support or source-profile chooser. | Accepted 2026-09-28; bounded rules implemented in 241 |
 | D-09 | Explicit extension open starts/attaches in background; desktop launch shows its native window. Both views coexist without preferred-UI routing. | Accepted in follow-up discussion |
 | D-10 | Automatic reconnect attaches only; explicit Quit must not be undone by browser retries. Desktop bootstrap avoids routine code-entry pairing. | Accepted; protected bootstrap implemented in 232 |
 
 | D-11 | Retain tray/status-bar icon whenever desktop runtime runs, even idle/paused; closing browser only detaches. Native close follows its existing setting. | Accepted 2026-09-29; 234 |
 | D-12 | Fresh toolbar/Start/magnet/file intent may relaunch after Quit; automatic restore/retry/worker wake may only attach. | Accepted 2026-09-29; 234 |
 | D-13 | Tray Open and OS torrent inputs use native UI; no preferred surface or browser-profile routing. | Accepted 2026-09-29; 234 |
+| D-14 | Replace JSTorrent through its branded desktop update; allow a fresh catalog or existing latest-format RSTorrent profile. Existing torrents/settings win; duplicate legacy torrents are reported as already present. No field merging, older-profile conversion or general conflict-resolution UI. | Accepted and refined 2026-09-30 |
+| D-15 | New extension may hard-require the new JSTorrent desktop; no legacy engine/IO bridge. Stale legacy clients must not become payload writers. | Accepted 2026-09-30 |
+| D-16 | Temporary Chromebook extension-control loss for Rust Android is acceptable with clear standalone-app guidance; restoration does not block desktop migration. | Accepted 2026-09-30 |
+| D-17 | One atomic catalog transaction includes fresh schema/settings/imports and one completion marker; no per-record migration ledger. | Implemented in 241, 2026-09-30 |
 
 ## Work Tracker
 
@@ -68,11 +86,11 @@ SQLite and payload writes remain native. No engine runs in the extension.
 | --- | --- | --- | --- |
 | M-01 | Desktop extension control | Linux/Windows/macOS installed checkpoint complete in [`232`](232-desktop-extension-control.md); full rehearsal partial | Protected bootstrap, native picker, controlled bytes, shared library, singleton and Quit pass. Bounded intent/tray/browser lifecycle passes in [234](234-desktop-user-intent-and-background-lifecycle.md), including 64 reload/worker-stop cycles per guest and prompt view cleanup. Linux Quit/launch overlap is repaired in [235](235-linux-quit-launch-handoff.md). Broader endurance remains separate. |
 | M-02 | Legacy cohort inventory and fixtures | [233](233-legacy-desktop-fixture-cohort.md): bounded Linux/Windows v0.2.1 cohort complete | Seven profiles/eight records plus two labeled mutations per platform; closed snapshot/payload oracle passes. Broader releases, browser-store variants and macOS remain unqualified. |
-| M-03 | Migration preview, union import and recovery | Not implemented | Consistent snapshots of all source profiles, identity/root mapping, explicit conflict outcomes, retry/crash recovery, held activation, exact recheck and preservation |
+| M-03 | Legacy import and recovery | [241](241-atomic-legacy-desktop-import.md): local implementation and isolated evidence complete; installed gate open | Consistent source snapshots, identity/root mapping, existing latest-format torrent/settings preservation, duplicate skip-and-continue, bounded source outcomes, retry/crash recovery, held activation, exact recheck and preservation |
 | M-04 | Support/report continuity | Required before user cohort | Failure-page report, bounded migration/backend context, familiar voluntary feedback journey and disclosure verification |
 | M-05 | Installed desktop replacement rehearsal | Depends on M-01/03/04 | Old installed JSTorrent -> exact candidate -> restart/repair/rollback on macOS, Windows and Linux |
 | M-06 | Extension update coordination | [236](236-desktop-compatibility-refusal-and-recovery.md)/[237](237-macos-windows-package-recovery.md): selected three-platform beta matrix passes | Terminal refusal, attach-only recovery, open-page replacement, credential rotation, repair and same-schema rollback pass. [238](238-signed-desktop-channel-recovery.md) passes three-platform signed updating of an older published cohort. [240](240-signed-desktop-control-qualification.md) adds signed current-source 801 publication, native updates and installed control/helper qualification. Original legacy pairs and ChromeOS shipment gates remain open. |
-| M-07 | Opt-in cohort and graduation | Not scheduled | Explicit supported baseline, source coverage, observation window, stop thresholds and approved production operation |
+| M-07 | JSTorrent replacement cohort and graduation | Not scheduled | Existing branding/identity/updater trust, explicit source baseline, observation window, stop thresholds and approved production operation; no synchronized Android-control gate |
 
 No entry above implies feature completion from source presence alone. Keep
 unrelated release and engine campaigns running under their own ownership.
@@ -149,7 +167,7 @@ For each cohort:
    reason, and distinguish source counts from unique destination torrents.
    No engine activation or payload mutation belongs to preview.
 3. Import into separate successor state, initially held. Inject interruption
-   at snapshot completion, partial catalog commit, check start and activation
+   at snapshot completion, before/after the atomic catalog commit, check start and activation
    handoff. Retry and restart must converge without duplicate records or loss.
 4. Recheck with controlled peers offline; confirm correct byte reuse and the
    inability of legacy bitfields to hide deliberately corrupted content. Then
@@ -163,7 +181,16 @@ For each cohort:
    authority, and recheck any payload the successor changed. Explicitly test
    stale legacy UI pages/relaunches attempting to become a second writer.
 
-Importer bounds, snapshot protocol, writer fencing and crash checkpoints must
+Add an existing latest-format destination to this rehearsal: duplicate torrents
+at the same and different locations, distinct legacy imports, a malformed
+legacy record, and repeated attempts. Verify that existing torrents, settings,
+default root and both payload copies remain unchanged; duplicates are reported
+as already present and unrelated valid imports continue. Older or unreadable
+destinations require an actionable error without overwrite, not conversion.
+
+The fixture conflict cases require bounded visible dispositions, not a general
+conflict-repair product or field-by-field library merging. Importer bounds,
+snapshot protocol, writer fencing and crash checkpoints must
 be finalized in its own tactical before this rehearsal can run. A retained
 database or VM snapshot alone is not a rollback contract for external payload.
 
@@ -175,7 +202,7 @@ intended signed update path in isolated test infrastructure before production
 route changes. Record explicit extension/browser update order and cover:
 
 - old extension + old desktop;
-- new extension + old desktop;
+- new extension + old desktop, with a terminal desktop-update requirement;
 - old extension, including an already-open engine page, + new desktop;
 - new extension + new desktop; and
 - cancelled update, interrupted replacement, registration repair and rollback.
@@ -183,9 +210,12 @@ route changes. Record explicit extension/browser update order and cover:
 Verify cold launch, native associations, magnet/browser integration, tray,
 folder picker, reporting, window/background policy and process cleanup. Track
 each platform/package/architecture result separately. Re-run the existing
-ChromeOS Android pairing/control journey and Crostini launcher journey before
-shipping a shared extension change. Physical Android validation uses Machine
-Control's ChromeOS guide and doctor, with project-owned deployment/assertions.
+ChromeOS Android disposition and Crostini launcher journey before shipping a
+shared extension change. A clearly disclosed temporary Android browser-control
+gap with usable standalone Android satisfies the selected initial disposition;
+full pairing/control restoration is a follow-up. Physical Android validation
+uses Machine Control's ChromeOS guide and doctor, with project-owned
+deployment/assertions.
 
 ## Evidence And Stop Rules
 
@@ -221,8 +251,8 @@ production routing remain separately scoped.
   joined menu/tray shutdown; exact commands and artifact hashes are in `232`.
 - M-02 preparation: Tactical 233 pins released desktop/extension artifacts,
   generates seven legacy profiles on each guest, and verifies closed SQLite,
-  torrent identities, bitfields and payload pieces independently. Its union
-  outcomes remain a proposal for importer design, not implemented migration.
+  torrent identities, bitfields and payload pieces independently. 241 consumes its exports through real SQLite and implements the bounded union
+  dispositions, with new corruption, cached-metadata and restart mutations.
 - Completed follow-ups: 237 extends selected beta package replacement/repair/
   rollback to macOS and Windows. 238 passes native signed 0.2.301 → 0.2.501
   update/relaunch and Stable catch-up on all three platforms; published source
@@ -242,15 +272,23 @@ production routing remain separately scoped.
   native 701-to-801 updates and repeated three-platform control/transfer/picker/
   Quit/registration-repair evidence. Exact public hashes and installed limits
   are recorded there; Stable stays 0.1.4.
-- Next executable actions: bounded interrupted-update and physical sleep/wake
-  evidence. Broader endurance remains separate. Stop before
-  importer implementation and discuss that stream with the maintainer.
+- M-03 local completion: 241 commits fresh schema/settings/roots/torrents and
+  one completion report atomically, preserves current destination records,
+  snapshots WAL, rejects live hosts and reuses the ordinary full checker.
+  No per-record progress ledger or personal migration is used.
+- Next executable actions: qualify installed legacy replacement, old-host
+  relaunch fencing and support/privacy dispositions before production graduation.
+  Interrupted-update, physical sleep/wake
+  and broader endurance evidence remain independent work.
 - Rehearsal A: **partial; three-platform installed control and bounded
   lifecycle/transfer checkpoints complete**. Rehearsal B: **not run**;
   C: **partial, selected three-platform beta compatibility and published
   signed-cohort and current-source updates**. No migration-ready or rollout-ready
-  claim. Retained 233 fixtures support later importer discussion only; no importer or personal
-  migration was started.
-- Remaining campaign decisions: supported source formats, union-conflict rules,
-  settings and historical counters, mixed-version bridge policy, first cohort
-  delivery, compatibility baseline and rollback support duration.
+  claim. 241 passes local fixture import and restart evidence. No personal
+  migration
+  or installed legacy replacement rehearsal has run.
+- Remaining campaign decisions: broader supported source formats, unsupported
+  settings/privacy/support dispositions and exact replacement/
+  extension release order, Android-control restoration timing, compatibility
+  baseline and rollback support duration. A legacy protocol bridge, older
+  RSTorrent profile conversion and field-by-field merging are not required.

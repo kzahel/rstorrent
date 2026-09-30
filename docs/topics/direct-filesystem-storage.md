@@ -2,6 +2,13 @@
 
 Topic: `direct-filesystem-storage`
 
+Completed local Tactical [241](../tactical/241-atomic-legacy-desktop-import.md)
+uses this existing model for desktop legacy state conversion. It never copies
+or deletes payload, imports no foreign have evidence, and commits authenticated
+metadata with a pending ordinary full-check generation before an engine exists.
+Good/corrupt source-offline fixtures exercise the common checker and preserve
+paused intent and bytes. No path, Android SAF, or iOS adapter semantics change.
+
 Status: **Implemented on 2026-08-29 by Tactical
 [`191`](../tactical/191-direct-filesystem-storage.md).** Path, Android SAF,
 and qualified iOS storage now write wanted bytes directly at final safe

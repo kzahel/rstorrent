@@ -2,6 +2,21 @@
 
 Topic: `capability-readiness`
 
+Desktop migration direction on 2026-09-30 selects a branded JSTorrent
+replacement update into a fresh successor catalog, with simple allowance for
+an existing latest-format RSTorrent profile: keep existing torrents/settings,
+report duplicate legacy torrents as already present, and continue distinct
+imports. No field merging or older RSTorrent profile conversion is required.
+A hard desktop-update requirement in the extension
+and a disclosed temporary Chromebook Android browser-control gap are accepted
+simplifications. Neither a legacy protocol bridge nor uninterrupted Android
+companion continuity is an initial desktop gate. Campaign
+[231](../tactical/231-jstorrent-migration-working-campaign.md) and
+[desktop replacement](desktop-jstorrent-replacement.md) own the narrowed plan;
+Tactical [241](../tactical/241-atomic-legacy-desktop-import.md) now implements
+the atomic importer with local fixture/crash/checker evidence; installed legacy
+replacement and production graduation remain open.
+
 Tactical [240](../tactical/240-signed-desktop-control-qualification.md) completes
 signed current-source delivery with [Latest 0.2.801](../evidence/desktop-latest-v0.2.801.md).
 Exact-source CI, five signed package lanes, public signatures/checksums and both
@@ -11,7 +26,8 @@ background control, shared views, fresh browser-closed verified transfers,
 picker cleanup, explicit/passive relaunch and bounded registration repair.
 The Mac also installs the exact public DMG and recreates its bundled host.
 Physical sleep/wake, interrupted updates, broader endurance, Intel/minimum-macOS
-installed coverage and production graduation remain open. No importer has started.
+installed coverage and production graduation remain open. 241 supplies local
+importer evidence, not installed legacy qualification.
 
 Selected three-platform beta replacement, rollback and native registration
 repair pass in [236](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
@@ -26,8 +42,9 @@ lock blocker is superseded by authorized VM recreation with verified stored
 credentials. Its attempted native suspend-to-idle did not recover and required
 a supported forced stop; native sleep/wake remains unqualified. Owned test state
 is removed and claims released. 240 supplies signed current-source delivery.
-Next: bounded interrupted-update, physical sleep/wake and broader endurance
-evidence. Importer work waits for discussion; no importer has started.
+Next: installed legacy replacement and old-host relaunch fencing for 241.
+Interrupted-update, physical sleep/wake and broader endurance evidence remain
+independent. Local importer evidence does not qualify installed replacement.
 
 Tactical [`234`](../tactical/234-desktop-user-intent-and-background-lifecycle.md)
 owns the accepted desktop lifetime follow-up: retain the tray/status-bar icon
@@ -1092,7 +1109,9 @@ hosted repeats.
   **239**; **240** adds signed current-source 801 delivery and installed control.
   Interrupted updates, physical sleep and broader endurance remain separate
   gates. Linux's failed guest sleep attempt is recorded, not promoted to passing recovery evidence.
-  Importer work is deferred for discussion and not implemented.
+  Tactical **241** implements atomic desktop import with current-destination
+  preservation, process-crash and ordinary-checker evidence. Installed legacy
+  host fencing, cross-platform replacement and production rollout remain open.
 
 - Complete **Tactical `214`**'s native platform notice and source-delivery
   review for the package lanes to be declared. Tactical `218` adopts and

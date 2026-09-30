@@ -2,12 +2,27 @@
 
 Topic: `client-persistence`
 
+Tactical [241](../tactical/241-atomic-legacy-desktop-import.md) implements a
+strict current-schema desktop legacy import. A fresh schema, mapped settings,
+roots, source/selection/run intent and one completion report commit in one
+immediate transaction. Existing catalogs retain their settings/default and
+identity owners unchanged. Source validation errors skip records; destination
+errors roll back. Empty schema-zero files left by pre-commit crashes are
+retryable; populated older/future catalogs are refused before reset-capable open.
+An optional migration-owned `legacy_desktop_import` singleton table in schema
+26 stores the bounded outcome report and private backup directory reference.
+It is not a per-record progress ledger. Completion is checked before source
+discovery and survives imported torrent removal. Foreign have/counters never
+supply verification; the ordinary checker owns subsequent state. The desktop
+production-identity gate is dormant in incubation builds; installed graduation
+remains separate.
+
 Tactical [`233`](../tactical/233-legacy-desktop-fixture-cohort.md) prepares
 closed, nonpersonal legacy desktop v0.2.1 writer fixtures on Linux/Windows.
 Actual version-2 session JSON/binary encoding and released SQLite KV writers
 are preserved in checked-in JSON exports; an independent oracle checks
-identities and bytes. This is importer input coverage, not successor restore
-or migration support. All source completion remains subject to re-verification.
+identities and bytes. Tactical [241](../tactical/241-atomic-legacy-desktop-import.md) consumes this
+cohort through an isolated native desktop importer. All source completion remains subject to re-verification.
 
 Tactical [`229`](../tactical/229-web-desktop-data-reset.md) adds explicit
 local browser and desktop profile clearing. After all torrent removals join,

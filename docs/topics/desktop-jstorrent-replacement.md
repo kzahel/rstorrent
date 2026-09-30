@@ -2,6 +2,69 @@
 
 Topic: `desktop-jstorrent-replacement`
 
+## Atomic Import Implementation, 2026-09-30
+
+Completed local slice [241](../tactical/241-atomic-legacy-desktop-import.md)
+reads bounded native discovery and consistent SQLite backups, including WAL.
+It imports released v0.2.1 sources, cached info, roots, Normal/Skip selection and
+run intent into a fresh or exact current-schema catalog. Invalid records are
+skipped before insertion; destination errors roll back the entire import. New
+catalog schema creation also belongs to that transaction. One completion
+marker stores a bounded outcome report, not incremental progress.
+
+Existing identity aliases, torrent state, settings and even an unset default
+root remain unchanged. Foreign completion/bitfields are discarded. Imported
+metadata enters ordinary full checking; stopped pending magnets wait for
+explicit Resume, while active/awaiting-selection magnets may acquire metadata.
+Unavailable paths remain registered for repair and are never recreated by the
+startup hook. Private source snapshots remain for recovery; payload is neither
+copied nor deleted. Unsupported settings/history are outside the closed mapping.
+
+Desktop startup invokes this only for the future `com.jstorrent.desktop`
+identifier before opening the engine. Current incubation builds do not inspect
+personal legacy state. A reachable old host refuses import; installed legacy
+host relaunch fencing, production packaging/branding, privacy/support continuity
+and cross-platform installed replacement qualification remain open. Android and
+extension rollout are separate. Local fixture evidence is not a rollout claim.
+
+## Selected Simplifications, 2026-09-30
+
+Maintainer direction selects replacement through the existing JSTorrent
+desktop update, retaining JSTorrent branding, application identity and updater
+trust. Import legacy state into a fresh successor catalog, or allow an existing
+RSTorrent profile in the latest supported format with the simple rules below.
+Older RSTorrent profile conversion, field-by-field merging and a general
+conflict-resolution UI are outside this campaign.
+The accepted one-library union of legacy desktop profiles remains; ambiguous
+legacy input needs a bounded, visible disposition, not a general merge product.
+
+For an existing latest-format destination, keep each existing torrent unchanged.
+Match by validated torrent identity; report matching legacy records as already
+present and continue importing distinct torrents. Do not merge paths, trackers,
+selection, run intent, metadata, or counters into that existing record, even
+when the legacy payload lives elsewhere. Preserve both payload locations.
+Keep the existing destination settings and default root; distinct imports
+retain their own legacy root binding. Repeated attempts use the same rule and
+must not add another copy. Invalid or ambiguous source records have individual
+reported outcomes and do not abort unrelated imports. An unreadable or
+unsupported destination returns an actionable error without overwriting it or
+the legacy source; this allowance does not add older-profile compatibility.
+
+The production extension may require the new desktop application outright.
+An older desktop receives a terminal message such as "Update JSTorrent desktop
+to use this extension," with an update action. No dual-engine extension or
+legacy raw-I/O compatibility bridge is required. A stale legacy extension or
+already-open engine page must be refused by the replacement's native boundary
+so it cannot become another payload writer.
+
+Temporary loss of extension control of the Rust Android app on Chromebook is
+an accepted rollout simplification. Explain that browser control is unavailable
+and direct users to the Android app's own UI. Desktop migration need not wait
+for Android state migration or restoration of this companion connection.
+This does not retire the companion architecture or invalidate Tactical 194's
+implementation evidence. Exact store order and the restoration release remain
+to be chosen; no publication or production update is authorized here.
+
 Tactical [240](../tactical/240-signed-desktop-control-qualification.md) completes
 signed current-source delivery with [Latest 0.2.801](../evidence/desktop-latest-v0.2.801.md).
 Exact-source CI, five signed package lanes, public signatures/checksums and both
@@ -11,7 +74,8 @@ background control, shared views, fresh browser-closed verified transfers,
 picker cleanup, explicit/passive relaunch and bounded registration repair.
 The Mac also installs the exact public DMG and recreates its bundled host.
 Physical sleep/wake, interrupted updates, broader endurance, Intel/minimum-macOS
-installed coverage and production graduation remain open. No importer has started.
+installed coverage and production graduation remain open. Tactical 241 supplies
+local importer evidence; installed legacy replacement remains open.
 
 Selected three-platform beta replacement, rollback and native registration
 repair pass in [236](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
@@ -26,8 +90,9 @@ lock blocker is superseded by authorized VM recreation with verified stored
 credentials. Its attempted native suspend-to-idle did not recover and required
 a supported forced stop; native sleep/wake remains unqualified. Owned test state
 is removed and claims released. 240 supplies signed current-source delivery.
-Next: bounded interrupted-update, physical sleep/wake and broader endurance
-evidence. Importer work waits for discussion; no importer has started.
+Next: qualify the importer against installed legacy applications and fence old
+host relaunch before production graduation. Interrupted-update, physical
+sleep/wake and broader endurance evidence remain independent.
 
 Tactical [`236`](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
 qualifies selected Linux beta old/new extension/runtime pairs, an already-open
@@ -59,8 +124,8 @@ and joined Quit in claimed guests. Tactical
 pinned released legacy fixture cohort on Linux/Windows only. Seven generated
 profiles per fixture platform cover conflicting roots/intent, partial/complete
 bytes, pending magnets and selective Unicode content, with independent closed
-SQLite/identity/piece validation. Union rules remain proposed importer design;
-no importer, production identity change or personal migration has run.
+SQLite/identity/piece validation. Tactical 241 now implements the bounded union rules against these exports.
+No production identity change or personal migration has run.
 
 Status: **Three-platform installed control checkpoint complete, 2026-09-29;
 migration campaign active.** Tactical
@@ -146,8 +211,9 @@ That evidence is also distinct from replacing an installed JSTorrent package.
 
 ## Proposed First Data Contract
 
-Import the union of all discovered legacy desktop profiles into one fresh
-successor library from consistent, retained source snapshots. Do not modify
+Import the union of all discovered legacy desktop profiles into one successor
+library, fresh or already in the latest supported RSTorrent format, from
+consistent, retained source snapshots. Do not modify
 legacy databases in place or reuse their schemas as RSTorrent's store. There
 is no source-profile chooser and no successor multi-profile support. Inventory
 every source and report unreadable or unsupported profiles rather than silently
@@ -160,29 +226,39 @@ torrents and useful root bindings. Legacy profile/root keys are source-local:
 resolve them with source provenance before assigning successor identifiers.
 Provenance is migration/recovery bookkeeping, not a new runtime profile model.
 
-Exact conflict policy is an importer-design checkpoint. Matching duplicates
-can coalesce automatically; the same torrent at different payload locations
+Existing destination records take precedence under the simple skip rule above.
+For legacy-only records, Tactical 241 skips all copies when the resolved
+path, run/selection intent differs. Identical copies coalesce in stable source
+order; no conflict-repair UI is required. Matching duplicates can coalesce automatically; the same
+torrent at different payload locations
 must preserve those files and surface a location conflict, without copying,
-deleting or silently choosing by modification time. Hold ambiguous records for
-repair in the single library. Conflicting file selection, run intent, queue
-order, settings and historical counters need deterministic documented rules;
+deleting or silently choosing by modification time. Give ambiguous records a
+visible held or skipped disposition. Conflicting file selection, run intent,
+queue order, settings and historical counters need deterministic documented rules;
 do not sum duplicate history or enable broader activity/transmission implicitly.
 Keep one resulting settings set. Ordinary nonconflicting imports should require
-no profile-related decision from the user. Retry keys must account for every
-source contributing to a merged record.
+no profile-related decision from the user. One catalog transaction commits all imported state and a singleton completion
+report. There is no per-record progress ledger. A failed transaction retries
+from unchanged sources; a completed import never resurrects removed torrents.
 
-| Legacy data | Proposed treatment |
+| Legacy data | Treatment / remaining scope |
 | --- | --- |
 | Torrent file, original magnet, cached info dictionary | Validate bounds, encoding, metainfo and hash agreement; preserve useful source/tracker intent. Report unsupported or incomplete records individually. |
 | Root reference and path | Resolve within each source profile, then map into the single library's root registry. Validate actual destination layout/access and require repair for missing/removable or conflicting locations. Never silently redirect to a new default. |
 | Active/stopped intent, Normal/Skip selection, pending magnet selection | Preserve intent, initially hold imported work from downloading/seeding, and release only after ownership handoff and ordinary checking. Define pending-metadata behavior explicitly. |
-| Added time and queue ordering | Preserve where representable, with deterministic normalization and an explicit disposition otherwise. |
-| Settings | Closed mapping for equivalent rate, queue, network, background and notification policy; report changed or unsupported semantics. Do not copy arbitrary settings wholesale. |
+| Added time and queue ordering | 241 normalizes active/queued records by legacy queue position, then source/record ordinal. Added time is not represented in the current catalog and is omitted. |
+| Settings | 241 maps only DHT/PEX, peer/slot limits, encryption and transfer-rate policy. Conflicting or unrepresentable mapped settings hold new work for review. Other preferences retain successor defaults; broader background, notification, privacy and queue parity remain production qualification work. Existing destination settings win. |
 | Piece bitfields and completion flags | Never establish verified content. Check retained bytes through the Rust engine. |
-| Upload/download history, ratio policy, force-active | Explicit decision needed. Historical values must not silently change seeding-goal admission or masquerade as newly measured engine counters. |
+| Upload/download history, ratio policy, force-active | 241 resets historical counters and omits legacy ratio/force-active policy; nothing becomes newly measured engine data or verification evidence. |
 | Tokens, peer cache, DHT state, runtime ports/PIDs, browser pairings | Do not import authority or transient engine state. Establish new connections and authorization. |
 | Installation ID, statistics preference and counters | Separate product-state decision. Preserve the user's privacy choice; no implicit widening of transmission or reuse of browser pairing/telemetry authority. |
 | Search plugins, browser-local preferences, old packaged-app data | Inventory and give a visible disposition; not an implicit requirement to migrate every historical architecture. |
+
+The settings mapping applies to a fresh destination; an existing latest-format
+profile keeps its settings. Validation must cover an existing matching torrent
+at the same and a different location, distinct imports alongside it, repeated
+attempts, and a bad source record alongside valid records. Assert unchanged
+existing torrent/settings/root state and exact per-source outcome counts.
 
 Preserve payload in place when exact path compatibility is proven. Test
 single-file and folder roots, partially downloaded and oversized files,
@@ -252,15 +328,16 @@ Desktop and store updates arrive independently. Exercise all four combinations:
 | Extension | Desktop | Required disposition |
 | --- | --- | --- |
 | Legacy | Legacy | Continues working during the transition. |
-| Successor-capable | Legacy | Bounded legacy compatibility or clear upgrade path, selected before rollout. |
+| Successor-capable | Legacy | Terminal instruction to update JSTorrent desktop; no legacy engine fallback. |
 | Legacy | Successor | Safe upgrade/handoff guidance; never silently start a legacy writer against migrated payload. |
 | Successor-capable | Successor | One native owner, both views converge, detach/reconnect and cold launch work. |
 
 Also test already-open legacy UI pages, dormant service workers, multiple
 browser profiles, native-host registration repair, cancelled updates and
-rollback. A production extension rollout cannot accidentally replace the
-ChromeOS Android/Crostini journey merely because desktop is ready. Inventory
-magnet interception, context menus, local torrent intake and other browser
+rollback. Temporary Chromebook Android browser-control unavailability is an
+accepted, explicitly disclosed disposition; standalone Android remains usable.
+Account for Crostini separately rather than assuming it shares Android state.
+Inventory magnet interception, context menus, local torrent intake and other browser
 integrations separately from rendering the torrent table.
 
 ## Support And Observability Gate
@@ -364,13 +441,14 @@ evidence only.
 
 - Desktop extension control is selected first; its exact transport and
   lifecycle decisions are tracked in Tactical `232`.
-- All legacy desktop profiles are combined into one library. Which released
-  source formats are supported first, and what deterministic rules settle
-  duplicate locations and conflicting settings/intent?
+- Import all legacy desktop profiles into a fresh or latest-format successor
+  library; existing torrents win and duplicate legacy records are reported as
+  already present. No field merging or general conflict-resolution UI. Which
+  released formats are supported first, and how are ambiguous sources reported?
 - Which legacy features/settings/history must carry forward, and which may
   be reset with visible explanation? Include ratio goals and privacy choices.
-- Should the first user cohort be an opt-in JSTorrent update lane or a separate
-  RSTorrent import rehearsal? Same-payload coexistence needs a writer handoff
-  in either case.
+- Production delivery is a branded JSTorrent replacement update. Choose the
+  rehearsal/cohort lane and extension store order; the extension may require
+  the desktop update and temporarily defer Chromebook Android control.
 - What support baseline and rollback promise begins with the first migrated
   production user?

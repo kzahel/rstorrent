@@ -55,6 +55,9 @@ pub const MAX_STORAGE_ROOTS: usize = 32;
 pub const MAX_STORAGE_ROOT_LOCATOR_LENGTH: usize = 4096;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(2);
 
+mod legacy_desktop;
+pub use legacy_desktop::{LegacyDesktopImportReport, LegacyDesktopRecordOutcome};
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConfiguredStorageRoot {
     pub id: String,
@@ -2949,6 +2952,22 @@ fn create_or_validate_schema_26(
         return validate_schema_26(connection, profile_id);
     }
     let transaction = connection.transaction()?;
+    create_schema_26(
+        &transaction,
+        profile_id,
+        initial_client_settings,
+        reset_report,
+    )?;
+    transaction.commit()?;
+    validate_schema_26(connection, profile_id)
+}
+
+fn create_schema_26(
+    transaction: &Transaction<'_>,
+    profile_id: &str,
+    initial_client_settings: &ClientSettings,
+    reset_report: Option<&ProfileResetReport>,
+) -> Result<(), StoreError> {
     transaction.execute_batch(
         "CREATE TABLE profile_state (
             singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
@@ -3163,15 +3182,14 @@ fn create_or_validate_schema_26(
             ],
         )?;
     }
-    create_client_settings(&transaction, initial_client_settings)?;
+    create_client_settings(transaction, initial_client_settings)?;
     transaction.execute_batch(DHT_TABLES_SQL)?;
     transaction.execute_batch(REMOVAL_TABLE_SQL)?;
     transaction.execute_batch(SOURCE_TABLES_SQL)?;
     transaction.execute_batch(DOWNLOAD_QUEUE_INDEX_SQL)?;
     transaction.execute_batch(FILE_PRIORITIES_TABLE_SQL)?;
     transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
-    transaction.commit()?;
-    validate_schema_26(connection, profile_id)
+    Ok(())
 }
 
 fn validate_schema_26(connection: &Connection, profile_id: &str) -> Result<(), StoreError> {
