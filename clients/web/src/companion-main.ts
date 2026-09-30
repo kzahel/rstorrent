@@ -1,5 +1,5 @@
 import { startDesktopCompanion } from "./desktop-companion-main";
-import { connectAndroidCompanion } from "./android-companion-client";
+import { AndroidCompanionUpdateRequired, connectAndroidCompanion } from "./android-companion-client";
 import { startCompanionInspection } from "./inspection/companion-bootstrap";
 import { localizeDocumentShell, message } from "./localization/runtime";
 
@@ -56,9 +56,12 @@ void connectAndroidCompanion(
     if (abort.signal.aborted) return;
     status.setAttribute("role", "alert");
     status.textContent = error instanceof Error ? error.message : String(error);
-    cancel.textContent = message("common.action.close");
+    cancel.textContent = message("common.action.retry");
     cancel.disabled = false;
-    cancelAction = () => window.close();
+    cancelAction = () => window.location.reload();
+    if (error instanceof AndroidCompanionUpdateRequired && error.component === "android") {
+      requiredElement("companion-update-android").hidden = false;
+    }
   });
 
 }

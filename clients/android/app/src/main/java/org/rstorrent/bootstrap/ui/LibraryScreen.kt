@@ -103,6 +103,7 @@ internal fun LibraryScreen(
     var sortOpen by remember { mutableStateOf(false) }
     var overflowOpen by remember { mutableStateOf(false) }
     var selection by rememberSaveable { mutableStateOf(emptySet<String>()) }
+    var migrationGuidanceDismissed by rememberSaveable { mutableStateOf(false) }
     val filter = LibraryFilter.valueOf(filterName)
     val sort = LibrarySort.valueOf(sortName)
     val torrents = filteredAndSortedTorrents(state.torrents.values, filter, sort)
@@ -243,6 +244,19 @@ internal fun LibraryScreen(
                 contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                if (state.legacyChromeOsMigration && !migrationGuidanceDismissed && state.lifecycle.companionConnections == 0) {
+                    item("legacy-chromeos-migration") {
+                        Card(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                stringResource(R.string.legacy_chromeos_migration_guidance),
+                                modifier = Modifier.padding(16.dp),
+                            )
+                            TextButton(onClick = { migrationGuidanceDismissed = true }) {
+                                Text(stringResource(R.string.action_done))
+                            }
+                        }
+                    }
+                }
                 if (waitingForUnmeteredNetwork) {
                     item("network-prerequisite") {
                         Card(

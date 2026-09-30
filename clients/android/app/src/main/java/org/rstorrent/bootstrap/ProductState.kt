@@ -143,6 +143,7 @@ data class ProductState(
     val externalIntakeDepth: Int = 0,
     val externalIntakeNotice: ExternalIntakeNotice? = null,
     val companionPort: UShort? = null,
+    val legacyChromeOsMigration: Boolean = false,
     val companionPairing: CompanionPairingState? = null,
     val mediaLaunchPending: Boolean = false,
     val lifecycle: ProductLifecycleState = ProductLifecycleState(),

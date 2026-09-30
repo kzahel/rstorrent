@@ -8,6 +8,10 @@ import org.rstorrent.bootstrap.uniffi.migrateLegacyAndroid
 
 /** Runs on the service initialization dispatcher before native engine admission. */
 internal object ProductLegacyAndroidMigration {
+    fun hasMigratedSource(context: Context): Boolean =
+        context.getSharedPreferences("product-legacy-bootstrap", Context.MODE_PRIVATE)
+            .getBoolean("migrated_source", false)
+
     fun run(context: Context) {
         // Incubation remains a separate product. Same-package replacement opts in.
         if (context.packageName != "com.jstorrent.app") return
@@ -60,7 +64,7 @@ internal object ProductLegacyAndroidMigration {
                 }
             }
         }
-        check(completed.edit().putBoolean("complete", true).commit())
+        check(completed.edit().putBoolean("migrated_source", true).putBoolean("complete", true).commit())
     }
 
     private fun copyBoolean(context: Context, source: JSONObject, sourceKey: String, file: String, targetKey: String) {

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="legacy_chromeos_migration_guidance">Your JSTorrent library is available in this Android app. Update the JSTorrent extension to control it from Chrome, then connect and approve a new pairing. You can use this app directly while updates arrive.</string>
     <!-- Product identity. Do not translate RSTorrent. -->
     <string name="app_name" translatable="false">RSTorrent</string>
     <string name="engine_bootstrap_name">RSTorrent engine bootstrap</string>

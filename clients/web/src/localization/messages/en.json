@@ -1,4 +1,8 @@
 {
+  "android.companion.update-android": {"defaultMessage": "Update the JSTorrent Android app in Google Play, then retry. This extension requires the new Android app. You can use the Android app directly while updates arrive.", "description": "ChromeOS independent extension and Android update recovery guidance."},
+  "android.companion.update-extension": {"defaultMessage": "Update the JSTorrent extension, then retry. You can use the Android app directly while updates arrive.", "description": "ChromeOS independent extension and Android update recovery guidance."},
+  "android.companion.unavailable-guidance": {"defaultMessage": "Looking for the Android service. Open the Android app and enable browser control. If you recently updated JSTorrent, update both the Android app and extension; you can use Android directly meanwhile.", "description": "ChromeOS independent extension and Android update recovery guidance."},
+  "android.companion.open-update": {"defaultMessage": "Open JSTorrent in Google Play", "description": "ChromeOS independent extension and Android update recovery guidance."},
   "inspection.components.torrent.status.storage.unavailable": { "defaultMessage": "Storage unavailable", "description": "Torrent status when progress is blocked waiting for its download storage" },
   "inspection.components.data.reset.app.data.cleared": { "defaultMessage": "App data cleared.", "description": "Clear app data completion" },
   "inspection.components.data.reset.cancel": { "defaultMessage": "Cancel", "description": "Cancel reset confirmation" },
@@ -24,17 +28,9 @@
     "defaultMessage": "Approve the JSTorrent Beta pairing request in the Android app.",
     "description": "Product copy in android-companion-client.ts"
   },
-  "android.companion.client.looking.for.the.rstorrent.android.service": {
-    "defaultMessage": "Looking for the RSTorrent Android service…",
-    "description": "Product copy in android-companion-client.ts"
-  },
   "android.companion.client.the.saved.pairing.is.no.longer.accepted": {
     "defaultMessage": "The saved pairing is no longer accepted. Approve a replacement in Android.",
     "description": "Product copy in android-companion-client.ts"
-  },
-  "common.action.close": {
-    "defaultMessage": "Close",
-    "description": "Button that closes the current product surface"
   },
   "common.action.retry": {
     "defaultMessage": "Retry",

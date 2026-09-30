@@ -64,4 +64,11 @@ restart and cleanup. Record any unavailable physical/store gate accurately.
 
 ## Restart Checkpoint
 
-Contract recorded. Implementation and installed extension-driven evidence next.
+Contract committed as f37345ce. Compatibility presentation implemented:
+parallel bounded current/legacy discovery, terminal Android/extension update
+requirements, Google Play update link and Retry, and migrated-source ChromeOS
+guidance in Compose. The new extension never issues legacy pairing or authority
+commands. Fixed-host CSP permits only HTTP status discovery on legacy ports.
+Web typecheck, 437 web tests (2 skipped), 42 extension tests/validation,
+localization checks, companion packaging and Android unit tests pass.
+The owned installed extension-driven rehearsal is under qualification.

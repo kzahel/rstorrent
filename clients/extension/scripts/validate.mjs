@@ -102,7 +102,8 @@ export function validateSource() {
           (port) => `${scheme}://100.115.92.2:${port}`,
         ),
       )
-      .join(" ") + " ws://127.0.0.1:*";
+      .join(" ") + " " + [7800, 7805, 7814, 7827, 7844]
+        .map((port) => `http://100.115.92.2:${port}`).join(" ") + " ws://127.0.0.1:*";
   if (manifest.content_security_policy?.extension_pages !== expectedCsp) {
     fail("extension-page CSP must contain only local scripts and the five exact ARC endpoints");
   }

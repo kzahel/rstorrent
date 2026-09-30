@@ -308,6 +308,9 @@ class ProductEngineService : Service() {
                 recoveryNetworkGateClosed.set(stickyRecovery)
                 ProductLegacyAndroidMigration.run(this@ProductEngineService)
                 ensureActive()
+                mutableState.update {
+                    it.copy(legacyChromeOsMigration = isChromeOs() && ProductLegacyAndroidMigration.hasMigratedSource(this@ProductEngineService))
+                }
                 lifecyclePreferences = lifecyclePreferenceStore.read()
                 lifecycleCoordinator.updatePreferences(lifecyclePreferences)
                 publishLifecyclePreferences(initialNotificationEligibility)

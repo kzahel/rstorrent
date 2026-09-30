@@ -5,22 +5,34 @@
       "value": "Approve the JSTorrent Beta pairing request in the Android app."
     }
   ],
-  "android.companion.client.looking.for.the.rstorrent.android.service": [
-    {
-      "type": 0,
-      "value": "Looking for the RSTorrent Android service…"
-    }
-  ],
   "android.companion.client.the.saved.pairing.is.no.longer.accepted": [
     {
       "type": 0,
       "value": "The saved pairing is no longer accepted. Approve a replacement in Android."
     }
   ],
-  "common.action.close": [
+  "android.companion.open-update": [
     {
       "type": 0,
-      "value": "Close"
+      "value": "Open JSTorrent in Google Play"
+    }
+  ],
+  "android.companion.unavailable-guidance": [
+    {
+      "type": 0,
+      "value": "Looking for the Android service. Open the Android app and enable browser control. If you recently updated JSTorrent, update both the Android app and extension; you can use Android directly meanwhile."
+    }
+  ],
+  "android.companion.update-android": [
+    {
+      "type": 0,
+      "value": "Update the JSTorrent Android app in Google Play, then retry. This extension requires the new Android app. You can use the Android app directly while updates arrive."
+    }
+  ],
+  "android.companion.update-extension": [
+    {
+      "type": 0,
+      "value": "Update the JSTorrent extension, then retry. You can use the Android app directly while updates arrive."
     }
   ],
   "common.action.retry": [
