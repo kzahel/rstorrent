@@ -2,6 +2,12 @@
 
 Topic: `android-saf-storage`
 
+Tactical [247](../tactical/247-android-ordinary-writer-upgrade.md) adds API 28/35
+upgrade evidence from the released app's actual settings/intake/session writers:
+two persisted SAF grants, paused and incomplete/running torrents, successor
+completion, process restart and reboot retain exact hashes and stable bindings.
+No source KV/preferences are seeded in this mode; physical apps are preserved.
+
 Tactical [246](../tactical/246-android-legacy-import-and-installed-upgrade.md)
 commits stable platform-root IDs and a private old-tree binding manifest with
 Android catalog migration. Startup bootstraps missing registry entries before

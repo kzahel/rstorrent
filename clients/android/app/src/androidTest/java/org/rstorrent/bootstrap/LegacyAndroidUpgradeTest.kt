@@ -91,6 +91,87 @@ class LegacyAndroidUpgradeTest {
             assertArrayEquals(ByteArray(16384) { 37 }, File(context.filesDir,"downloads/private.bin").readBytes())
         } finally { serviceRule.unbindService(); context.stopService(Intent(context, ProductEngineService::class.java)); ProductInteractionRegistry.setActivityVisible(false) }
     }
+    @Test fun verifyOrdinaryWriterUpgrade() = runBlocking {
+        org.junit.Assume.assumeTrue("requires owned upgrade runner", enabled)
+        val encoded = InstrumentationRegistry.getArguments().getString("writerSpec")!!
+        val spec = org.json.JSONObject(String(android.util.Base64.decode(encoded, android.util.Base64.DEFAULT), Charsets.UTF_8))
+        assertEquals(spec.getInt("uid"), Process.myUid())
+        val cases = spec.getJSONArray("cases")
+        val sourceRoots = org.json.JSONObject(File(context.filesDir, "roots.json").readText()).getJSONArray("roots")
+        assertEquals(2, sourceRoots.length())
+        val expectedRoots = mutableMapOf<String, String>()
+        for (index in 0 until sourceRoots.length()) {
+            val root = sourceRoots.getJSONObject(index)
+            val folder = DocumentsContract.getTreeDocumentId(Uri.parse(root.getString("uri"))).substringAfterLast('/')
+            expectedRoots[folder] = root.getString("key")
+        }
+        // Read retained source; the old product, not fixture SQL, wrote this state.
+        SQLiteDatabase.openDatabase(context.getDatabasePath("jstorrent_kv.db").absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { database ->
+            fun read(key: String): String = database.rawQuery("SELECT value FROM kv WHERE key=?", arrayOf(key)).use { rows ->
+                assertTrue("missing ordinary source key $key", rows.moveToFirst())
+                rows.getString(0)
+            }
+            assertEquals(2, org.json.JSONObject(read("session:torrents")).getJSONArray("torrents").length())
+            assertEquals("false", read("config:dhtEnabled"))
+            assertEquals("false", read("config:pexEnabled"))
+            assertEquals("\"disabled\"", read("config:encryptionPolicy"))
+            for (index in 0 until cases.length()) {
+                val case = cases.getJSONObject(index)
+                val source = org.json.JSONObject(read("session:torrent:${case.getString("hash")}:state"))
+                assertEquals(expectedRoots[case.getString("folder")], source.getString("storageKey"))
+                assertEquals(if (index == 0) "stopped" else "active", source.getString("userState"))
+                assertTrue("old app did not persist downloaded progress", source.getLong("downloaded") > 0)
+                if (index == 1) assertTrue("source was already complete before upgrade", source.getLong("downloaded") < case.getInt("size"))
+            }
+        }
+        assertTrue(context.getSharedPreferences("jstorrent_settings", Context.MODE_PRIVATE).getBoolean("wifi_only_enabled", false))
+        ProductInteractionRegistry.setActivityVisible(true)
+        val rule = androidx.test.rule.ServiceTestRule.withTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        context.startForegroundService(Intent(context, ProductEngineService::class.java))
+        val service = (rule.bindService(Intent(context, ProductEngineService::class.java)) as ProductEngineService.LocalBinder).service
+        try {
+            val state = withTimeout(90000) {
+                service.state.first { current -> current.ready && current.torrents.size == 2 && current.clientSettings != null &&
+                    (0 until cases.length()).all { index ->
+                        val case = cases.getJSONObject(index)
+                        current.torrents.values.any { it.displayName == case.getString("name") && it.verifiedPieceCount == case.getInt("pieces").toUInt() }
+                    }
+                }
+            }
+            assertTrue(ProductNetworkPreference.read(context))
+            assertFalse(state.clientSettings!!.configured.dhtEnabled)
+            assertFalse(state.clientSettings!!.configured.peerExchangeEnabled)
+            assertEquals(org.rstorrent.session.uniffi.EncryptionPolicy.DISABLED, state.clientSettings!!.configured.encryption)
+            assertEquals(2, state.storage!!.roots.size)
+            assertEquals(2, context.contentResolver.persistedUriPermissions.count { it.isReadPermission && it.isWritePermission })
+            SQLiteDatabase.openDatabase(File(context.filesDir, "product-profile/session.db").absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { database ->
+                database.rawQuery("SELECT report_json FROM legacy_android_import", null).use { rows ->
+                    assertTrue(rows.moveToFirst())
+                    val report = org.json.JSONObject(rows.getString(0))
+                    assertEquals(2, report.getInt("imported"))
+                    assertEquals(0, report.getInt("skipped"))
+                }
+                database.rawQuery("SELECT count(*) FROM torrents WHERE desired_state='paused'", null).use { rows -> rows.moveToFirst(); assertEquals(1, rows.getInt(0)) }
+            }
+            val registry = ProductSafRootRegistry.load(context)
+            assertEquals(2, registry.roots.size)
+            for (index in 0 until cases.length()) {
+                val case = cases.getJSONObject(index)
+                val rootId = "legacy-android-${expectedRoots[case.getString("folder")]}"
+                val root = registry.roots.single { it.rootId == rootId }
+                val tree = Uri.parse(root.treeUri)
+                val document = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree) + "/" + case.getString("name"))
+                val bytes = context.contentResolver.openInputStream(document)!!.use { it.readBytes() }
+                assertEquals(case.getInt("size"), bytes.size)
+                assertEquals(case.getString("sha256"), hex(MessageDigest.getInstance("SHA-256").digest(bytes)))
+            }
+        } finally {
+            rule.unbindService()
+            context.stopService(Intent(context, ProductEngineService::class.java))
+            ProductInteractionRegistry.setActivityVisible(false)
+        }
+    }
+
     @Test fun revokeGrant() {
         org.junit.Assume.assumeTrue("requires owned upgrade runner", enabled)
         val root = ProductSafRootRegistry.load(context).roots.single()

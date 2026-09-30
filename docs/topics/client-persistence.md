@@ -2,6 +2,12 @@
 
 Topic: `client-persistence`
 
+Tactical [247](../tactical/247-android-ordinary-writer-upgrade.md) adds API 28/35
+upgrade evidence from the released app's actual settings/intake/session writers:
+two persisted SAF grants, paused and incomplete/running torrents, successor
+completion, process restart and reboot retain exact hashes and stable bindings.
+No source KV/preferences are seeded in this mode; physical apps are preserved.
+
 Tactical [246](../tactical/246-android-legacy-import-and-installed-upgrade.md)
 adds Android import to the same validated conversion and transaction owner.
 The schema-26 optional `legacy_android_import` singleton commits counts, private

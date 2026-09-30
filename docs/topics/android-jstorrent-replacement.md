@@ -2,6 +2,13 @@
 
 Topic: `android-jstorrent-replacement`
 
+Tactical [247](../tactical/247-android-ordinary-writer-upgrade.md) completes
+ordinary released Android writers and controlled installed upgrades on API 28/35:
+two SAF roots, supported settings, paused/partial torrents, running replacement,
+successor completion, process restart and reboot pass with independent hashes.
+Machine Control's ChromeOS/ARCVM route is confirmed; physical apps are preserved.
+This is disposable-signature emulator evidence, not physical/Play delivery.
+
 ## Android Migration Inventory, 2026-09-30
 
 Tactical [245](../tactical/245-android-legacy-inventory-and-import-contract.md)

@@ -1330,6 +1330,18 @@ The runner checks retained UID/source data/grants, mapped settings and selection
 ordinary intact/corrupt/private payload checking, restart, revocation/regrant
 and no resurrection after private-profile clearing. It deletes its emulator,
 AVD, APKs and disposable key, then restores ordinary incubation build identity.
+Ordinary-writer mode instead drives the released Compose settings and content
+intake, downloads independent fixtures from a loopback libtorrent seed through
+ADB reverse, selects two SAF roots, and replaces the running old app. It checks
+successor verification/resume, restart and reboot without inserting source KV
+or preferences:
+
+```bash
+source ~/.profile
+PYTHONDONTWRITEBYTECODE=1 uv run --project tests/interop --locked \
+  python clients/android/scripts/run-legacy-upgrade.py --api 35 --source ordinary
+```
+
 The platform-only `legacy-upgrade-fixture` module exists because the minified
 released APK cannot provide the current test runner's Kotlin dependencies.
 Only the source seed uses it; successor assertions use ordinary instrumentation.

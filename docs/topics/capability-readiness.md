@@ -2,6 +2,13 @@
 
 Topic: `capability-readiness`
 
+Tactical [247](../tactical/247-android-ordinary-writer-upgrade.md) completes
+ordinary released Android writers and controlled installed upgrades on API 28/35:
+two SAF roots, supported settings, paused/partial torrents, running replacement,
+successor completion, process restart and reboot pass with independent hashes.
+Machine Control's ChromeOS/ARCVM route is confirmed; physical apps are preserved.
+This is disposable-signature emulator evidence, not physical/Play delivery.
+
 Tactical [246](../tactical/246-android-legacy-import-and-installed-upgrade.md)
 implements Android best-effort legacy conversion, startup bootstrap and the
 controlled released-APK/same-package upgrade runner. API 28/35 upgrade, restart,
