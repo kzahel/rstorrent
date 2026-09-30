@@ -11,7 +11,11 @@ background control, shared views, fresh browser-closed verified transfers,
 picker cleanup, explicit/passive relaunch and bounded registration repair.
 The Mac also installs the exact public DMG and recreates its bundled host.
 Physical sleep/wake, interrupted updates, broader endurance, Intel/minimum-macOS
-installed coverage and production graduation remain open. No importer has started.
+installed coverage and production graduation remain open. Tactical 241
+implements atomic local import; [242](../tactical/242-legacy-desktop-handoff-rehearsal.md)
+adds production-only old-host fencing and a bounded installed macOS replacement
+checkpoint with generated state. Remaining installed platforms, signed
+production delivery, privacy/support continuity and full branding remain open.
 
 240 also fixes the macOS CFT support path to `Google/Chrome for Testing`.
 Its actual default-profile discovery/repair evidence supersedes the misspelled
@@ -32,7 +36,8 @@ credentials. Its attempted native suspend-to-idle did not recover and required
 a supported forced stop; native sleep/wake remains unqualified. Owned test state
 is removed and claims released. 240 supplies signed current-source delivery.
 Next: bounded interrupted-update, physical sleep/wake and broader endurance
-evidence. Importer work waits for discussion; no importer has started.
+evidence. Importer implementation and the macOS handoff checkpoint are recorded
+in 241/242; production qualification remains separate.
 
 Tactical [`236`](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
 adds clear terminal desktop compatibility errors and attach-only Retry
@@ -40,7 +45,7 @@ connection. Its installed Linux beta old/new extension/runtime combinations,
 open-page replacement, credential rotation, bounded registration repair and
 same-schema rollback preserve the controlled library. The macOS/Windows beta
 matrices now pass in 237. 240 supplies signed current-source delivery; original
-legacy replacement remains open.
+legacy browser-store pairs and Windows/Linux installed replacement remain open.
 
 Tactical [`235`](../tactical/235-linux-quit-launch-handoff.md) repairs the Linux
 Quit/launch overlap. A stopping owner returns Retry; the explicit launch process

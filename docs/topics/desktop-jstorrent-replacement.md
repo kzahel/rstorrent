@@ -2,6 +2,26 @@
 
 Topic: `desktop-jstorrent-replacement`
 
+## Managed Legacy Handoff, 2026-09-30
+
+Completed bounded slice [242](../tactical/242-legacy-desktop-handoff-rehearsal.md)
+installs a refusal-only helper for `com.jstorrent.native` only under the future
+production identity. It covers released browser registrations and the Linux
+AppImage host copy, then checks for same-user old processes before import and
+again before engine startup. Registration failures and live legacy clients show
+native guidance and stop without opening a catalog/engine. Incubation does not
+take over the old name. Manually retained old binaries remain unsupported.
+
+A claimed macOS arm64 guest passes a generated, installed v0.2.1 replacement
+at the same bundle path/identifier: idle pre-handshake host and registration
+failure, four-record import, valid/corrupt rechecking, missing-root preservation,
+nine registered refusal routes, joined Quit/restart and unchanged source data
+and payload. Source comparison permits empty WAL creation and transient SHM
+bookkeeping.
+The local candidate is unsigned and unpublished. Windows/Linux installed
+replacement, actual production extension pairs, signed production delivery,
+privacy/support continuity and full branding remain open; Rehearsal B is partial.
+
 ## Atomic Import Implementation, 2026-09-30
 
 Completed local slice [241](../tactical/241-atomic-legacy-desktop-import.md)
@@ -22,9 +42,10 @@ copied nor deleted. Unsupported settings/history are outside the closed mapping.
 
 Desktop startup invokes this only for the future `com.jstorrent.desktop`
 identifier before opening the engine. Current incubation builds do not inspect
-personal legacy state. A reachable old host refuses import; installed legacy
-host relaunch fencing, production packaging/branding, privacy/support continuity
-and cross-platform installed replacement qualification remain open. Android and
+personal legacy state. A reachable old host refuses import; 242 adds managed
+relaunch fencing and a bounded installed macOS checkpoint. Production
+packaging/branding, privacy/support continuity and remaining installed platform
+qualification remain open. Android and
 extension rollout are separate. Local fixture evidence is not a rollout claim.
 
 ## Selected Simplifications, 2026-09-30
@@ -75,7 +96,7 @@ picker cleanup, explicit/passive relaunch and bounded registration repair.
 The Mac also installs the exact public DMG and recreates its bundled host.
 Physical sleep/wake, interrupted updates, broader endurance, Intel/minimum-macOS
 installed coverage and production graduation remain open. Tactical 241 supplies
-local importer evidence; installed legacy replacement remains open.
+local importer evidence; 242 adds the bounded installed macOS replacement.
 
 Selected three-platform beta replacement, rollback and native registration
 repair pass in [236](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
@@ -90,8 +111,9 @@ lock blocker is superseded by authorized VM recreation with verified stored
 credentials. Its attempted native suspend-to-idle did not recover and required
 a supported forced stop; native sleep/wake remains unqualified. Owned test state
 is removed and claims released. 240 supplies signed current-source delivery.
-Next: qualify the importer against installed legacy applications and fence old
-host relaunch before production graduation. Interrupted-update, physical
+242 fences managed old-host relaunch and qualifies a local macOS replacement.
+Next: remaining installed platforms and production/privacy/support
+qualification. Interrupted-update, physical
 sleep/wake and broader endurance evidence remain independent.
 
 Tactical [`236`](../tactical/236-desktop-compatibility-refusal-and-recovery.md)

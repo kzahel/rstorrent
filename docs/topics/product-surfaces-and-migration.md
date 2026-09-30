@@ -18,6 +18,12 @@ rollout gate, while retaining the native-owner architecture and the existing
 companion implementation. Exact release/store order remains open. The
 [desktop replacement topic](desktop-jstorrent-replacement.md) owns the contract.
 
+Tacticals 241/242 implement atomic desktop import and production-only retirement
+of managed legacy native-host routes, with a bounded installed macOS checkpoint.
+Incubation identities remain separate. Remaining installed platforms, signed
+production delivery and settings/privacy/support dispositions are graduation
+work; no personal migration or production rollout has run.
+
 Tactical [`234`](../tactical/234-desktop-user-intent-and-background-lifecycle.md)
 owns the accepted desktop lifetime follow-up: retain the tray/status-bar icon
 while the runtime runs, including idle/paused states; browser closure only

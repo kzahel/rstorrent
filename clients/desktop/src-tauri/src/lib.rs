@@ -2126,6 +2126,18 @@ fn admit_linux_launch(
     .map_err(|_| AdmissionError::Refused("desktop launch could not be queued".into()))
 }
 
+fn show_legacy_startup_failure(app: &AppHandle, error: String) {
+    // Setup uses the main thread, where the plugin forbids blocking dialogs.
+    // Queue the dialog and return without creating any application owner.
+    eprintln!("JSTorrent migration: {error}");
+    let exit = app.clone();
+    app.dialog()
+        .message(error)
+        .title("JSTorrent migration")
+        .kind(MessageDialogKind::Error)
+        .show(move |_| exit.exit(1));
+}
+
 pub fn run() {
     if download_picker::run_helper_if_requested() {
         return;
@@ -2136,8 +2148,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
-            #[cfg(target_os = "macos")]
-            install_macos_application_menu(app)?;
             let config_dir = app
                 .path()
                 .app_config_dir()
@@ -2146,23 +2156,23 @@ pub fn run() {
             let appimage = app.env().appimage.map(PathBuf::from);
             #[cfg(not(target_os = "linux"))]
             let appimage: Option<PathBuf> = None;
-            match app.path().home_dir() {
-                Ok(home_dir) => match repair_native_host_registration(
-                    &config_dir,
-                    &home_dir,
-                    appimage.as_deref(),
-                ) {
-                    Ok(report) => eprintln!(
-                        "RSTorrent native host is registered for {} Chrome installation(s)",
-                        report.browser_manifests
-                    ),
-                    Err(error) => eprintln!(
-                        "RSTorrent native host registration could not be repaired: {error}"
-                    ),
-                },
-                Err(error) => {
-                    eprintln!("resolve home directory for native host registration: {error}")
+            let production_replacement = app.config().identifier == rstorrent_native_host::legacy::PRODUCTION_IDENTIFIER;
+            let registration = (|| {
+                let home_dir = app.path().home_dir().map_err(|error| error.to_string())?;
+                let report = repair_native_host_registration(&config_dir, &home_dir, appimage.as_deref())?;
+                native_host_registration::install_legacy_refusal(
+                    &app.config().identifier, &config_dir, &home_dir, &report.stable_host,
+                )?;
+                if production_replacement { legacy_migration::ensure_legacy_quiet()?; }
+                Ok::<_, String>(report)
+            })();
+            match registration {
+                Ok(report) => eprintln!("RSTorrent native host is registered for {} Chrome installation(s)", report.browser_manifests),
+                Err(error) if production_replacement => {
+                    show_legacy_startup_failure(app.handle(), error);
+                    return Ok(());
                 }
+                Err(error) => eprintln!("RSTorrent native host registration could not be repaired: {error}"),
             }
             let shell_settings = load_desktop_shell_settings(&config_dir);
             if let Some(diagnostic) = &shell_settings.diagnostic {
@@ -2186,13 +2196,16 @@ pub fn run() {
                 ) {
                     Ok(report) => report,
                     Err(error) => {
-                        app.dialog().message(&error).title("JSTorrent migration")
-                            .kind(MessageDialogKind::Error).blocking_show();
-                        return Err(error.into());
+                        show_legacy_startup_failure(app.handle(), error);
+                        return Ok(());
                     }
                 }
             } else { None };
             let mut application_config = desktop_application_config_with_product_state(&app_data, product_state.clone());
+            if production_replacement && let Err(error) = legacy_migration::ensure_legacy_quiet() {
+                show_legacy_startup_failure(app.handle(), error);
+                return Ok(());
+            }
             if migration.is_some() {
                 application_config = application_config.with_path_root_startup_policy(
                     rstorrent_session::PathRootStartupPolicy::PreserveUnavailable,
@@ -2208,7 +2221,7 @@ pub fn run() {
                         "Imported {} torrents. {} were already present. {} legacy records and {} profiles could not be imported. Your legacy data is preserved.{}",
                         report.imported, report.already_present, report.skipped, report.skipped_profiles.len(),
                         if report.settings_need_attention { " Some legacy settings could not be imported; review settings before starting imported torrents." } else { "" },
-                    )).title("JSTorrent migration").kind(MessageDialogKind::Warning).blocking_show();
+                    )).title("JSTorrent migration").kind(MessageDialogKind::Warning).show(|_| {});
                 }
             }
             let service = Arc::new(Mutex::new(service));
@@ -2287,6 +2300,8 @@ pub fn run() {
                 external_activations: StdMutex::new(external_activations),
             };
             app.manage(state);
+            #[cfg(target_os = "macos")]
+            install_macos_application_menu(app)?;
             if !desktop_control::background_launch(
                 std::env::args()
                     .collect::<Vec<_>>()
@@ -2393,8 +2408,9 @@ pub fn run() {
         .expect("build RSTorrent desktop application");
     application.run(|handle, event| match event {
         RunEvent::ExitRequested { api, .. } => {
-            let state = handle.state::<DesktopState>();
-            if state.shutdown.phase() != ShutdownPhase::FinalExit {
+            if let Some(state) = handle.try_state::<DesktopState>()
+                && state.shutdown.phase() != ShutdownPhase::FinalExit
+            {
                 api.prevent_exit();
                 request_application_shutdown(handle, false);
             }

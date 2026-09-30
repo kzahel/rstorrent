@@ -21,8 +21,9 @@ outside this allowance. The extension may
 require the desktop update outright, and a disclosed temporary Chromebook
 Android browser-control gap is acceptable with standalone Android as the
 fallback. Desktop and Android migration no longer require synchronized
-completion. Exact production ordering remains open; 241 implements local import, while
-installed legacy replacement and rollout remain unqualified.
+completion. Exact production ordering remains open; 241 implements local import
+and 242 adds managed host fencing and bounded installed macOS replacement.
+Remaining installed platforms and production rollout remain unqualified.
 
 ## North Star
 
@@ -86,7 +87,7 @@ SQLite and payload writes remain native. No engine runs in the extension.
 | --- | --- | --- | --- |
 | M-01 | Desktop extension control | Linux/Windows/macOS installed checkpoint complete in [`232`](232-desktop-extension-control.md); full rehearsal partial | Protected bootstrap, native picker, controlled bytes, shared library, singleton and Quit pass. Bounded intent/tray/browser lifecycle passes in [234](234-desktop-user-intent-and-background-lifecycle.md), including 64 reload/worker-stop cycles per guest and prompt view cleanup. Linux Quit/launch overlap is repaired in [235](235-linux-quit-launch-handoff.md). Broader endurance remains separate. |
 | M-02 | Legacy cohort inventory and fixtures | [233](233-legacy-desktop-fixture-cohort.md): bounded Linux/Windows v0.2.1 cohort complete | Seven profiles/eight records plus two labeled mutations per platform; closed snapshot/payload oracle passes. Broader releases, browser-store variants and macOS remain unqualified. |
-| M-03 | Legacy import and recovery | [241](241-atomic-legacy-desktop-import.md): local implementation and isolated evidence complete; installed gate open | Consistent source snapshots, identity/root mapping, existing latest-format torrent/settings preservation, duplicate skip-and-continue, bounded source outcomes, retry/crash recovery, held activation, exact recheck and preservation |
+| M-03 | Legacy import and recovery | [241](241-atomic-legacy-desktop-import.md): local implementation complete; [242](242-legacy-desktop-handoff-rehearsal.md): bounded installed macOS handoff complete | Atomic import/current-destination preservation, retry/crash/checker evidence plus managed old-host fencing, idle-host/registration failure, four-record installed import, missing roots, restart and source/payload preservation. Windows/Linux installed replacement and production/privacy/support qualification remain open. |
 | M-04 | Support/report continuity | Required before user cohort | Failure-page report, bounded migration/backend context, familiar voluntary feedback journey and disclosure verification |
 | M-05 | Installed desktop replacement rehearsal | Depends on M-01/03/04 | Old installed JSTorrent -> exact candidate -> restart/repair/rollback on macOS, Windows and Linux |
 | M-06 | Extension update coordination | [236](236-desktop-compatibility-refusal-and-recovery.md)/[237](237-macos-windows-package-recovery.md): selected three-platform beta matrix passes | Terminal refusal, attach-only recovery, open-page replacement, credential rotation, repair and same-schema rollback pass. [238](238-signed-desktop-channel-recovery.md) passes three-platform signed updating of an older published cohort. [240](240-signed-desktop-control-qualification.md) adds signed current-source 801 publication, native updates and installed control/helper qualification. Original legacy pairs and ChromeOS shipment gates remain open. |
@@ -276,17 +277,28 @@ production routing remain separately scoped.
   one completion report atomically, preserves current destination records,
   snapshots WAL, rejects live hosts and reuses the ordinary full checker.
   No per-record progress ledger or personal migration is used.
-- Next executable actions: qualify installed legacy replacement, old-host
-  relaunch fencing and support/privacy dispositions before production graduation.
+- M-03 installed follow-up: 242 fences managed legacy registrations only under
+  the future production identity, refuses same-user old processes before import
+  and engine startup, and shows asynchronous native startup guidance. A generated
+  macOS v0.2.1 replacement passes idle-host/registration failures, four-record
+  import, valid/corrupt rechecking, missing-root preservation, nine registered
+  refusal routes, Quit/restart and unchanged source data/payload. SQLite may
+  initialize empty WAL and transient SHM files; original database/nonempty WAL
+  bytes and KV stay unchanged. Current incubation does not claim the old host name.
+- Next executable actions: Windows/Linux installed legacy replacement and
+  production packaging, support/privacy/settings dispositions, branding and
+  extension/store coordination before graduation.
   Interrupted-update, physical sleep/wake
   and broader endurance evidence remain independent work.
 - Rehearsal A: **partial; three-platform installed control and bounded
-  lifecycle/transfer checkpoints complete**. Rehearsal B: **not run**;
+  lifecycle/transfer checkpoints complete**. Rehearsal B: **partial; bounded
+  generated installed macOS handoff complete in 242**;
   C: **partial, selected three-platform beta compatibility and published
   signed-cohort and current-source updates**. No migration-ready or rollout-ready
   claim. 241 passes local fixture import and restart evidence. No personal
-  migration
-  or installed legacy replacement rehearsal has run.
+  migration or production rollout has run. 242's unsigned local candidate does
+  not qualify signed production updating, actual store pairs, complete UI/privacy
+  continuity, other installed platforms or active-payload rollback.
 - Remaining campaign decisions: broader supported source formats, unsupported
   settings/privacy/support dispositions and exact replacement/
   extension release order, Android-control restoration timing, compatibility

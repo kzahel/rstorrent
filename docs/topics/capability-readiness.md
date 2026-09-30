@@ -14,8 +14,10 @@ companion continuity is an initial desktop gate. Campaign
 [231](../tactical/231-jstorrent-migration-working-campaign.md) and
 [desktop replacement](desktop-jstorrent-replacement.md) own the narrowed plan;
 Tactical [241](../tactical/241-atomic-legacy-desktop-import.md) now implements
-the atomic importer with local fixture/crash/checker evidence; installed legacy
-replacement and production graduation remain open.
+the atomic importer with local fixture/crash/checker evidence. Tactical
+[242](../tactical/242-legacy-desktop-handoff-rehearsal.md) adds production-only
+old-host fencing and a generated installed macOS replacement checkpoint.
+Windows/Linux installed replacement and production graduation remain open.
 
 Tactical [240](../tactical/240-signed-desktop-control-qualification.md) completes
 signed current-source delivery with [Latest 0.2.801](../evidence/desktop-latest-v0.2.801.md).
@@ -27,7 +29,7 @@ picker cleanup, explicit/passive relaunch and bounded registration repair.
 The Mac also installs the exact public DMG and recreates its bundled host.
 Physical sleep/wake, interrupted updates, broader endurance, Intel/minimum-macOS
 installed coverage and production graduation remain open. 241 supplies local
-importer evidence, not installed legacy qualification.
+importer evidence; 242 supplies bounded installed macOS handoff evidence.
 
 Selected three-platform beta replacement, rollback and native registration
 repair pass in [236](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
@@ -42,9 +44,10 @@ lock blocker is superseded by authorized VM recreation with verified stored
 credentials. Its attempted native suspend-to-idle did not recover and required
 a supported forced stop; native sleep/wake remains unqualified. Owned test state
 is removed and claims released. 240 supplies signed current-source delivery.
-Next: installed legacy replacement and old-host relaunch fencing for 241.
+Next: Windows/Linux installed legacy replacement and production/privacy/support
+qualification after 242's managed-route fencing and macOS checkpoint.
 Interrupted-update, physical sleep/wake and broader endurance evidence remain
-independent. Local importer evidence does not qualify installed replacement.
+independent. The macOS checkpoint does not qualify production graduation.
 
 Tactical [`234`](../tactical/234-desktop-user-intent-and-background-lifecycle.md)
 owns the accepted desktop lifetime follow-up: retain the tray/status-bar icon
@@ -1110,8 +1113,10 @@ hosted repeats.
   Interrupted updates, physical sleep and broader endurance remain separate
   gates. Linux's failed guest sleep attempt is recorded, not promoted to passing recovery evidence.
   Tactical **241** implements atomic desktop import with current-destination
-  preservation, process-crash and ordinary-checker evidence. Installed legacy
-  host fencing, cross-platform replacement and production rollout remain open.
+  preservation, process-crash and ordinary-checker evidence. **242** implements
+  managed legacy host fencing and passes a bounded installed macOS replacement.
+  Windows/Linux installed replacement, production/privacy/support qualification
+  and rollout remain open.
 
 - Complete **Tactical `214`**'s native platform notice and source-delivery
   review for the package lanes to be declared. Tactical `218` adopts and

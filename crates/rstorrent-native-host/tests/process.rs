@@ -58,3 +58,42 @@ fn malformed_process_input_never_contaminates_stdout() {
     assert!(output.stderr.starts_with(b"RSTorrent native host:"));
     assert!(output.stderr.len() < 1024);
 }
+
+#[test]
+fn retired_host_never_reads_launch_configuration_or_returns_authority() {
+    let owned = tempfile::tempdir().unwrap();
+    let suffix = if cfg!(windows) { ".exe" } else { "" };
+    let executable = owned.path().join(format!(
+        "{}fixture{suffix}",
+        rstorrent_native_host::legacy::REFUSAL_PREFIX
+    ));
+    std::fs::copy(env!("CARGO_BIN_EXE_rstorrent-native-host"), &executable).unwrap();
+    // A missing launch config is deliberate: this process must not consult one.
+    let mut child = Command::new(executable)
+        .arg(ORIGIN)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    for op in ["handshake", "takeOver", "kvSet", "start_control"] {
+        input.write_all(&framed(&format!(r#"{{"id":"{op}","op":"{op}","protocolVersion":1,"extensionId":"legacy","key":"source","value":"do not write"}}"#))).unwrap();
+    }
+    drop(input);
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let frames = decode_frames(&output.stdout).unwrap();
+    assert_eq!(frames.len(), 4);
+    for response in frames {
+        assert_eq!(response["ok"], false);
+        assert_eq!(response["type"], "Empty");
+        assert_eq!(
+            response["error"],
+            rstorrent_native_host::legacy::UPDATE_MESSAGE
+        );
+        assert_eq!(response.as_object().unwrap().len(), 4);
+    }
+    assert_eq!(std::fs::read_dir(owned.path()).unwrap().count(), 1);
+}

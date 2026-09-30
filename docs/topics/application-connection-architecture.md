@@ -2,6 +2,16 @@
 
 Topic: `application-connection-architecture`
 
+Tactical [242](../tactical/242-legacy-desktop-handoff-rehearsal.md) adds the
+future production desktop's retirement of `com.jstorrent.native`. That name
+targets a refusal-only helper accepting bounded released frames and returning
+update guidance, without launching a desktop, IO daemon, listener or semantic
+capability. Production registration failures and already-running same-user
+legacy processes stop startup before import; a second quiescence check precedes
+the new engine. Incubation retains its existing name and exact beta control
+origin. This is managed-route fencing, not revocation of manually retained old
+binaries or a legacy protocol bridge.
+
 Tactical [`236`](../tactical/236-desktop-compatibility-refusal-and-recovery.md)
 classifies desktop bootstrap version/operation/response and handshake-schema
 failures as terminal. The page hides/unmounts its application, stops retries

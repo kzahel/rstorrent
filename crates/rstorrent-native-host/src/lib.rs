@@ -1,4 +1,5 @@
 pub mod control;
+pub mod legacy;
 
 use std::fmt;
 use std::fs;
