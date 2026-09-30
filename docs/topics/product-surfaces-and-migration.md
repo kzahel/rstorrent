@@ -2,6 +2,44 @@
 
 Topic: `product-surfaces-and-migration`
 
+## ChromeOS Android Cutover Contract
+
+Maintainer direction on 2026-09-30 accepts independently staggered extension
+and Android updates. Crostini automatic legacy migration is outside this
+cutover. Android remains the sole successor engine, catalog and SAF owner;
+the extension becomes a detachable presentation of that library.
+
+| Installed extension | Installed Android app | Required outcome |
+| --- | --- | --- |
+| Legacy | Legacy | Existing companion behavior continues. |
+| Successor | Legacy | Terminal Android-update requirement; no legacy engine, pairing or raw I/O fallback. |
+| Legacy | Successor | Android imports and operates independently; old extension control is unavailable until updated. |
+| Successor | Successor | Connect to the migrated Android library after migration completes; approve fresh pairing when required. |
+
+Pinned legacy Android 1.0.24's extension routes session and shared configuration
+KV through the companion into Android's `jstorrent_kv.db`, which the existing
+atomic Android importer consumes. Its engine runs in the browser but its normal
+connected library persists in Android. Browser-local fallback and releases
+before remote KV routing need separate historical qualification; this is not
+an all-historical-extension migration claim.
+
+Migration must finish before successor companion admission. Keep source files,
+payload and grants; current latest-format destination owners win and duplicate
+torrents do not fail the import. No old verified-bit authority, credentials,
+cross-app library copying or per-record migration ledger is introduced.
+
+Android explains that the library is available there and extension control
+requires an updated extension. The successor extension distinguishes a
+recognized legacy Android service from an unavailable service, and presents
+an explicit update/retry path. Very old extensions can retain their existing
+connection error; a legacy-extension guidance release is helpful but optional.
+Correctness cannot depend on receiving an intermediate extension release or
+on which store updates first. Signed/store delivery and production identities
+remain separately qualified release work.
+
+Tactical [248](../tactical/248-chromeos-staggered-upgrade.md) owns bounded
+compatibility presentation and the extension-driven installed rehearsal.
+
 Tactical [246](../tactical/246-android-legacy-import-and-installed-upgrade.md)
 implements Android best-effort import and a controlled installed replacement
 runner using the actual pinned released APK, a disposable shared certificate

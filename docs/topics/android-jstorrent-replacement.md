@@ -172,7 +172,7 @@ Potential investment before cutover (unsupported settings are dropped):
 | --- | --- |
 | VPN-only routing and low-battery shutdown | Not implemented; no migration gate. Decide whether to invest before replacing users relying on these restrictions. |
 | Search plugins, old locale/theme overrides, companion timers and extension pairing | Drop unsupported preferences/credentials; retain original private source files. Re-pair through the current companion model when enabled. Temporary extension-control loss remains accepted. |
-| Browser-owned legacy sessions | Android imports the native SQLite session; old extension/browser-owned torrent metadata needs its own migration strategy. Roots/preferences still carry without a native DB. |
+| Historical browser-local sessions | Pinned 1.0.24 routes connected extension session/settings to the same Android SQLite source; qualify its ordinary writer in 248. Browser-local fallback and older pre-remote-KV releases still require a separate disposition. Roots/preferences carry without a native DB. |
 | Per-torrent peer limits, old custom listening-port policy and other unmapped engine knobs | Drop unmapped knobs. Audit user demand and add only equivalent mappings or qualified capabilities in a follow-up. |
 | Private fallback file actions / root management | Existing payload and engine checking carry as a path root; broader Compose open/share/remove/clear/delete journeys for that imported path root still need qualification. |
 | API 26/27 | Old APK supports them; current app requires 28. Decide the supported cutover cohort explicitly. |
@@ -731,6 +731,21 @@ half-readable profile. A staged import or versioned cutover needs an explicit
 commit point and repeatable crash cases.
 
 ## Production Extension Rollout
+
+The accepted [ChromeOS cutover contract](product-surfaces-and-migration.md#chromeos-android-cutover-contract)
+permits either update order and a temporary old-extension/new-Android control
+gap. Successor-extension/legacy-Android requires an explicit Android update,
+without running a legacy engine or issuing old pairing/storage commands.
+Successor Android imports before companion admission, remains usable by itself,
+and explains how to restore browser control. Fresh successor pairing never
+inherits the legacy token. Crostini automatic migration is excluded.
+
+The existing importer covers the normal pinned connected extension's Android
+KV destination; its browser runtime ownership does not imply browser-owned
+persistence. Tactical 248 must prove this with the ordinary legacy extension
+writer. Older browser-local fallback is explicitly unqualified. A preparatory
+legacy-extension guidance release is optional, and skipped intermediate
+versions must not invalidate the handoff.
 
 Tactical `194` proves the new companion implementation but deliberately
 excludes the production JSTorrent extension. Replacement therefore needs a
