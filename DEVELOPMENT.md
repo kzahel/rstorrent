@@ -1348,6 +1348,24 @@ Only the source seed uses it; successor assertions use ordinary instrumentation.
 This qualifies the controlled old APK/source format, not Play signing or every
 historical profile. The replacement topic owns cutover gaps and wider gates.
 
+Extension-driven mode uses the pinned released extension in owned Playwright
+Chromium, its actual settings/intake/session writers, real old Android pairing
+and two SAF roots. It exercises old/new version pairs, installed import/resume,
+restart and fresh successor pairing/control. Package the successor extension
+first, then run serially on API 28 and 35:
+
+```bash
+npm run package --prefix clients/extension
+PYTHONDONTWRITEBYTECODE=1 uv run --project tests/interop --locked \
+  python clients/android/scripts/run-legacy-upgrade.py --api 35 --source companion
+```
+
+The runner emulates the fixed ARC address inside its owned rooted AVD and
+pre-grants only the extracted successor extension's exact optional permission.
+It does not alter phone product policy, attached devices, physical apps or
+shipping extension manifests. This is controlled evidence, not actual store
+or physical ARC replacement; Tactical 248 records its precise limits.
+
 Tactical `003`'s self-contained Android probe builds both supported native
 ABIs and targets only an explicitly verified environment:
 

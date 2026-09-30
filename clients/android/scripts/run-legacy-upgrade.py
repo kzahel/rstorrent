@@ -3,6 +3,8 @@
 
 The released APK's picker writes real roots/grants. Default mode seeds source
 fixtures; --source ordinary drives old UI/intake writers and loopback downloads.
+--source companion exercises the released extension's ordinary engine/session
+writers and both mixed-version pairs, followed by fresh successor control.
 Both APKs and instrumentation use one disposable certificate; no release key.
 """
 from __future__ import annotations
@@ -54,7 +56,7 @@ def instrument(target, method, writer_spec=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--api", choices=["28", "35"], default="35")
-    parser.add_argument("--source", choices=["seeded", "ordinary"], default="seeded")
+    parser.add_argument("--source", choices=["seeded", "ordinary", "companion"], default="seeded")
     args = parser.parse_args()
     matrix = load_matrix()
     avdmanager = matrix.sdk_tool("avdmanager")
@@ -85,13 +87,24 @@ def main():
             probe = matrix.load_probe()
             session = probe.start_avd(name, args.api)
             target = session.target
-            if args.source == "ordinary":
+            if args.source in ("ordinary", "companion"):
                 from legacy_writer_upgrade import WriterOracle, prepare
                 oracle = WriterOracle(owned)
                 resources.callback(oracle.close)
                 target.run(["install", str(apks["old"])], timeout=120)
+                browser = None
+                if args.source == "companion":
+                    from legacy_companion_upgrade import CompanionBrowser, prepare
+                    # Owned Google APIs AVD only: expose the product ARC bind
+                    # address locally; never change an attached physical device.
+                    target.run(["root"])
+                    target.run(["wait-for-device"])
+                    target.shell(["ip", "address", "add", "100.115.92.2/32", "dev", "lo"])
+                    target.shell(["iptables", "-t", "nat", "-A", "OUTPUT", "-p", "tcp", "-d", "127.0.0.1", "--dport", "3030", "-j", "DNAT", "--to-destination", "100.115.92.2:3030"])
+                    browser = CompanionBrowser(target, owned)
+                    resources.callback(browser.close)
                 try:
-                    spec = prepare(target, probe, owned, oracle)
+                    spec = prepare(target, probe, owned, oracle, browser) if browser else prepare(target, probe, owned, oracle)
                 except BaseException:
                     print([alert.message() for alert in oracle.session.pop_alerts()][-50:], flush=True)
                     print([(n.attrib.get("text"), n.attrib.get("content-desc")) for n in probe.ui_nodes(target) if n.attrib.get("text") or n.attrib.get("content-desc")], flush=True)
@@ -103,9 +116,16 @@ def main():
                 if target.shell(["pidof", PACKAGE], check=False).stdout.strip():
                     raise RuntimeError("old process survived package replacement")
                 oracle.release_rate_limit()
+                if browser:
+                    browser.command("old-retired")
                 instrument(target, "verifyOrdinaryWriterUpgrade", spec)
                 target.shell(["am", "force-stop", PACKAGE])
                 instrument(target, "verifyOrdinaryWriterUpgrade", spec)
+                if browser:
+                    from legacy_companion_upgrade import verify_successor
+                    verify_successor(target, browser, owned)
+                    print(json.dumps({"companion_writer_upgrade": {"api": int(args.api), "extension": "extension-v1.1.1", "old_new_pairs": "passed", "partial_resume_restart": "passed"}}))
+                    return
                 target.run(["reboot"])
                 target.run(["wait-for-device"], timeout=90)
                 deadline = time.monotonic() + 90

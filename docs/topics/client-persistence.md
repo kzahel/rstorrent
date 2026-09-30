@@ -2,6 +2,13 @@
 
 Topic: `client-persistence`
 
+Tactical [248](../tactical/248-chromeos-staggered-upgrade.md) confirms that the
+pinned connected legacy ChromeOS extension persists session/shared settings
+through Android KV, rather than browser storage. Its ordinary released writer
+passes installed import/resume/restart on API 28/35 using the existing atomic
+Android importer. Browser-local fallback and older remote-KV-free releases
+remain separately unqualified; no browser library copy or ledger is added.
+
 Tactical [247](../tactical/247-android-ordinary-writer-upgrade.md) adds API 28/35
 upgrade evidence from the released app's actual settings/intake/session writers:
 two persisted SAF grants, paused and incomplete/running torrents, successor

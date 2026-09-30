@@ -2,6 +2,15 @@
 
 Topic: `client-surfaces`
 
+Tactical [248](../tactical/248-chromeos-staggered-upgrade.md) adds terminal
+Android-update and extension-update guidance to the packaged companion page,
+manual Retry and a Google Play action. Current compatible service discovery
+wins; old status discovery carries no credentials or legacy commands. Imported
+ChromeOS Compose libraries explain standalone use and updating/re-pairing the
+extension. Controlled API 28/35 released-extension writers cross an installed
+Android replacement into the same successor owner, with fresh pairing/control.
+This does not qualify production store identities or physical ARC replacement.
+
 Tactical [246](../tactical/246-android-legacy-import-and-installed-upgrade.md)
 implements Android legacy migration before the native application opens.
 Unmetered, lifecycle, wake and selection preferences use existing product

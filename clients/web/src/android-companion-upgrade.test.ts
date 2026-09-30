@@ -75,4 +75,21 @@ describe("ChromeOS staggered upgrades", () => {
     await expect(connectAndroidCompanion(() => {}, abort.signal)).rejects.toThrow("owned test canceled");
     expect(set).not.toHaveBeenCalled();
   });
+  it("cancels an oversized response stream before accepting a service", async () => {
+    const canceled = vi.fn();
+    const abort = new AbortController();
+    let legacyProbes = 0;
+    setup(async (url) => {
+      if (url.port === "3030") {
+        return new Response(new ReadableStream<Uint8Array>({
+          start(controller) { controller.enqueue(new Uint8Array(65537)); },
+          cancel: canceled,
+        }));
+      }
+      if (url.pathname === "/status" && ++legacyProbes === 5) abort.abort(new Error("stop after bounded probe"));
+      throw new TypeError("unavailable");
+    });
+    await expect(connectAndroidCompanion(() => {}, abort.signal)).rejects.toThrow("stop after bounded probe");
+    expect(canceled).toHaveBeenCalledOnce();
+  });
 });

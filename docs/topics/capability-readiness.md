@@ -2,6 +2,14 @@
 
 Topic: `capability-readiness`
 
+Tactical [248](../tactical/248-chromeos-staggered-upgrade.md) completes the
+bounded ChromeOS staggered-update presentation and controlled extension-driven
+installed rehearsal. Released extension/Android ordinary writers, supported
+settings, two SAF roots/grants, paused/partial torrents, installed import/resume,
+restart, both mixed-version dispositions and fresh successor pairing/control
+pass on API 28/35. Physical/store delivery, production extension identity
+replacement and historical browser-local sessions remain unqualified.
+
 Tactical [247](../tactical/247-android-ordinary-writer-upgrade.md) completes
 ordinary released Android writers and controlled installed upgrades on API 28/35:
 two SAF roots, supported settings, paused/partial torrents, running replacement,

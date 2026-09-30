@@ -39,6 +39,12 @@ remain separately qualified release work.
 
 Tactical [248](../tactical/248-chromeos-staggered-upgrade.md) owns bounded
 compatibility presentation and the extension-driven installed rehearsal.
+That controlled checkpoint passes on owned API 28/35 emulators: the actual
+released extension writes the Android source, the installed upgrade preserves
+settings/torrents/SAF access, mixed pairs settle as above, and fresh successor
+pairing controls the same migrated owner. It does not qualify physical/store
+replacement, actual production extension identity updates or browser-local
+historical libraries.
 
 Tactical [246](../tactical/246-android-legacy-import-and-installed-upgrade.md)
 implements Android best-effort import and a controlled installed replacement

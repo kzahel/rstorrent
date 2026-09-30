@@ -2,6 +2,14 @@
 
 Topic: `web-ui-design`
 
+Tactical [248](../tactical/248-chromeos-staggered-upgrade.md) adds actionable
+ChromeOS mixed-version guidance: an old Android service requires an app update
+with Google Play and Retry; an incompatible new protocol requires an extension
+update. Unavailable service guidance explains direct Android use while updates
+arrive. The packaged page never starts a legacy engine or old control fallback.
+Controlled API 28/35 browser rehearsals render and control the migrated Android
+library after fresh pairing; production store replacement remains separate.
+
 Tactical [244](../tactical/244-unavailable-storage-presentation.md) corrects
 shared React adaptation of `awaiting_storage`: blocked progress becomes Needs
 attention with a Storage unavailable table label; active storage preparation

@@ -124,7 +124,8 @@ class LegacyAndroidUpgradeTest {
                 if (index == 1) assertTrue("source was already complete before upgrade", source.getLong("downloaded") < case.getInt("size"))
             }
         }
-        assertTrue(context.getSharedPreferences("jstorrent_settings", Context.MODE_PRIVATE).getBoolean("wifi_only_enabled", false))
+        val expectedWifi = spec.optBoolean("wifi_only_enabled", true)
+        assertEquals(expectedWifi, context.getSharedPreferences("jstorrent_settings", Context.MODE_PRIVATE).getBoolean("wifi_only_enabled", false))
         ProductInteractionRegistry.setActivityVisible(true)
         val rule = androidx.test.rule.ServiceTestRule.withTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
         context.startForegroundService(Intent(context, ProductEngineService::class.java))
@@ -138,7 +139,8 @@ class LegacyAndroidUpgradeTest {
                     }
                 }
             }
-            assertTrue(ProductNetworkPreference.read(context))
+            assertEquals(expectedWifi, ProductNetworkPreference.read(context))
+            assertTrue(ProductLegacyAndroidMigration.hasMigratedSource(context))
             assertFalse(state.clientSettings!!.configured.dhtEnabled)
             assertFalse(state.clientSettings!!.configured.peerExchangeEnabled)
             assertEquals(org.rstorrent.session.uniffi.EncryptionPolicy.DISABLED, state.clientSettings!!.configured.encryption)
@@ -166,6 +168,54 @@ class LegacyAndroidUpgradeTest {
                 assertEquals(case.getString("sha256"), hex(MessageDigest.getInstance("SHA-256").digest(bytes)))
             }
         } finally {
+            rule.unbindService()
+            context.stopService(Intent(context, ProductEngineService::class.java))
+            ProductInteractionRegistry.setActivityVisible(false)
+        }
+    }
+
+    /** Explicit owned-emulator transport rehearsal; phone product guard stays on. */
+    @Test fun serveMigratedCompanion() = runBlocking {
+        org.junit.Assume.assumeTrue("requires owned upgrade runner", enabled)
+        val ready = File(context.cacheDir, "t248-companion-ready")
+        val finished = File(context.cacheDir, "t248-companion-finished")
+        ready.delete(); finished.delete()
+        ProductInteractionRegistry.setActivityVisible(true)
+        val rule = androidx.test.rule.ServiceTestRule.withTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        context.startForegroundService(Intent(context, ProductEngineService::class.java))
+        val service = (rule.bindService(Intent(context, ProductEngineService::class.java)) as ProductEngineService.LocalBinder).service
+        // Access the existing sole owner: do not open another engine/profile.
+        val field = ProductEngineService::class.java.getDeclaredField("client").apply { isAccessible = true }
+        var client: org.rstorrent.bootstrap.uniffi.AndroidApplicationClient? = null
+        try {
+            withTimeout(60000) { service.state.first { it.ready && it.torrents.size == 2 } }
+            assertTrue(ProductLegacyAndroidMigration.hasMigratedSource(context))
+            client = field.get(service) as org.rstorrent.bootstrap.uniffi.AndroidApplicationClient
+            assertEquals(3030.toUShort(), client.startChromeosCompanion())
+            ready.writeText("ready")
+            var approvals = 0
+            withTimeout(120000) {
+                while (!finished.exists()) {
+                    client.pendingCompanionPairing()?.let { pending ->
+                        client.approveCompanionPairing(pending.requestId)
+                        approvals += 1
+                    }
+                    delay(100)
+                }
+            }
+            assertEquals("fresh successor pairing", 1, approvals)
+            withTimeout(20000) {
+                while (true) {
+                    val paused = SQLiteDatabase.openDatabase(File(context.filesDir, "product-profile/session.db").absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { database ->
+                        database.rawQuery("SELECT count(*) FROM torrents WHERE desired_state='paused'", null).use { rows -> rows.moveToFirst(); rows.getInt(0) }
+                    }
+                    if (paused == 2) break
+                    delay(100)
+                }
+            }
+        } finally {
+            client?.stopChromeosCompanion()
+            ready.delete(); finished.delete()
             rule.unbindService()
             context.stopService(Intent(context, ProductEngineService::class.java))
             ProductInteractionRegistry.setActivityVisible(false)

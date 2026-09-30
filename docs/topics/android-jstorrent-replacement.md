@@ -2,6 +2,17 @@
 
 Topic: `android-jstorrent-replacement`
 
+Tactical [248](../tactical/248-chromeos-staggered-upgrade.md) implements the
+accepted independently staggered ChromeOS update contract and passes controlled
+API 28/35 installed rehearsals using the released extension's actual
+settings/intake/session writers. The connected browser engine saves in Android
+SQLite. Two torrents, mapped settings and SAF bindings/grants survive running
+replacement and restart; the successor extension pairs freshly to that same
+Android owner and controls the migrated library. Legacy Android requires an
+update; the old extension loses control after Android replacement. Physical
+installed replacement, store/production identities and historical browser-local
+fallback remain separate gates. Crostini automatic migration is excluded.
+
 Tactical [247](../tactical/247-android-ordinary-writer-upgrade.md) completes
 ordinary released Android writers and controlled installed upgrades on API 28/35:
 two SAF roots, supported settings, paused/partial torrents, running replacement,

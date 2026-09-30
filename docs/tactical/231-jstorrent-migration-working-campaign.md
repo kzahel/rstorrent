@@ -235,6 +235,14 @@ production routing remain separately scoped.
 
 ## Restart Checkpoint
 
+- ChromeOS bounded update-order checkpoint: 248 records the independently
+  staggered extension/Android contract, excludes Crostini automatic migration,
+  implements update/retry guidance, and passes API 28/35 controlled installed
+  replacement from real released extension session/settings writers. Fresh
+  pairing renders and controls the same Android-owned imported library. Source
+  artifacts, emulator transport seams and precise physical/store/historical
+  limits are recorded there; no personal installed library is replaced.
+
 - Completed: source survey and draft field mapping in the living topic;
   read-only Machine Control discovery/doctor checks; this campaign plan.
 - Completed first control checkpoint: Tactical `232` implements one desktop

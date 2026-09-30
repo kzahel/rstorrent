@@ -2,6 +2,12 @@
 
 Topic: `android-saf-storage`
 
+Tactical [248](../tactical/248-chromeos-staggered-upgrade.md) extends controlled
+API 28/35 upgrade evidence to the released extension engine/session writer:
+explicit per-torrent roots A/B, two real SAF grants, independent completed and
+resumed file hashes, restart and successor extension control retain the same
+Android bindings. The physical installed library remains untouched.
+
 Tactical [247](../tactical/247-android-ordinary-writer-upgrade.md) adds API 28/35
 upgrade evidence from the released app's actual settings/intake/session writers:
 two persisted SAF grants, paused and incomplete/running torrents, successor
