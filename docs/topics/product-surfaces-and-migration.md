@@ -2,6 +2,14 @@
 
 Topic: `product-surfaces-and-migration`
 
+Tactical [245](../tactical/245-android-legacy-inventory-and-import-contract.md)
+starts Android migration with a pinned Android 1.0.24 APK/source inventory,
+13 generated format cases and the importer/upgrade contract in
+[android-jstorrent-replacement](android-jstorrent-replacement.md). There is
+one Android source session, with SAF and explicit private-download bindings.
+Importer implementation and real package/grant upgrade remain unqualified;
+the accepted temporary ChromeOS extension-control gap remains separate.
+
 Maintainer direction on 2026-09-30 simplifies the production transition:
 replace JSTorrent desktop through its existing branded update and import into
 a fresh successor catalog or an existing latest-format RSTorrent profile.

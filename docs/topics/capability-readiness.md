@@ -2,6 +2,12 @@
 
 Topic: `capability-readiness`
 
+Tactical [245](../tactical/245-android-legacy-inventory-and-import-contract.md)
+completes Android legacy source/artifact inventory and generated format
+validation: 13 cases and 10 Python tests. It scopes the one-transaction importer,
+derived SAF registry and same-package upgrade matrix without implementing
+conversion or qualifying an Android upgrade. JAR-004/005/010 remain open.
+
 Desktop migration direction on 2026-09-30 selects a branded JSTorrent
 replacement update into a fresh successor catalog, with simple allowance for
 an existing latest-format RSTorrent profile: keep existing torrents/settings,

@@ -2,6 +2,12 @@
 
 Topic: `client-surfaces`
 
+Tactical [245](../tactical/245-android-legacy-inventory-and-import-contract.md)
+completes the pinned Android legacy inventory/format checkpoint and scopes its
+importer and same-package upgrade matrix. Thirteen generated cases and ten
+Python tests pass; no Android package, production key, grants or UI were
+changed. The importer and installed/Play replacement remain open.
+
 Tactical [240](../tactical/240-signed-desktop-control-qualification.md) completes
 signed current-source delivery with [Latest 0.2.801](../evidence/desktop-latest-v0.2.801.md).
 Exact-source CI, five signed package lanes, public signatures/checksums and both

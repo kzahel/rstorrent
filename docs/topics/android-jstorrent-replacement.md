@@ -2,6 +2,179 @@
 
 Topic: `android-jstorrent-replacement`
 
+## Android Migration Inventory, 2026-09-30
+
+Tactical [245](../tactical/245-android-legacy-inventory-and-import-contract.md)
+pins and inspects the GitHub-released `android-v1.0.24` APK and source, adds
+13 independently authored format fixtures and a temporary SQLite/WAL audit,
+and scopes the importer and installed upgrade matrix below. This completes an
+inventory checkpoint, not the importer, an Android upgrade, or `JAR-004`.
+No personal profile, device, production key or extension has been changed.
+
+### Pinned Source And Artifact
+
+- Tag `android-v1.0.24`, source
+  `7b454be4410385f9c4f7f135cb6b16194a2b0409`; GitHub publication
+  `2026-07-23T09:42:17Z`. This selects one explicit source baseline, not the
+  latest Play-installed cohort or all historical releases.
+- [Released APK](https://github.com/kzahel/JSTorrent/releases/download/android-v1.0.24/app-release.apk):
+  11,014,738 bytes, SHA-256
+  `a938b46825157668e804d1efbf01a2cce461a8e23ce1028e909aa919145cfa84`.
+  Downloaded bytes match GitHub's asset digest. SDK `apkanalyzer` confirms
+  `com.jstorrent.app`, version code `24`, version `1.0.24`, minimum API 26 and
+  target API 36. Public APK signature verification passes; certificate SHA-256
+  `ccb5af8e44d626e9aefb1f0fbd8496dbf23ad27da9347248e71fb3ce70044915`.
+  This public certificate is not proof of Play App Signing continuity.
+- AAB metadata: 15,632,162 bytes, GitHub asset SHA-256
+  `ae61749dd4a31d032ed6ca2993782bbf9d3804bb3bd842124bbd53bc0f929139`.
+  The AAB was not downloaded, signed, or installed in this checkpoint.
+
+### Storage And Authority Mapping
+
+There is one Android session per installed app sandbox, with no desktop-style
+source profiles to union. The independent RSTorrent beta cannot read another
+package's private database or inherit its grants. The eventual in-place
+replacement must use the existing package/signing lane; no cross-package
+filesystem bypass or transfer of grant strings supplies that authority.
+
+| Legacy authority | Exact source format | Proposed successor disposition |
+| --- | --- | --- |
+| `databases/jstorrent_kv.db` | SQLite user version 1; `kv(key TEXT PRIMARY KEY, value TEXT)` permits null values | Bounded read-only SQLite backup including WAL, before opening any engine; retain source unchanged. Unknown source versions fail visibly. |
+| `session:torrents` | JSON index version 2; v1 identity, file/magnet source, original magnet and added time | Validate through the shared Rust intake path, import supported distinct identities into one `default` catalog; current destination identities win unchanged. |
+| `session:torrent:<hash>:torrentfile` / `:infodict` | JSON-string-wrapped base64; native reader accepts whitespace and URL-safe alphabet | Preserve exact source where available; authenticate cached info and metainfo identities. Bounded malformed records are reported/skipped. The format audit is not the metainfo validator. |
+| `:state` | active/stopped/queued/awaitingFileSelection; optional root key, queue position, Normal=0/Skip=1 priorities and `magnetSelectOnly` | Preserve supported run/selection intent. Stopped magnets remain network-inactive until explicit Resume; held file selection stays held. Do not replace missing binding with today's default. |
+| Foreign state evidence | bitfield, piece count, transferred totals, timestamps and peer caches | Import no trusted have state or counters; known metadata enters ordinary full checking. Preserve payload independently. |
+| `files/roots.json` | `roots[]`: opaque 16-hex key, URI, `display_name`, stale health/removable/volume hints | Bind each torrent to its exact source root. Import supported tree locators into the platform registry under stable destination IDs; verify real retained read/write grants and provider health. Lost access retains a repairable root. |
+| OS persisted URI permissions | Runtime `ContentResolver.persistedUriPermissions` | Reuse only actual retained read/write grants after the same-package upgrade. Never infer access from JSON, `last_stat_ok`, a copied URI, or backup restoration. |
+| `files/downloads` | Native `FileBindings::resolveRoot` explicitly maps empty or `default` root keys here | Preserve this app-private payload. Scope an exact path-backed handoff separately from SAF; absent/unknown keys must not be guessed into it. Never create a missing old root during discovery. |
+| `config:*` in KV | JSON engine settings plus `defaultRootKey` | Reuse the desktop closed mapping where semantics match; preserve a latest-format destination's settings/default. Explicitly classify Android-only or unsupported controls; no blind preference copy. |
+| `shared_prefs/jstorrent_settings.xml` | Android-only booleans/strings, including networking and lifecycle | Read a closed, bounded allowlist before engine admission. Treat malformed safety values as review-required. See the policy mapping below. |
+| `shared_prefs/jstorrent_auth.xml` | Legacy raw-I/O pairing and standalone tokens, extension/install IDs and mode preferences | Preserve source for recovery; import no legacy credentials into the semantic companion. Require fresh pairing when browser control returns. The temporary ChromeOS gap is accepted. |
+| `shared_prefs/jstorrent_metrics.xml`, `files/search_plugins.json`, caches | Historical metrics/review state and downloaded plugin definitions | Preserve old files, import neither historical metric identity/counters nor executable plugins. Existing feature-disposition/privacy gates remain authoritative. |
+
+The pinned root writer actually uses the first 16 hex characters of SHA-256
+over the exact URI string; its salted-key comment is stale. Keys remain opaque
+to the importer and must not be rewritten merely from a normalized URI.
+Root-store read errors currently fall back to an empty config: the successor
+must report corruption rather than adopt that fallback as a successful empty
+migration. Nullable KV state and unknown root keys are explicit failure cases.
+
+### Android Preference And Startup Policy
+
+The proposed import mapping is narrow:
+
+- `wifi_only_enabled` maps to existing **Unmetered networks only**. The pinned
+  `NetworkRestrictionEnforcer::computeRestrictionStatus` already tests
+  `isUnmetered`, despite the old Wi-Fi label. Establish the initial prerequisite
+  before any metadata/discovery/peer owner; preserve it across restart.
+- Enabled `vpn_only_enabled` requires review because RSTorrent has no qualified
+  VPN-bound networking. Preserve its source value and fail closed before
+  network startup. A paused torrent alone is insufficient: metadata acquisition,
+  DHT and listener generations also need to remain blocked. The implementation
+  tactical must define the visible acknowledgement/continuation contract; this
+  inventory does not authorize silently retiring that privacy restriction.
+- `background_downloads_enabled` and `when_downloads_complete` have existing
+  lifecycle equivalents. Preserve explicit opt-in and stop/close versus
+  keep-seeding choice within their current permission/admission rules.
+  `cpu_wake_lock_enabled` maps to the existing active-work preference.
+- `show_file_selection` maps to the catalog add-selection preference. Theme
+  may map only supported values. Unsupported language/plugin/battery behavior
+  needs the existing release disposition, not silent claims of parity.
+  Enabled low-battery shutdown is another review-required safety setting.
+- Do not migrate old notification-prompt suppression, companion tokens/timers,
+  install IDs, metrics, or review state. Retained OS notification permissions
+  and new channel visibility are runtime facts to inspect.
+
+### Importer Boundary And Commit Point
+
+The next bounded implementation uses the common validated torrent/selection/
+settings conversion, with a dedicated Android source adapter. Desktop path
+discovery, profile union and native-host fencing are inapplicable. Do not fake
+a desktop `rpc-info.json`, turn a tree URI into a filesystem path, or replay
+ordinary add commands one at a time as a partially committed migration.
+
+1. Kotlin owns same-package source discovery, read-only roots/preferences,
+   runtime grant observations and startup admission. The dormant hook must run
+   only for the eventual production identity, before root reconciliation or
+   `AndroidApplicationClient.open`; incubation must not inspect personal legacy
+   state. Source reading runs in the existing bounded startup owner and has
+   observable cancellation/termination; no detached migration task.
+2. Rust owns bounded source validation, duplicate/current-owner policy and
+   strict fresh-or-current destination opening. Never fall through the normal
+   incubation old-schema reset. Start from desktop limits and the current
+   500-torrent/32-root catalog bounds; record exact adopted byte/time limits in
+   the implementation tactical.
+3. One catalog transaction includes fresh schema/settings, roots, torrent
+   sources/intent, pending verification, the private initial root-binding
+   manifest and one completion report. No per-torrent migration ledger. Existing
+   latest-format records/settings win; corrupt source records do not crash
+   unrelated imports. Destination failure rolls back the transaction.
+4. The Kotlin SAF registry is derived from committed root bindings **before
+   opening the engine**, not a second independently committed migration
+   authority. Replay only still-registered catalog roots missing from the
+   registry; preserve existing/repaired entries. This makes process death after
+   catalog commit but before preference persistence retryable without undoing
+   repairs or resurrecting removed roots. Test this ordering explicitly.
+5. Grant/provider loss yields retained unavailable roots and repair guidance;
+   network-policy review blocks startup before any network task. Only then open
+   the ordinary application/checker. Checking establishes have evidence; no
+   payload copy, deletion or root creation belongs to conversion.
+
+This dependency direction stays Kotlin platform adapter -> Rust session/store
+conversion -> deterministic protocol/intake validation. Platform URIs and OS
+grant facts remain private native state rather than shared public view DTOs.
+The generated native import boundary and both Android ABIs require validation
+when implementation lands.
+
+### Installed Upgrade Matrix And Remaining Gates
+
+First use a task-owned same-package old-format writer and successor debug
+candidate signed by the **same disposable test key**, with no production key
+use. Make real SAF selections, write the source DB/preferences, and produce
+known payload through normal provider access. Install the successor with data
+retained; no uninstall/clear-data between versions. This proves a controlled
+source-format upgrade, not an actual old-app or Play update.
+
+Then qualify the exact old release and actual release signing/update lane in
+a separately authorized campaign. The public GitHub APK certificate does not
+by itself establish the Play-delivered certificate. Current RSTorrent minimum
+API 28 differs from the old APK's API 26: explicitly account for API 26/27 users
+before declaring the supported production replacement cohort.
+
+Required assertions cover fresh/empty, intact/corrupt payload, stopped/active/
+queued/held metadata, stopped pending magnets, multiple roots, private default
+storage, revoked grants/offline volume, malformed/nullable/oversized source,
+current duplicates/settings, crash before commit and between commit/registry,
+restart/reboot, repair without changed binding, and no import resurrection
+after removal. Independently hash payload and inspect catalog/verified state;
+prove policy-restricted startup has zero network owners, including metadata
+and DHT. Source/payload remain unchanged except ordinary checking bookkeeping.
+
+The actual old APK exports `MainActivity`, `LinkHandlerActivity`,
+`NativeStandaloneActivity`, `PairingApprovalActivity` and `AddRootActivity`,
+with old `IoDaemonService` and `ForegroundNotificationService` owners. Inventory
+stale notification PendingIntents, deep links and extension activations against
+the new manifest; retire old component routes deliberately and preserve useful
+torrent-intake outcomes. No legacy raw-I/O backend is retained. APK inspection
+shows no custom process names for these old owners; installed replacement still
+needs process-quiescence evidence.
+
+`JAR-004`, `JAR-005` and `JAR-010` remain open. Android importer implementation,
+actual grant/package upgrade, production branding/component compatibility,
+privacy/support feature dispositions, signed Play continuity and extension
+rollout have not been proved by the generated audit.
+
+### Inventory Evidence
+
+`tests/fixtures/legacy-android-v1.0.24` contains 13 generated cases/12 index
+records. The read-only temporary SQLite/WAL audit classifies seven format
+candidates (six metadata, one pending magnet), reports unresolved roots/private
+storage and policy review, and reports zero verified pieces throughout. Ten
+Python tests pass, including source preservation, fixture reproducibility,
+nullable values, URL-safe/whitespace binary, stale healthy hints, unknown future
+index, root bounds/ambiguity, private storage, cached-info mismatch and output
+privacy. No installed Android test or Rust importer ran in 245.
+
 Maintainer direction on 2026-09-30 permits temporary loss of ChromeOS
 extension control of the Rust Android app during the JSTorrent replacement.
 Standalone Android remains the usable fallback, with explicit extension copy
@@ -615,10 +788,11 @@ live run.
 
 ## Recommended Next Work
 
-1. Create the bounded `JAR-004` production handoff and legacy-state tactical.
-   It fixes the candidate identity, migration/reset boundary, payload safety,
-   signing inputs, and exact old-version fixture before code changes make
-   accidental compatibility promises.
+1. Implement the bounded Android importer/upgrade slice from 245's pinned
+   inventory, source-format fixtures and contract above. Settle the safety-policy
+   review hold and committed root-binding bootstrap before code changes, then
+   prove a disposable same-package real-SAF upgrade. JAR-004's actual release
+   artifact/signing/installed cohort remains separate.
 2. Preserve completed Tactical
    [`197`](../tactical/197-android-external-torrent-intake.md) as the `JAR-006`
    external-intake regression gate while the provisional product identity is

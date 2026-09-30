@@ -289,6 +289,15 @@ or source is imported.
 
 ## JSTorrent
 
+Tactical [245](tactical/245-android-legacy-inventory-and-import-contract.md)
+selects Android release `android-v1.0.24`, source
+`7b454be4410385f9c4f7f135cb6b16194a2b0409`, for the Android migration
+inventory. Its exact KV/native-store/root/preferences/manifest code and tests,
+public APK digest/certificate inspection, and independently authored fixture
+provenance are recorded in the tactical and
+[Android replacement topic](topics/android-jstorrent-replacement.md). No
+reference source, fixture or APK is imported into this repository.
+
 Repository: [kzahel/jstorrent](https://github.com/kzahel/jstorrent)
 
 Typical local checkout: `~/code/jstorrent`

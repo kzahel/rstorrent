@@ -2,6 +2,15 @@
 
 Topic: `oracle-driven-engine-campaign`
 
+Android migration inventory checkpoint
+[245](../tactical/245-android-legacy-inventory-and-import-contract.md) pins
+Android 1.0.24 formats and inspects the same checker/resume oracle without
+changing engine behavior. Thirteen generated format cases/ten Python tests
+pass. Next create its bounded Android importer/real-SAF upgrade tactical from
+[android-jstorrent-replacement](android-jstorrent-replacement.md); preserve
+source intent, fail closed on unsupported safety policies, and use ordinary
+checking instead of foreign resume evidence. No Android importer ran in 245.
+
 Work-selection policy: this runbook may track multiple independent active
 engine tacticals, each with its own restart checkpoint and next action. It does
 not reserve a global **Now** slot or block user-directed work in another

@@ -2,6 +2,14 @@
 
 Topic: `android-saf-storage`
 
+Tactical [245](../tactical/245-android-legacy-inventory-and-import-contract.md)
+pins the Android 1.0.24 root format and generated inventory fixtures. Its
+proposed handoff keeps runtime persisted read/write grants authoritative,
+retains revoked roots for repair, and derives the registry from atomically
+committed catalog bindings before startup. The old explicit private-download
+fallback is distinct from SAF. No importer, grant transfer or installed Android
+upgrade is implemented or qualified by this format audit.
+
 Completed local and hosted Tactical
 [`213`](../tactical/213-owned-android-runtime-ci.md) promotes the real Android
 SAF selection/restart/recheck/removal cohort into an owned API 35 emulator CI

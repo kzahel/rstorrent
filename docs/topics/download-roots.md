@@ -2,6 +2,13 @@
 
 Topic: `download-roots`
 
+Tactical [245](../tactical/245-android-legacy-inventory-and-import-contract.md)
+records Android's one-session root mapping: exact SAF keys/URIs and actual OS
+grants, plus the explicit private `files/downloads` fallback. Copied locators
+and old healthy hints prove no access. The proposed importer retains unavailable
+roots and derives registry bindings before startup; no Android root import or
+installed handoff is implemented by the generated format checkpoint.
+
 Completed local Tactical [241](../tactical/241-atomic-legacy-desktop-import.md)
 resolves desktop legacy root keys within each source profile and assigns new
 opaque destination IDs. Imported records keep exact path bindings; matching

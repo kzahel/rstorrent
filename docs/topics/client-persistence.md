@@ -2,6 +2,14 @@
 
 Topic: `client-persistence`
 
+Tactical [245](../tactical/245-android-legacy-inventory-and-import-contract.md)
+pins Android 1.0.24's one-session, version-1 nullable SQLite KV source and
+version-2 torrent index. Its generated WAL audit and importer contract add no
+destination schema or migration writer. Proposed Android conversion commits
+catalog state plus initial private root bindings and one report atomically;
+Kotlin derives missing registry entries before engine startup. Actual importer,
+crash/upgrade and persisted-grant evidence remain separate.
+
 Tactical [241](../tactical/241-atomic-legacy-desktop-import.md) implements a
 strict current-schema desktop legacy import. A fresh schema, mapped settings,
 roots, source/selection/run intent and one completion report commit in one
