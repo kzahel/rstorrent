@@ -279,3 +279,35 @@ responses and each owned ID receives the pinned candidate. Windows is currently
 claimed by unrelated acceptance work and is left untouched; Linux and macOS
 are freshly claimed for actual installed updating. No default-feed promotion,
 public release, tag, or store change occurs.
+
+### Actual HTTPS Installation And GUI Source Oracle
+
+The unchanged released headless updater passes check/download/authentication/
+install/relaunch on Linux x64 and macOS arm64. The normal macOS application-menu
+Check for Updates and accessible Install & Restart button also deliver the exact
+candidate executable and pass the four-record, settings, checking, missing-root,
+registered-refusal, stable-ID/single-marker and payload/restart assertions.
+Linux rejects a valid-envelope signature for the wrong payload, preserving the
+old installation, then installs after valid routing returns. Interruption after
+real download progress also preserves the exact old AppImage hash; retry passes
+the same migration/restart assertions. The shared driver now checks the legacy
+primary executable hash itself for future negative attempts.
+
+The first macOS GUI attempt reaches the exact installed successor but fails the
+frozen-source oracle: reopening the old GUI changes rpc-info and writes its
+active SQLite database, despite identical key/value contents. The inactive
+profile remains byte-identical. The corrected GUI oracle requires all legacy
+values and inactive-profile bytes to match, freezes the source after the old
+writer joins and the successor quits, then requires every source byte unchanged
+across successor restart. Frozen headless/manual paths still require the entire
+original source byte-for-byte. The corrected macOS GUI run passes. Direct
+source-guard probes reject changed logical values or inactive-profile bytes.
+Python compilation and `git diff --check` pass.
+
+The initial Linux GUI attempt renders an empty legacy WebKit window in the VM
+and exposes no Install control. Its owned cancellation restores all file scopes;
+it does not qualify the UI path. A separate rerun uses the repository's existing
+WebKit DMA-BUF renderer test setting without changing either signed app. Windows
+remains held by another active exclusive claim and is not operated. These gates,
+real extension journeys, repair transfers and broader cutover qualification are
+still explicit remaining work.

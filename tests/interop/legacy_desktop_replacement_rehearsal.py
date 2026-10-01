@@ -31,7 +31,7 @@ import tarfile
 import tempfile
 import time
 
-from legacy_desktop_signed_update import check_and_apply, owned_pids, stop_owned
+from legacy_desktop_signed_update import assert_gui_source, check_and_apply, owned_pids, stop_owned
 from legacy_desktop_fixture_cohort import Host, digest
 
 LEGACY_ARCHIVE = "4bc5e979635fe9283d9ba60e43f86bfadcf619adf546cdbe4b68b27d424343f1"
@@ -347,6 +347,12 @@ def main():
             quit_and_join(migrated)
         identities = check_catalog()
         assert identities, "ordinary checker did not finish valid/corrupt work"
+        handoff_source = source_snapshot()
+        if args.trial_gui:
+            assert_gui_source(before, handoff_source, profiles[0])
+            results["sourceVerification"] = "GUI logical values and inactive bytes; all bytes across successor restart"
+        else:
+            assert handoff_source == before
         restarted = launch("restarted")
         wait_until(lambda: restarted.poll() is None and (product / "profile/session.db").exists())
         phase("restarted")
@@ -354,7 +360,7 @@ def main():
         assert check_catalog(identities)
         after = source_snapshot()
         (root / "source-after.json").write_text(json.dumps(after, indent=2))
-        assert after == before
+        assert after == handoff_source
         assert all(digest(Path(path)) == sha for path, sha in payload_hashes.items())
         assert not (root / "missing-root").exists()
         results["checks"] += ["four-record-import-and-paused-intent", "valid-and-corrupt-reverification",

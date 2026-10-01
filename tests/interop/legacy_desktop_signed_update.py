@@ -6,6 +6,25 @@ import subprocess
 import signal
 import sys
 import time
+import hashlib
+
+
+def executable_digest(app):
+    binary = (app / "jstorrent-desktop.exe" if os.name == "nt" else
+              app / "Contents/MacOS/jstorrent-desktop" if sys.platform == "darwin" else app)
+    hash_value = hashlib.sha256()
+    with binary.open("rb") as source:
+        for chunk in iter(lambda: source.read(65536), b""):
+            hash_value.update(chunk)
+    return hash_value.hexdigest()
+
+
+def assert_gui_source(before, after, active_profile):
+    """An old GUI is a writer; compare values, then freeze after it joins."""
+    assert after["profiles"] == before["profiles"], "legacy GUI changed fixture values"
+    inactive = lambda files: {key: value for key, value in files.items()
+                              if not key.startswith("profiles/" + active_profile + "/")}
+    assert inactive(after["files"]) == inactive(before["files"]), "inactive legacy profile changed"
 
 
 def owned_pids(app):
@@ -68,6 +87,7 @@ def check_and_apply(args, native, app, launch, wait_until, phase, installed, res
     if args.trial_negative:
         before = set(owned_pids(app))
         assert not before, "negative update requires a stopped installation"
+        legacy_digest = executable_digest(app)
         negative = launch("legacy", ("--auto-update",))
         phase("negative-updating")
         if args.trial_negative == "interrupted":
@@ -90,6 +110,8 @@ def check_and_apply(args, native, app, launch, wait_until, phase, installed, res
             assert "Install failed" in result.get("error", "") and "signature" in result["error"].lower(), result
         wait_until(lambda: set(owned_pids(app)) == before, seconds=30)
         assert not installed()
+        assert executable_digest(app) == legacy_digest, "negative update changed legacy executable"
+        results["negativeLegacyExecutableSha256"] = legacy_digest
         results["checks"].append(args.trial_negative + "-preserves-old-installation")
         phase("negative-complete")
         wait_until(lambda: (args.root / "allow-retry").is_file(), seconds=1800)

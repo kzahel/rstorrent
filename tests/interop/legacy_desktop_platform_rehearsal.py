@@ -24,7 +24,7 @@ import sys
 import time
 import traceback
 
-from legacy_desktop_signed_update import check_and_apply, owned_pids, stop_owned
+from legacy_desktop_signed_update import assert_gui_source, check_and_apply, owned_pids, stop_owned
 from legacy_desktop_fixture_cohort import Host, digest, BINARIES
 from legacy_desktop_replacement_rehearsal import bencode, closed_copy, wait_until
 
@@ -479,6 +479,12 @@ def main():
         else:
             joined(migrated)
         identities = catalog()
+        handoff_source = snapshot()
+        if args.trial_gui:
+            assert_gui_source(before, handoff_source, profiles[0])
+            results["sourceVerification"] = "GUI logical values and inactive bytes; all bytes across successor restart"
+        else:
+            assert handoff_source == before
         restarted = launch("restarted")
         time.sleep(2)
         assert restarted.poll() is None
@@ -487,7 +493,7 @@ def main():
         assert catalog(identities)
         after = snapshot()
         (root / "source-after.json").write_text(json.dumps(after, indent=2), encoding="utf-8")
-        assert after == before
+        assert after == handoff_source
         assert all(digest(Path(path)) == sha for path, sha in payload_hashes.items())
         assert not (root / "missing-root").exists()
         results["checks"] += ["four-record-import-and-paused-intent", "valid-and-corrupt-reverification",
