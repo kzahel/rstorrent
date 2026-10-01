@@ -2,6 +2,15 @@
 
 Topic: `android-saf-storage`
 
+Tactical
+[253](../tactical/253-chromeos-onboarding-recovery-and-physical-qualification.md)
+adds current isolated physical APK evidence on cohort A: the real picker
+commits its owned binary retained-root registry, controlled magnet/file-input
+bytes verify independently, and native restart retains the binding/library in
+bounded recovery. Inherited apps/grants are preserved. Current revoked-root
+repair, real Play installation and cohort B remain open; retain 194's original
+bounded repair pass.
+
 Tactical [248](../tactical/248-chromeos-staggered-upgrade.md) extends controlled
 API 28/35 upgrade evidence to the released extension engine/session writer:
 explicit per-torrent roots A/B, two real SAF grants, independent completed and

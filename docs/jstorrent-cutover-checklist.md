@@ -181,7 +181,8 @@ rows independently; those tests use disposable signing and owned emulators.
   installation and mixed-version recovery. Record actual versus injected
   states, exact artifacts and every unrun condition; sideload/emulator evidence
   cannot close the Play journey. Tactical 253 passes six injected packaged-browser
-  journeys and bounded cohort-A sideload/extension recovery. Real Play and
+  journeys and bounded cohort-A sideload/extension recovery, including real
+  rejection, declared-window expiry and terminal manual cancellation. Real Play and
   cohort-B acceptance stay open.
 - [ ] **A-07 Troubleshooting and Linux fallback:** before backend connection,
   explain the observed failed stage and manual next action; offer explicit
@@ -194,7 +195,12 @@ rows independently; those tests use disposable signing and owned emulators.
   [253](tactical/253-chromeos-onboarding-recovery-and-physical-qualification.md)'s
   bounded cold-launch, verified transfer, view detach, interrupted connection,
   storage repair, restart and lifecycle cohort passes on both devices. Every
-  unqualified route remains explicit before ChromeOS rollout.
+  unqualified route remains explicit before ChromeOS rollout. Cohort A passes
+  three independent byte-verified recovery repetitions per backend and both
+  controlled 60-minute observations. Android detached completion and actual
+  Remove/keep/restart pass. Linux evidence is runtime only; current storage
+  repair, sleep/reboot/device network loss and all cohort-B rows remain unrun.
+  Owned test state, pairing storage and the stopped VM baseline are restored.
 
 ## Product, Recovery And Release Decision
 

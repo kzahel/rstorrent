@@ -1,6 +1,6 @@
 # Tactical 253: ChromeOS Onboarding, Recovery And Physical Qualification
 
-Status: **Active, 2026-10-01.** Baseline `223d5126` is clean and main is current.
+Status: **Active, 2026-10-02.** Work started from clean, current main `223d5126`.
 Portable implementation and bounded cohort-A physical slices have landed.
 Full two-device/store/fallback acceptance remains open.
 
@@ -212,7 +212,7 @@ Store, OS setup and installed migration rows remain open.
 | `tests/interop/android_saf_session.py` and Android runtime/product runners | Existing deterministic fixtures, seeder and independent byte checks | SAF runner explicitly clears the fixed package and removes a fixed folder. Do not run unchanged against inherited physical state. |
 | `scripts/test-crostini-installer.sh`, `run-crostini-bootstrap-fixture.sh`, `validate-crostini-package.sh` | Installer ownership, authenticated bootstrap and package allowlist | Fixture success is not physical OS setup; source-host build must first meet Ubuntu 22.04 ABI baseline. |
 | 167/169/178 retained physical records | First device's install/VM recovery/storage passes, with exact historical hashes | Native package and web-only 178 evidence predate this source; no current package, full reboot or second-device product coverage. |
-| Machine Control common doctor | First device passes ten checks; unlocked, no pending update | Health is not Play/product qualification. ChromeOS adapter reports `unsupported_claim_interface`; use explicit selector and a controller-local exclusive ownership record before mutation. |
+| Machine Control common doctor | First device passes ten checks; unlocked, no pending update | Health is not Play/product qualification. ChromeOS adapter reports `unsupported_claim_interface`; use explicit selector and an exclusive temporary ownership record before mutation. This session uses a target-side marker. |
 
 No retained APK/ZIP/native hash is the candidate built from this checkpoint.
 Record freshly built hashes separately and preserve original installed state.
@@ -459,3 +459,122 @@ in addition to declared-window/invalid-duration and rejected/expired/unknown
 poll cases. Typecheck, all localization catalogs (1327 English web messages),
 and the full web suite pass (462 passed, two skipped). The final artifact and
 physical window repetition records follow after validation/cleanup.
+
+### Remaining Journey Gap Matrix
+
+These rows preserve historical passes above and describe the new bounded
+candidate cohort independently. Cohort B has no new product evidence because
+its explicit target is unreachable; appliance history does not close any row.
+
+| Journey | Cohort A current candidate / retained limit | Cohort B |
+| --- | --- | --- |
+| Play setup unfinished/not enabled | Injected portable presentation and physical offline guide; real state unrun, inherited Play preserved. | Unrun: SSH/network unavailable. |
+| Play available, app absent | Real listing opens, existing production 1.0.23 offers Open. Fresh install unrun: requires a disposable app-absent cohort and store successor. Sideload does not qualify it. | Unrun: SSH/network unavailable. |
+| Installation failure/unavailable/managed | Offline help/manual next actions pass; no real installation failure or policy-disable transition. Play/app/policy remain unknown from connection failure. | Unrun: SSH/network unavailable. |
+| Installed Android stopped / pairing recovery | Isolated current APK cold launches and real candidate-page approval/rejection, disconnect/manual retry pass; inherited production/debug apps unchanged. Optional permission denial is injected only. | Unrun: SSH/network unavailable. |
+| Old/new app and extension combinations | Retain 248's emulator four-pair contract. Current isolated APK/candidate page assets pass a bounded physical slice; inherited popup/worker and production store pair are not replaced. Other physical combinations remain unrun. | Unrun: SSH/network unavailable. |
+| Linux not enabled / package absent | Preserve inherited VM/container/package. Exact unsigned candidate runtime passes in isolated temporary profile; new OS setup and signed current installation unrun. Retain bounded 167/169 signed historical installation. | Unrun: SSH/network unavailable. |
+| Linux stopped / browser restart | VM starts, existing LXC container runs; normal vsh/Cicerone registration and browser DNS fail. Three owned gateway restart repetitions pass runtime only. Supported launcher/browser recovery remains failed/open. | Unrun: SSH/network unavailable. |
+| Android grant / Linux share absent or revoked | Current owned SAF picker commits a root and transfers verified bytes. Retain bounded 178/194 repair/share passes; current revoked/share-repair repetitions are unrun. | Unrun: SSH/network unavailable. |
+| Both backends / separate libraries | Independent native and Linux-runtime profiles independently verify the 64-KiB fixture; guide/header explain explicit backend/library choice. Supported Linux GUI switch is blocked by registration/DNS failure. | Unrun: SSH/network unavailable. |
+| Magnet / local torrent / detached view | Native magnet and actual extension file input pass. 1-MiB payload absent before view detach later verifies SHA-1 `27b016b8f330f063a2776225cd2242821cbb8b40`. Native OS file picker is unrun. Linux magnet/byte-upload runtime passes, browser journey fails. | Unrun: SSH/network unavailable. |
+| Interrupted transfer / remove / source offline | Controlled ten-second seed pause is injected source interruption, not real device network loss. Native actual Remove/keep then owner restart retains bytes/removes row; interrupted pre-ack Remove retains row/bytes. Linux runtime remove/keep/restart passes. | Unrun: SSH/network unavailable. |
+| Sleep/wake / real network loss / reboot | Unrun: preserve always-awake availability policy and remote transport; no declared post-reboot unlock source. No destructive Play/policy changes or generic OS repair. | Unrun: SSH/network unavailable. |
+| Three repetitions / 60-minute observation | Three independent native repetitions and three Linux-runtime repetitions pass; both controlled 60-minute observations finish with independently verified bytes. One route is not the other route's GUI acceptance. | Unrun: SSH/network unavailable. |
+
+Next cohort prerequisites: reachable cohort B with captured initial state;
+app-absent disposable Play setup for real installation; original-certificate
+store candidate; supported Linux container/launcher registration; declared
+post-reboot unlock path and an applicable sleep/network-loss policy. No signed
+branding candidate, desktop GUI/store-pair, controlled-repair or broader-cohort
+gate is closed by this ChromeOS work.
+
+### Final Candidate And Observation Results, 2026-10-02
+
+The final packaged extensions pass typecheck, the complete web suite (462
+passed, two skipped), all four localization catalogs and both sets of six
+injected packaged-browser scenarios. Their SHA-256 values are:
+
+- Production identity 1.1.2: `856a6cd7281573e8f75810fb0891300b53857b7f962e344daf120479946c66af`.
+- Beta 0.4.0: `6085ca136c276a03f2d35c70833a18278fd9fa0441b771d44838ced4b193310a`.
+
+All 16 staged beta files match the final archive independently on cohort A.
+The APK and Crostini hashes at the build checkpoint are unchanged. Native
+instrumentation builds, but its APK is not installed; these are physical runner
+results, not an instrumentation or Play-install claim. Native ARM64 remains a
+separate build lane, not physical ARM64 evidence from this x86_64 device.
+
+Real final-page pairing cancellation remains terminal through the remote
+request's bounded lifetime. Manual Retry without approval returns the typed
+`pairing_expired` result after 121.4 seconds; real rejection returns
+`pairing_rejected`. Neither diagnostic infers Play, app presence or policy.
+After the runner clears the owned app, browser control needs explicit setup
+again; an attempted approval in that reset state is not a pairing pass.
+After owned-app removal, foreground discovery reaches the observed 20-second
+unreachable result with unknown Play/app/policy facts. Manual Retry/Cancel
+returns to terminal Retry, and the actual Use Linux instead link opens the
+offline guide with separate-library and unsupported-outcome guidance.
+
+The controlled native repetitions each verify 262,144 bytes in 50.74, 51.30
+and 51.59 seconds, including source-offline native cold restart. The separate
+Linux-runtime repetitions verify the same size in 44.23, 43.19 and 105.75
+seconds, including gateway restart and remove/keep/restart. All six independent
+payload SHA-1 checks equal `363a09c4940de553b7f1f874bdb948aedd69f0f9`.
+The longer third Linux repetition passes its budget; it is not discarded.
+
+Each corrected observation lasts 3,600 seconds and retains 120 actual payload
+samples at 30-second intervals, from 0 through 3,570 seconds. Independently
+checking those logs finds progress in every two-minute window. Android's last
+sample is 27,344,896 uploaded payload bytes; Linux's is 28,131,328. Both then
+finish the 29,360,128-byte controlled torrent within the additional five-minute
+verification budget, independently hashing actual downloaded bytes to
+`1b90d0a98b5c16a7ced9cb42c13f5c61757d6482`. Linux's complete transfer,
+source-offline restart and remove/keep/restart record takes 3,738.79 seconds.
+Android includes the two explicit native restarts documented above; neither
+observation qualifies sleep, reboot, device network loss or Linux browser UI.
+
+The reports use `chromeos-android-qualification/v1` and
+`chromeos-crostini-runtime/v1`; local temporary reports/logs are summarized here
+and removed after restoration. Retained evidence consists of these bounded
+facts, exact artifact hashes and reproducible committed runners, not recordings
+or private inventory, credentials, personal paths or an archived device image.
+
+### Restoration And Restart Checkpoint
+
+The Android runner removes only its owned SAF payload tree/UI captures and
+clears only the isolated qualification package. That APK is then uninstalled;
+the instrumentation package remains absent. Inherited production 1.0.23 and
+debug 0.1 remain installed with their original stopped flags (true and false,
+respectively). No inherited app, grant, library or payload is reset or upgraded.
+
+After leaving the candidate page, the original extension pairing key is restored
+and equality checked without exporting its value. Only candidate subdirectory
+assets, owned guide/companion tabs and the Play listing task opened by this run
+are closed/removed; no browser page tabs remain, matching initial state.
+Original popup, worker, profiles and extension files are retained.
+
+The owned Linux gateway terminates after checking its command/profile and UID.
+Its temporary package/profile and extra intake payload are removed, as are the
+runner's four unique payload roots and temporary LXC configuration. The inherited
+VM is stopped again and its disk is retained. No installed Linux package, normal
+launcher, inherited profile or payload is replaced or repaired. Owned host
+seeders terminate, their three narrowly scoped temporary firewall rules are
+removed, and seed ports no longer listen. Temporary local reports, logs, fixture
+downloads, APK copies and private target selection are removed after summarizing
+evidence. The exclusive ownership marker and private pairing backup are removed.
+
+The final common doctor passes all ten checks on cohort A; its unlocked session
+and inherited closed-lid/idle availability overrides remain intact. This doctor
+advertises configured capture prerequisites, not a successful physical capture:
+the actual no-active-CRTC failure above remains the capture evidence limit.
+Cohort B's final read-only network preflight still reports No route to host;
+it is never mutated. No push, tag, store upload or production update is made.
+
+Next executable work is the gap matrix, starting with reachable cohort B and
+initial-state/ownership capture. A supported Linux registration/launcher cohort,
+a disposable app-absent real Play cohort and declared reboot unlock/lifecycle
+prerequisites are needed for their respective rows. Tactical 253 remains active,
+M-08 remains partial and cutover A-06/A-07/A-08 stay unchecked. Tactical 252's
+signed desktop updater passes are retained; Linux legacy GUI rendering, actual
+extension/store pairs, controlled repair, broader cohorts and a fresh signed
+branding candidate remain independent open desktop gates.

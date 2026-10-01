@@ -6,11 +6,15 @@ Tactical 253's portable recovery checkpoint passes bounded Android discovery,
 manual recovery, detached-view cleanup, offline troubleshooting and explicit
 Linux guidance in the packaged extension. Host-built isolated candidates add
 cohort-A Android and Linux-runtime byte checks/repetitions, real Android
-pairing/manual recovery and extension file-input evidence. Normal Crostini
-launcher/browser registration fails; runtime success does not close fallback.
-Full physical/store acceptance remains open. Cohort A retains legacy/debug apps;
-cohort B is presently unreachable from this controller. Neither injected
-presentation nor appliance health qualifies Play installation.
+pairing/manual recovery and extension file-input evidence. Both backends finish
+controlled 60-minute byte-verified observations on cohort A; native actual
+Remove/keep and detached-view completion pass bounded checks. Final approval
+expiry/cancellation and foreground unavailable-service guidance pass without
+inferring Play, app presence or policy. Owned test state is restored. Normal
+Crostini launcher/browser registration fails; runtime success does not close
+fallback. Full physical/store acceptance remains open. Cohort A retains
+legacy/debug apps; cohort B is presently unreachable from this controller.
+Neither injected presentation nor appliance health qualifies Play installation.
 
 Priority accepted 2026-10-01: qualify ChromeOS onboarding and recovery on both
 available physical Chromebooks, starting with Play not enabled or Android

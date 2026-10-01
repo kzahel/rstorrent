@@ -6,9 +6,13 @@ Tactical 253 is active. Portable pre-connection troubleshooting, manual
 Retry/Cancel, explicit Linux choice and private-context preview pass focused
 ownership tests and six injected packaged-browser journeys. Android/Crostini
 libraries remain separate, with no inferred store/policy diagnosis or automatic
-switch. Current artifacts and both physical acceptance matrices remain open;
-cohort B is unreachable at its private inventory address. Cutover A-06/07/08
-remain unchecked.
+switch. Exact host-built candidates pass bounded cohort-A Android and Linux
+runtime evidence, including three recovery repetitions per backend and both
+controlled 60-minute byte-verified observations. Owned test state is restored.
+Full physical acceptance remains open: normal Linux launcher/browser
+registration fails, real Play/store journeys are unrun and cohort B is
+unreachable at its private inventory address. Cutover A-06/07/08 remain
+unchecked.
 
 Tactical [251](../tactical/251-jstorrent-ci-candidates-and-installed-update.md)
 completes bounded production-identity CI attempts using existing signing inputs,
@@ -665,8 +669,10 @@ do not depend on enabling Crostini. The exact Ubuntu 22.04 x86_64 package now re
 cohort A's Debian 12 container. Its normal launcher/browser registration still
 fails; runtime/API byte checks cannot qualify the user fallback journey.
 Cohort-A isolated Android approval/retry, shared-library recovery and controlled
-file intake pass bounded slices. Real Play installation, store pairs, cohort B
-and full lifecycle acceptance remain open under Tactical 253.
+file intake pass bounded slices. Both routes finish controlled 60-minute
+observations and three independently verified recovery repetitions; Linux is
+runtime evidence only. Test state is restored. Real Play installation, store
+pairs, cohort B and full lifecycle acceptance remain open under Tactical 253.
 
 The first-run UX should emphasize two backend choices:
 

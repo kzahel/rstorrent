@@ -2,6 +2,19 @@
 
 Topic: `beta-release-readiness`
 
+Tactical
+[253](../tactical/253-chromeos-onboarding-recovery-and-physical-qualification.md)
+adds host-built isolated Android/extension artifacts and a native x86_64 Ubuntu
+22.04 Crostini package. The exact unsigned package resolves dependencies and
+passes controlled runtime byte/restart checks in cohort A's Debian 12
+container. Android candidate-page pairing/recovery and byte-checked file intake
+pass bounded slices. Both backends finish controlled 60-minute byte-verified
+observations and three recovery repetitions; owned test state is restored.
+Normal Linux launcher/browser registration fails; real Play, store pairs,
+cohort B and full lifecycle acceptance remain open. Native ARM64 retains its
+separate release build lane. Nothing is published and no desktop cutover gate
+is closed.
+
 Tactical [251](../tactical/251-jstorrent-ci-candidates-and-installed-update.md)
 completes bounded production-identity CI attempts using existing signing inputs,
 with nonce identity proof, exact product receipts and retained-public-root

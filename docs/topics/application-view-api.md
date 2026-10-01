@@ -2,6 +2,15 @@
 
 Topic: `application-view-api`
 
+Tactical
+[253](../tactical/253-chromeos-onboarding-recovery-and-physical-qualification.md)
+keeps the native companion wire/API unchanged. The page owns bounded discovery
+and a validated 1..120-second approval window; Cancel joins its transport/view
+owner and explains the separately owned Android request. Real cohort-A
+approval/rejection/declared-window expiry, disconnect/manual retry and
+shared-library recovery are bounded candidate-page passes; Linux API runtime
+evidence remains distinct from its failing normal browser handoff.
+
 Tactical [244](../tactical/244-unavailable-storage-presentation.md) corrects
 shared React adaptation of `awaiting_storage`: blocked progress becomes Needs
 attention with a Storage unavailable table label; active storage preparation

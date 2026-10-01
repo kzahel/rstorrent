@@ -14,7 +14,9 @@ visible. Reduced user-agent versions are labeled as such; actual browser/OS
 builds remain unknown in support context. Observed rejection and the bounded
 approval window have closed recovery categories. Pairing Cancel explains the
 separate Android request's expiry; canceled UI startup joins its authenticated
-client release before Retry. Full physical/store journeys remain
+client release before Retry. Final candidate assets also pass real declared-window
+expiry, terminal cancellation, foreground unavailable-service recovery and the
+explicit Linux guide link on cohort A. Full physical/store journeys remain
 open; see the tactical for artifact and per-device limits.
 
 Accepted 2026-10-01, not yet qualified: Tactical

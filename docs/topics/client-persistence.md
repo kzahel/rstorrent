@@ -2,6 +2,15 @@
 
 Topic: `client-persistence`
 
+Tactical
+[253](../tactical/253-chromeos-onboarding-recovery-and-physical-qualification.md)
+adds bounded current-candidate source-offline byte retention on cohort A,
+including actual extension Remove/keep followed by native restart with the row
+absent, and separate Linux-runtime remove/keep/restart. An interrupted pre-ack
+native removal retains row/bytes and is recorded separately. Isolated profiles
+and APK delivery do not qualify production installed-library migration, store
+succession or cohort B.
+
 Tactical [248](../tactical/248-chromeos-staggered-upgrade.md) confirms that the
 pinned connected legacy ChromeOS extension persists session/shared settings
 through Android KV, rather than browser storage. Its ordinary released writer

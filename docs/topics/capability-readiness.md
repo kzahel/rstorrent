@@ -1212,7 +1212,9 @@ hosted repeats.
 
 ### Active
 
-- **Priority ChromeOS qualification: Tactical `253`** is active: portable recovery passes; physical acceptance remains open. It covers pre-Play setup,
+- **Priority ChromeOS qualification: Tactical `253`** is active: portable recovery
+  and bounded cohort-A physical checks pass; full acceptance remains open.
+  It covers pre-Play setup,
   Android installation/connection failures, in-product troubleshooting and
   explicit Crostini fallback on both available physical Chromebooks. Its
   install-to-verified-download, recovery and bounded repetition matrix gates
@@ -1222,7 +1224,10 @@ hosted repeats.
   pre-Play/installation failures, the second device, current-candidate
   regression and unrun lifecycle/endurance states. Cohort A adds host-built
   isolated APK and Ubuntu 22.04 package runtime/repetition evidence, plus real
-  pairing/manual recovery and byte-checked file intake. Normal Linux browser
+  pairing/manual recovery and byte-checked file intake. Both candidate backends
+  finish controlled 60-minute observations with independent final byte checks;
+  native detached completion and actual Remove/keep recovery pass. Owned state
+  is restored. Normal Linux browser
   registration fails; cohort B and real store installation remain unrun.
 
 - Selected three-platform beta package matrices pass in **236/237**, signed

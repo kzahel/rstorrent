@@ -2,6 +2,15 @@
 
 Topic: `download-roots`
 
+Tactical
+[253](../tactical/253-chromeos-onboarding-recovery-and-physical-qualification.md)
+independently verifies a controlled file in separate Android SAF and
+Linux-runtime profiles on cohort A. This does not migrate roots or authorize
+simultaneous writing of one payload. The explicit Linux guide retains Share
+with Linux versus Android-grant wording; normal Linux browser/launcher
+registration currently fails. Retain 178/194's exact historical sharing/repair
+evidence; new revoked/share journeys and cohort B remain open.
+
 Tactical [246](../tactical/246-android-legacy-import-and-installed-upgrade.md)
 maps Android root keys to stable SAF root IDs and preserves the pinned private
 `files/downloads` fallback as an existing path root. It never creates that old
