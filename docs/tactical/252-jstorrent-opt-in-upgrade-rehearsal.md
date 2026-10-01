@@ -243,3 +243,24 @@ Actual HTTPS old-client installation and GUI restart, signature/interruption
 negatives, controlled repair and real extension/file/magnet/toolbar journeys
 remain open. These depend on the trial and further owned validation; the
 three-platform manual result does not close P-01 or full cutover acceptance.
+
+### Clean Stop And Resume Input
+
+Final guest cleanup independently verifies finished phases, empty inherited
+backup directories, no product owners, restored file/registry scopes and the
+original Windows firewall baseline before removing each exact owned fixture and
+staging directory. Linux/Windows return to their initially off state; macOS
+returns to its initially suspended state. Claims are released after lifecycle
+confirmation. Owned staging servers, temporary downloads, IDs/configuration,
+logs and captures are removed. Source and sanitized evidence remain committed;
+no test route is enabled.
+
+After push/test-deployment authorization, resolve fresh testbed availability
+through Machine Control and recreate generated guest IDs/fixtures. Download
+complete artifact `desktop-release-rehearsal-manifest-36845370571-1` from run
+36845370571 in `kzahel/rstorrent`, then rerun the checked-in preparer against
+its recorded source and receipts. CI retains this artifact for fourteen days;
+if unavailable, require a fresh complete signed candidate and new receipts,
+not a mutable Latest substitute. Deploy/restart the tested server route with
+ordinary selection intact, verify cohort isolation over HTTPS, and run the
+prepared actual-updater branches before advancing the remaining acceptance rows.
