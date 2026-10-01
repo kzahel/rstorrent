@@ -63,7 +63,10 @@ Install & Restart passes with the active legacy writer accounted for. See
 [installed evidence](../evidence/jstorrent-upgrade-trial-252-installed.json).
 Windows x64 automatic updating now passes the same installed migration/restart
 oracles and eight registry refusal routes, with file/registry/firewall restoration.
-Windows ordinary GUI and negative retries are active. The old Linux release
+Windows ordinary Check for Updates / Install & Restart also passes; a portable
+source-snapshot path fix preserves the inactive-profile guard on Windows.
+Expected-publisher Authenticode and original-path uninstaller continuity pass.
+Windows negative retries are active. The old Linux release
 renders blank in this VM under three tested configurations, leaving its ordinary
 UI path open. Controlled repair and real extension journeys remain open. Native catalog branding is corrected after
 the candidate source and needs a fresh signed build.

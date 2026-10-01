@@ -186,9 +186,35 @@
       "imported": 4,
       "status": "passed",
       "restoration": "passed"
+    },
+    "gui-windows": {
+      "platform": "windows",
+      "legacyPackageSha256": "55ce6c119e3ada6b66da3f706e4659aa50f0550fea84d56757ba7180f51047c3",
+      "candidatePackageSha256": "af393292ff4c9cbabd7cc7030146d7a89a149d852b96d423c349347225023dde",
+      "checks": [
+        "pre-handshake-host-blocks-before-catalog",
+        "registration-failure-blocks-before-catalog",
+        "old-unmodified-HTTPS-check-offers-pinned-successor",
+        "old-updater-download-authenticates-and-installs-successor",
+        "four-record-import-and-paused-intent",
+        "valid-and-corrupt-reverification",
+        "missing-root-not-created",
+        "installed-refusal-routes",
+        "restart-identities-and-single-marker",
+        "source-and-payload-preserved"
+      ],
+      "legacyBinaries": [
+        "fb79545830c8aae032820100a0044c2a3ea29763aba2f1d35623025ae82af38c",
+        "6cd89eed30f417b97cb13d123280cdcf7138564d8630e29a1db14a8ed1346754"
+      ],
+      "refusalRoutes": 8,
+      "sourceVerification": "GUI logical values and inactive bytes; all bytes across successor restart",
+      "imported": 4,
+      "status": "passed",
+      "restoration": "passed"
     }
   },
-  "windows": "Not exercised: exact appliance held by another active exclusive claim",
+  "windows": "Original HTTPS automatic and ordinary GUI updating passed; negative retries active",
   "trialDisabled": true,
   "disableVerification": {
     "ordinaryResponsesByteIdentical": true,
@@ -213,10 +239,17 @@
       ],
       "observation": "Old released WebKit window renders blank and no Install control is exposed; bounded attempts cancelled before installation",
       "restoration": "All three passed"
+    },
+    {
+      "platform": "windows",
+      "path": "ordinary GUI",
+      "observation": "Exact NSIS update/relaunch and catalog checks pass; Windows backslash snapshot keys incorrectly include the active profile in the inactive byte guard",
+      "resolution": "Portable relative snapshot paths; fresh full GUI and successor restart pass",
+      "restoration": "Files, registry and exact four firewall block rules restored"
     }
   ],
   "remaining": [
-    "Windows original HTTPS updater: appliance held by another active exclusive claim",
+    "Windows wrong-signature refusal and interrupted-download retries",
     "Linux old-release GUI rendering and ordinary Install & Restart",
     "other architectures and historical cohorts",
     "real legacy/successor extension combinations and launch routes",
@@ -230,7 +263,7 @@
     "server": "Trial drop-in/private manifest and owned assets removed; service restarted and active; original product descriptor retained"
   },
   "windowsFollowUp": {
-    "status": "automatic checkpoint passed; GUI and negative runs active",
+    "status": "automatic and GUI passed; negative runs active",
     "httpsIsolationChecks": 8,
     "ordinaryResponsesByteIdentical": true,
     "autoFirewallRestoration": {
@@ -255,6 +288,38 @@
       "restoration": "passed",
       "unrelatedAddedRules": []
     },
-    "initialPowerState": "off"
+    "initialPowerState": "off",
+    "guiFirewallRestoration": {
+      "removedRules": [
+        {
+          "program": "jstorrent-io-daemon.exe",
+          "action": "Block"
+        },
+        {
+          "program": "jstorrent-io-daemon.exe",
+          "action": "Block"
+        },
+        {
+          "program": "rstorrent-desktop.exe",
+          "action": "Block"
+        },
+        {
+          "program": "rstorrent-desktop.exe",
+          "action": "Block"
+        }
+      ],
+      "restoration": "passed",
+      "unrelatedAddedRules": []
+    },
+    "installedIdentity": {
+      "primaryExecutable": "rstorrent-desktop.exe",
+      "sha256": "3e5be638289da30904d5ead80f69b75aedca33b7f647999e6623f01b8f53907d",
+      "authenticode": "Valid",
+      "publisher": "Kyle Graehl",
+      "productVersion": "0.3.0",
+      "uninstallerDisplayName": "JSTorrent",
+      "uninstallerDisplayVersion": "0.3.0",
+      "sameInstallationDirectory": true
+    }
   }
 }

@@ -273,7 +273,8 @@ def main():
             for suffix in ("", "-wal"):
                 path = db.with_name(db.name + suffix)
                 if path.exists() and (suffix != "-wal" or path.stat().st_size > 0):
-                    result["files"][str(path.relative_to(native))] = digest(path)
+                    # Source guards use a portable profile prefix on every OS.
+                    result["files"][path.relative_to(native).as_posix()] = digest(path)
         return result
 
     def catalog(previous=None):
@@ -480,6 +481,7 @@ def main():
             joined(migrated)
         identities = catalog()
         handoff_source = snapshot()
+        (root / "source-handoff.json").write_text(json.dumps(handoff_source, indent=2), encoding="utf-8")
         if args.trial_gui:
             assert_gui_source(before, handoff_source, profiles[0])
             results["sourceVerification"] = "GUI logical values and inactive bytes; all bytes across successor restart"

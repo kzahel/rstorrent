@@ -381,3 +381,22 @@ registry views; the four test-generated firewall block rules are removed by exac
 application scope and the original rule-name set matches. The fresh one-ID trial
 passes eight HTTPS isolation comparisons. Ordinary GUI and negative retries are
 the next executable steps before trial disable and appliance power restoration.
+
+The first Windows ordinary GUI attempt installs/relaunches the exact candidate
+and passes the closed migration catalog and registry route checks, then fails
+the inactive-source byte guard. Windows snapshot keys used backslashes, so the
+portable `profiles/<active-id>/` filter mistakenly included the active writer.
+Normalize recorded relative paths with `as_posix()` and retain a handoff snapshot
+before assertions for diagnosis. This changes only the harness; require a fresh
+full GUI run, including successor restart and cleanup, before qualification.
+The failed attempt restores files/registry and its four firewall block rules.
+
+The corrected full Windows ordinary GUI run now passes. Fresh native tray
+Check for Updates and accessible Install & Restart controls invoke the unchanged
+released updater. The installed executable has a valid expected-publisher
+Authenticode signature, exact hash
+`3e5be638289da30904d5ead80f69b75aedca33b7f647999e6623f01b8f53907d`,
+product version 0.3.0, and JSTorrent uninstaller version 0.3.0 at the original
+path. All migration oracles, inactive-source bytes and full source bytes across
+successor restart pass. File/registry/firewall cleanup matches the inherited
+baseline. Python compilation and `git diff --check` pass.
