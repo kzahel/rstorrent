@@ -66,25 +66,25 @@ completed workflow run's Artifacts section. It contains the AAB and APK.
 Artifacts in a public repository are not private; signing keys are never
 included in them.
 
-For a **manual diagnostic build only**, the workflow's
-`existing_signing_rehearsal=true` option tries the existing canary inputs. Final
-validation still requires the original JSTorrent certificate. A mismatch is a
-failure, and any retained APK/AAB is explicitly unqualified; it cannot replace
-an old installation or establish Play continuity. This option cannot apply to
-tagged publication. No Play upload is automatic.
+Manual builds use the same signing inputs and original-certificate gate as
+tagged builds. A mismatch is a failure; retained diagnostic APK/AAB outputs
+are explicitly unqualified and cannot establish installed or Play continuity.
+No Play upload is automatic.
 
 ## Signing And Backup
 
-The workflow now requires dedicated original JSTorrent secrets:
+For the full one-product cutover, keep the existing CI secret names and replace
+their contents with the original JSTorrent signing inputs:
 
-- `JSTORRENT_ANDROID_UPLOAD_KEYSTORE_BASE64`
-- `JSTORRENT_ANDROID_UPLOAD_KEYSTORE_PASSWORD`
-- `JSTORRENT_ANDROID_UPLOAD_KEY_ALIAS`
-- `JSTORRENT_ANDROID_UPLOAD_KEY_PASSWORD`
+- `ANDROID_UPLOAD_KEYSTORE_BASE64`
+- `ANDROID_UPLOAD_KEYSTORE_PASSWORD`
+- `ANDROID_UPLOAD_KEY_ALIAS`
+- `ANDROID_UPLOAD_KEY_PASSWORD`
 
-They are required inputs, **not configured/verified by Tactical 250**. Do not
-reuse the former `ANDROID_UPLOAD_*` canary secrets. Provision the original key
-through an authorized secure handoff and verify its certificate. CI decodes it
+Tactical 251's actual CI certificate proof confirms the current contents still
+identify the former canary signer. Reuse the names, not that signing identity.
+Provision the original key through an authorized secure handoff and verify its
+certificate. CI decodes it
 into its temporary directory and removes it on normal exit/failure. Local builds
 consume `UPLOAD_KEYSTORE_PATH`, `UPLOAD_KEYSTORE_PASSWORD`, `UPLOAD_KEY_ALIAS`
 and `UPLOAD_KEY_PASSWORD`. Keep keystore/password backups outside Git, with

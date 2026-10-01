@@ -26,7 +26,8 @@ Tactical [250](../tactical/250-jstorrent-production-identity-candidates.md)
 prepares explicit JSTorrent desktop and extension candidate lanes while retaining
 the incubation configurations. Android release now targets the existing
 `com.jstorrent.app` app, code 25, and requires original-key secrets under
-`JSTORRENT_ANDROID_UPLOAD_*`; the separate canary certificate is retained only
+the existing `ANDROID_UPLOAD_*` names after Tactical 251's one-product
+simplification; the separate canary certificate is retained only
 as historical evidence. Earlier canary setup/publication records below do not
 qualify this new production lane. No private secret provisioning or release
 operation has run. [The cutover checklist](../jstorrent-cutover-checklist.md)

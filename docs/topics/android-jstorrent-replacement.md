@@ -2,6 +2,14 @@
 
 Topic: `android-jstorrent-replacement`
 
+Tactical [251](../tactical/251-jstorrent-ci-candidates-and-installed-update.md)
+attempts the production package in CI with existing canary signing inputs.
+The first attempt builds APK/AAB, then exposes an explicit exported-attribute
+requirement in release-overlay lint. The overlay repeats the inherited value.
+Its current signing certificate differs from the original GitHub APK signer;
+original inputs and independent Play upload/app-signing review remain required.
+Retained diagnostic artifacts cannot qualify an installed production upgrade.
+
 ## Production Candidate Preparation, 2026-10-01
 
 Tactical [250](../tactical/250-jstorrent-production-identity-candidates.md)
@@ -11,9 +19,10 @@ A release-only alias preserves `com.jstorrent.app.MainActivity` as the single
 launcher. Generated release manifest and isolated debug APK metadata pass.
 `upload-certificate.pem` now pins the verified original 1.0.24 GitHub APK
 certificate; `incubation-upload-certificate.pem` preserves the former canary
-public root. The release workflow requires dedicated `JSTORRENT_ANDROID_UPLOAD_*`
-secrets and validates final APK/AAB signers and launcher metadata. These secrets
-have not been transferred/configured by this slice.
+public root. The release workflow validates final APK/AAB signers and launcher
+metadata. Tactical 251 simplifies the full cutover to existing `ANDROID_UPLOAD_*`
+secret names; their contents must be replaced with the original signing inputs.
+No original secrets have been transferred/configured by these slices.
 
 Original APK signing is not proof of Play app-signing continuity. Confirm the
 existing Play app, upload certificate, app-signing certificate and maximum

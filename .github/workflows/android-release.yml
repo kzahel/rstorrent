@@ -4,11 +4,6 @@ on:
   push:
     tags: ['android-v*']
   workflow_dispatch:
-    inputs:
-      existing_signing_rehearsal:
-        description: Try existing canary signing inputs; certificate validation still required
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -69,10 +64,10 @@ jobs:
 
       - name: Build signed release and run Android checks
         env:
-          UPLOAD_KEYSTORE_BASE64: ${{ inputs.existing_signing_rehearsal && secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 || secrets.JSTORRENT_ANDROID_UPLOAD_KEYSTORE_BASE64 }}
-          UPLOAD_KEYSTORE_PASSWORD: ${{ inputs.existing_signing_rehearsal && secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD || secrets.JSTORRENT_ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
-          UPLOAD_KEY_ALIAS: ${{ inputs.existing_signing_rehearsal && secrets.ANDROID_UPLOAD_KEY_ALIAS || secrets.JSTORRENT_ANDROID_UPLOAD_KEY_ALIAS }}
-          UPLOAD_KEY_PASSWORD: ${{ inputs.existing_signing_rehearsal && secrets.ANDROID_UPLOAD_KEY_PASSWORD || secrets.JSTORRENT_ANDROID_UPLOAD_KEY_PASSWORD }}
+          UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
         run: |
           for name in UPLOAD_KEYSTORE_BASE64 UPLOAD_KEYSTORE_PASSWORD UPLOAD_KEY_ALIAS UPLOAD_KEY_PASSWORD; do
             if [[ -z "${!name}" ]]; then echo "::error::Missing $name"; exit 1; fi

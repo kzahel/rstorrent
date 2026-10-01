@@ -129,6 +129,33 @@ so package activation/staging checks receive the selected identity consistently.
 The original manual release's source checks have passed on all native/web/tool
 checks in that job; current signing inputs still block authenticated delivery.
 
+### Android First Attempt
+
+Run `36822298091` built both signed APK/AAB outputs, then failed release lint:
+the launcher-removal activity overlay must explicitly declare `android:exported`
+even though the merged main activity already inherits `true`. Repeat that
+existing value in the overlay; the merged release behavior is unchanged.
+Retained outputs remain unqualified. The current-input public certificate
+SHA-256 is
+`4420779ef395a490176986a058f72ba5b4a163f6eb9156e92a6e99896ef36849`,
+different from the original GitHub APK root
+`ccb5af8e44d626e9aefb1f0fbd8496dbf23ad27da9347248e71fb3ce70044915`.
+Original Android signing inputs are also required; no certificate gate is relaxed.
+
+The final one-product workflow reuses `ANDROID_UPLOAD_*` secret names and removes
+the temporary rehearsal selector; replace their contents rather than maintaining
+a second production signing tuple. No remote secret was changed. Local release
+lint and merged-manifest generation pass with an owned temporary signing fixture
+that is deleted afterward; no signed production qualification is inferred.
+
+Independent checks of the retained CI outputs pass their actual signatures,
+production package/version/launcher, identical Rust libraries in both ABIs,
+native notices, bundletool validation and 16 KiB ELF/APK/AAB alignment. Their
+signer remains the wrong canary root. APK SHA-256:
+`7b5a4782ceef138c2442fb122210b27158e4eac69bd8efc330435d120c310fa8`;
+AAB SHA-256:
+`40ae747e3b75ecf9635ba284b29f36e2a81b6fa5e8f1d8548f48d3b3ffb08bc2`.
+
 ### Pre-Dispatch Checkpoint
 
 Manual desktop production selection now merges 250's overlay, validates exact

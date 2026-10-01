@@ -2,7 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <application>
-        <activity android:name="org.rstorrent.bootstrap.MainActivity">
+        <activity
+            android:name="org.rstorrent.bootstrap.MainActivity"
+            android:exported="true">
             <intent-filter tools:node="remove">
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
