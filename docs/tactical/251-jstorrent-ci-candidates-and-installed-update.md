@@ -2,6 +2,12 @@
 
 Status: **Bounded CI attempt complete, 2026-10-01; production delivery blocked.**
 
+Follow-up: **Original desktop key provisioned and CI nonce proof passes;
+fresh package candidate in progress.**
+The maintainer supplies the original encoded key files and authorizes using them
+for the existing CI lane. Keep the existing password secret unchanged and verify
+it by signing an owned nonce; never expose or commit private signing material.
+
 Topics: `product-surfaces-and-migration`, `desktop-jstorrent-replacement`,
 `android-jstorrent-replacement`, `beta-release-readiness`, `client-surfaces`.
 
@@ -281,8 +287,8 @@ import is qualified by these attempts.
 
 ### Next Executable Checkpoint
 
-1. Re-provision the original desktop key/password under the existing
-   `TAURI_SIGNING_PRIVATE_KEY` names; the original public root is already selected.
+1. The original desktop key is now provisioned and the unchanged password passes
+   CI signing. Require exact original-root signatures from the fresh package run.
    Provision original Android keystore/password/alias inputs under existing
    `ANDROID_UPLOAD_*` names and qualify Play upload/app-signing independently.
 2. The Apple account holder resolves the team agreement rejection. Rerun manual
@@ -297,3 +303,25 @@ import is qualified by these attempts.
 4. Review the product descriptor and rollback/stop route before any separately
    authorized production feed switch. Play/store versions, physical ARC/SAF and
    same-ID extension/store cohorts remain independent open checklist gates.
+
+### Maintainer-Supplied Desktop Key Follow-Up
+
+The supplied Tauri-encoded public file's cryptographic packet exactly matches
+the retained root `415D3DF4B3D0CFB8`; packet SHA-256:
+`a9e0989f0cbd52e9673a9083767674f46d21649c15e7ccce8afe4da0d8845de3`.
+The supplied private file is uploaded unchanged through stdin to the existing
+`TAURI_SIGNING_PRIVATE_KEY` repository secret. No private contents, attachment
+paths or credentials enter this repository or tool output. The password secret
+is untouched; its metadata timestamp remains unchanged.
+
+Fresh manual production candidate
+[36831643488](https://github.com/kzahel/rstorrent/actions/runs/36831643488)
+uses `19eb3a88703088a2dfebb803342394938d305cb8`, without publication. Its
+owned-nonce CI proof passes: signer `415D3DF4B3D0CFB8`, JSTorrent verification
+true, incubation verification false. This proves the uploaded private key matches
+the retained trust root and the existing password unlocks it. It supersedes the
+earlier current-input mismatch as a desktop signing-input blocker, not the
+historical failed package evidence. Package jobs remain in progress; original-
+root final artifact validation and authenticated installed updating are still
+open. Apple agreement resolution, Android signing and guest desktop access
+remain independent prerequisites.

@@ -10,7 +10,7 @@ builds cannot publish. The successor update-service descriptor is prepared but
 its live routing/feed is unchanged. Signed installed updating remains unqualified
 until the exact candidate authenticates and an owned old-release guest passes.
 
-Existing CI updater inputs are positively identified as the incubation key,
+Initial CI updater inputs are positively identified as the incubation key,
 not JSTorrent's original key. Package attempts retain diagnostic evidence,
 but cannot qualify old-client updating. The owned macOS 0.2.1 endpoint check
 passes; production delivery rows remain open.
@@ -25,6 +25,10 @@ or expired team agreement; ordinary CI passes every executed job at 19eb3a88.
 The Windows release lane also passes NSIS/MSI, expected-publisher and installed
 signatures, silent installation and activation checks. Mac failures correctly
 prevent complete collection; no production update or release is qualified.
+The maintainer-supplied original key subsequently replaces the existing desktop
+secret. Fresh nonce proof passes original-root verification with the unchanged
+password; run 36831643488 is building a new production candidate. Its final
+package/installed gates and Apple's agreement remain open.
 
 The October 1 monthly rebuild of the unchanged upstream AppImage output plugin
 invalidated its byte pins. Tactical 251 reviews the source/build provenance and

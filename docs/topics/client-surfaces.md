@@ -6,10 +6,12 @@ Tactical [251](../tactical/251-jstorrent-ci-candidates-and-installed-update.md)
 completes a bounded production-identity CI attempt without publication. Windows
 and both Linux package lanes pass; Android passes building/tests/lint then fails
 its original-certificate gate. Fresh macOS notarization needs the team agreement
-resolved. Ordinary CI passes every executed job. The current updater
+resolved. Ordinary CI passes every executed job. The initial updater
 secret fails JSTorrent's original trust root; signed installed continuity remains
 open. An exact old macOS app checks its unchanged production route successfully.
 No product presentation, application DTO or engine behavior changes in this slice.
+The supplied original key is now provisioned and fresh CI nonce signing passes
+with the unchanged password; final package and installed update gates remain open.
 
 Tactical [250](../tactical/250-jstorrent-production-identity-candidates.md)
 prepares production desktop/Android/extension identities and public trust

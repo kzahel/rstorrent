@@ -10,9 +10,9 @@ builds cannot publish. The successor update-service descriptor is prepared but
 its live routing/feed is unchanged. Signed installed updating remains unqualified
 until the exact candidate authenticates and an owned old-release guest passes.
 
-The fresh CI nonce proves the current secret signs with incubation key
-`788A785131367096`, not retained JSTorrent key `415D3DF4B3D0CFB8`. Re-provision
-the original signing inputs before claiming installed delivery. A checksum-pinned
+The initial CI nonce proves the former secret signs with incubation key
+`788A785131367096`, not retained JSTorrent key `415D3DF4B3D0CFB8`. That attempt
+cannot qualify installed delivery. A checksum-pinned
 macOS 0.2.1 guest checks the unchanged production endpoint successfully and sees
 no update; this is baseline reachability, not successor installation evidence.
 The macOS arm64 CI bundle passes original-team Developer ID signing,
@@ -26,6 +26,13 @@ resolve the account agreement along with original updater signing inputs.
 Windows NSIS/MSI, publisher/installed signatures, silent install and activation
 checks pass, as do both Linux AppImage/DEB/RPM package lanes. The failed macOS
 legs prevent complete matrix collection; no production update is authenticated.
+
+The maintainer supplies the original key; provisioning under the existing secret
+name and fresh CI nonce signing now pass with the unchanged password. Run
+[36831643488](https://github.com/kzahel/rstorrent/actions/runs/36831643488)
+verifies against root `415D3DF4B3D0CFB8` and refuses the incubation root.
+Fresh package qualification remains in progress; Apple agreement and installed
+updating remain open. No production feed is changed.
 
 ## Production Candidate Preparation, 2026-10-01
 

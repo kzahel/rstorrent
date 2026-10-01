@@ -21,8 +21,9 @@ release launcher/package metadata, isolated debug assembly and both extension
 ZIP lanes pass. An unsigned macOS arm64 app bundle has the production metadata,
 native helper and original branding notices; it was not launched.
 
-Original updater/Android signing inputs have not been reprovisioned. Play/Web Store
-maximum versions and app-signing certificate remain unverified. No signed
+The original desktop updater key is now provisioned and its CI nonce proof
+passes with the unchanged password. Original Android inputs remain unprovisioned.
+Play/Web Store maximum versions and app-signing certificate remain unverified. No signed
 installed or store row below is complete. Next: confirm those delivery inputs,
 then qualify exact signed candidates in owned installed cohorts, including the same production extension ID and physical Chromebook.
 Minimum API 28 (Android 9) is accepted on 2026-10-01; API 26/27 are outside
@@ -32,9 +33,12 @@ explicitly in the launch-route review; the candidate currently retains magnet
 and torrent intake rather than claiming every legacy route.
 
 Tactical [251](tactical/251-jstorrent-ci-candidates-and-installed-update.md)
-started signed CI candidates using existing inputs. A fresh CI signature proves
-the current desktop secret matches the incubation key, **not** JSTorrent's
-retained updater key. Re-provisioning the original signing inputs is required.
+started signed CI candidates using existing inputs. Its first CI signature proves
+those desktop inputs match the incubation key, **not** JSTorrent's retained root.
+The maintainer-supplied original key replaces that secret; fresh run
+[36831643488](https://github.com/kzahel/rstorrent/actions/runs/36831643488)
+passes original-key signing with the unchanged password. Package validation is
+in progress; this signing-input proof does not close a delivery row.
 The released macOS 0.2.1 app successfully checked its unchanged production
 endpoint in an owned guest, but no successor install is qualified. The prepared
 successor server descriptor passes controlled routing checks and is not active.

@@ -7,10 +7,13 @@ completes the bounded manual, non-publishing CI attempt. Windows and both Linux
 production package lanes pass; Android builds/tests/lints but rejects its signer.
 Fresh macOS notarization needs a missing/expired team agreement resolved.
 Ordinary CI passes every executed job. Actual nonce
-verification identifies the desktop CI secret as the incubation key, failing
-the original JSTorrent root. Original signing inputs block installed successor
+verification initially identifies the desktop CI secret as the incubation key, failing
+the original JSTorrent root. Original signing inputs blocked installed successor
 authentication. Controlled successor-server routing and the old macOS client's
 unchanged production-endpoint check pass without graduating installed updating.
+The maintainer-supplied original desktop key is now provisioned; a fresh CI nonce
+passes the retained JSTorrent root with the unchanged password. Package validation
+is in progress; Apple agreement and installed delivery remain unqualified.
 
 Tactical [250](../tactical/250-jstorrent-production-identity-candidates.md)
 prepares production package/store identities, original public trust roots,

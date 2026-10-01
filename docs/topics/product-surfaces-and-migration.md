@@ -10,14 +10,18 @@ builds cannot publish. The successor update-service descriptor is prepared but
 its live routing/feed is unchanged. Signed installed updating remains unqualified
 until the exact candidate authenticates and an owned old-release guest passes.
 
-The actual CI signing proof fails against JSTorrent's retained public root and
-verifies against the incubation root. Original signing inputs are required.
+The initial CI signing proof fails against JSTorrent's retained public root and
+verifies against the incubation root. That attempt required original inputs.
 Controlled update-service routing and an old macOS app's unchanged-endpoint
 check pass; no successor download/install/relaunch is yet qualified.
 Windows and both Linux package lanes pass, and Android passes signed build/tests/
 lint before original-certificate refusal. Fresh macOS notarization also requires
 the account holder to resolve Apple's team agreement rejection. Ordinary CI
 passes all executed jobs; the controlled CI-bundle handoff stops before import.
+The maintainer-supplied original desktop key is now provisioned. Fresh CI nonce
+proof passes JSTorrent's root with the existing password unchanged; candidate
+package jobs are in progress. Android signing, the Apple team agreement and
+authenticated installed updating remain open independently.
 
 ## Production Candidates, 2026-10-01
 
