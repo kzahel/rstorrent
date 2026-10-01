@@ -10,6 +10,11 @@ builds cannot publish. The successor update-service descriptor is prepared but
 its live routing/feed is unchanged. Signed installed updating remains unqualified
 until the exact candidate authenticates and an owned old-release guest passes.
 
+Existing CI updater inputs are positively identified as the incubation key,
+not JSTorrent's original key. Package attempts continue for diagnostic evidence,
+but cannot qualify old-client updating. The owned macOS 0.2.1 endpoint check
+passes; production delivery rows remain open.
+
 ## JSTorrent Production Candidates, 2026-10-01
 
 Tactical [250](../tactical/250-jstorrent-production-identity-candidates.md)

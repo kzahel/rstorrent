@@ -31,6 +31,14 @@ Keep historical `jstorrent:` launch/pairing and existing website integration
 explicitly in the launch-route review; the candidate currently retains magnet
 and torrent intake rather than claiming every legacy route.
 
+Tactical [251](tactical/251-jstorrent-ci-candidates-and-installed-update.md)
+started signed CI candidates using existing inputs. A fresh CI signature proves
+the current desktop secret matches the incubation key, **not** JSTorrent's
+retained updater key. Re-provisioning the original signing inputs is required.
+The released macOS 0.2.1 app successfully checked its unchanged production
+endpoint in an owned guest, but no successor install is qualified. The prepared
+successor server descriptor passes controlled routing checks and is not active.
+
 ## Candidate Identity And Delivery
 
 - [ ] **D-01 Desktop identity:** JSTorrent name/icons, `com.jstorrent.desktop`,

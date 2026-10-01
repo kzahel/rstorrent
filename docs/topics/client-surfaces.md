@@ -2,6 +2,12 @@
 
 Topic: `client-surfaces`
 
+Tactical [251](../tactical/251-jstorrent-ci-candidates-and-installed-update.md)
+runs production-identity CI candidates without publication. The current updater
+secret fails JSTorrent's original trust root; signed installed continuity remains
+open. An exact old macOS app checks its unchanged production route successfully.
+No product presentation, application DTO or engine behavior changes in this slice.
+
 Tactical [250](../tactical/250-jstorrent-production-identity-candidates.md)
 prepares production desktop/Android/extension identities and public trust
 configuration. Desktop has an explicit candidate overlay, Android release is

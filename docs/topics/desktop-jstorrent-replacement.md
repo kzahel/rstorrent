@@ -10,6 +10,12 @@ builds cannot publish. The successor update-service descriptor is prepared but
 its live routing/feed is unchanged. Signed installed updating remains unqualified
 until the exact candidate authenticates and an owned old-release guest passes.
 
+The fresh CI nonce proves the current secret signs with incubation key
+`788A785131367096`, not retained JSTorrent key `415D3DF4B3D0CFB8`. Re-provision
+the original signing inputs before claiming installed delivery. A checksum-pinned
+macOS 0.2.1 guest checks the unchanged production endpoint successfully and sees
+no update; this is baseline reachability, not successor installation evidence.
+
 ## Production Candidate Preparation, 2026-10-01
 
 Tactical [250](../tactical/250-jstorrent-production-identity-candidates.md)

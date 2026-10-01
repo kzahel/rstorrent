@@ -10,6 +10,11 @@ builds cannot publish. The successor update-service descriptor is prepared but
 its live routing/feed is unchanged. Signed installed updating remains unqualified
 until the exact candidate authenticates and an owned old-release guest passes.
 
+The actual CI signing proof fails against JSTorrent's retained public root and
+verifies against the incubation root. Original signing inputs are required.
+Controlled update-service routing and an old macOS app's unchanged-endpoint
+check pass; no successor download/install/relaunch is yet qualified.
+
 ## Production Candidates, 2026-10-01
 
 Tactical [250](../tactical/250-jstorrent-production-identity-candidates.md)

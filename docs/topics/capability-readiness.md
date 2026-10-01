@@ -2,6 +2,13 @@
 
 Topic: `capability-readiness`
 
+Active Tactical [251](../tactical/251-jstorrent-ci-candidates-and-installed-update.md)
+attempts manual, non-publishing desktop/Android CI candidates. Actual nonce
+verification identifies the desktop CI secret as the incubation key, failing
+the original JSTorrent root. Original signing inputs block installed successor
+authentication. Controlled successor-server routing and the old macOS client's
+unchanged production-endpoint check pass without graduating installed updating.
+
 Tactical [250](../tactical/250-jstorrent-production-identity-candidates.md)
 prepares production package/store identities, original public trust roots,
 increasing pinned-baseline versions, native updater routing and exact production

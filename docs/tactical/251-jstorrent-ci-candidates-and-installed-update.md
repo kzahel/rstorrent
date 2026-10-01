@@ -71,8 +71,40 @@ rather than a prerequisite for testing an isolated feed.
 
 ## Evidence And Restart Checkpoint
 
-Implementation pending. Production descriptor/feed and existing secrets remain
-unchanged. No CI candidate has been dispatched yet.
+Candidate mechanics committed at `3b589dfda62daf4998d5ea516ff8c63cff97719b`.
+Production feed and existing secrets remain unchanged. Manual desktop run
+[36822295713](https://github.com/kzahel/rstorrent/actions/runs/36822295713) and
+Android run
+[36822298091](https://github.com/kzahel/rstorrent/actions/runs/36822298091)
+use that exact source; package builds are still in progress.
+
+The fresh CI nonce declares signing key `788A785131367096`. Independent minisign
+verification succeeds against the incubation root and fails against the retained
+JSTorrent root `415D3DF4B3D0CFB8`. Existing secret names do **not** establish key
+equality. The original signing inputs must replace them before an old JSTorrent
+installation can authenticate the successor. No private material was reported.
+The diagnostic probe now fails visibly on a wrong root; package jobs do not
+depend on that probe and still produce best-effort diagnostic evidence.
+
+The real generic update server, using the successor descriptor, passed 33 HTTP
+checks against owned GitHub metadata fixtures: five platform mappings, exact
+signature/URL passthrough, default Stable/explicit Latest, equal/newer installed
+versions (204), draft exclusion, unknown host/platform and invalid channel.
+This proves routing and version selection, not artifact authentication or TLS.
+No server code or live descriptor/symlink was changed.
+
+In a claimed macOS arm64 guest (macOS 26.6.2), the exact released JSTorrent
+0.2.1 app checked its unmodified production endpoint via `--check-update`,
+returned exit 0 and `{ "available": false }`, with unchanged executable bytes.
+Archive SHA-256:
+`4bc5e979635fe9283d9ba60e43f86bfadcf619adf546cdbe4b68b27d424343f1`;
+old executable SHA-256:
+`f008e2d00e7e414e16096d1ea319d870807ddeddb25d459740b01a0727b019e7`.
+An initial task path under macOS's `/tmp` symlink was correctly refused by the
+released updater's starting-binary check; the canonical path passed. The test
+restored inherited app data, removed owned files, returned the guest to its
+prior suspended state and released its claim. This is baseline updater reachability;
+no successor download/install/relaunch has been qualified.
 
 ### Pre-Dispatch Checkpoint
 
