@@ -41,8 +41,8 @@ passes original-key signing with the unchanged password. Windows/Linux package
 lanes complete; independent checks pass eight original-key payload signatures
 and all 16 receipt hashes. Attempt 1 fails its Apple agreement gate; this
 partial matrix does not close a delivery row.
-The released macOS 0.2.1 app successfully checked its unchanged production
-endpoint in an owned guest, but no successor install is qualified. The prepared
+The initial released macOS 0.2.1 check used its unchanged production
+endpoint in an owned guest; Tactical 251 did not install the successor. The prepared
 successor server descriptor passes controlled routing checks and is not active.
 Android's repaired CI candidate builds signed APK/AAB and passes JVM tests/lint,
 but final staging rejects its incubation certificate. Original GitHub APK signing,
@@ -66,17 +66,26 @@ installed migration remains open. No production feed/store change is made.
 
 Accepted [252](tactical/252-jstorrent-opt-in-upgrade-rehearsal.md) records an
 opt-in test cohort at the normal HTTPS endpoint, one pinned candidate and a
-real owned-guest installed migration. Routing is not implemented or deployed.
+real owned-guest installed migration. The reviewed server route is deployed;
+its three-ID test configuration is disabled after the bounded qualification.
 
 Server commit `f45885c` implements the opt-in route and passes 86 tests plus
-lint/typecheck/build. It is not pushed or deployed; live routing remains disabled
-awaiting explicit push/test-deployment authorization. Exact signed CI packages
+lint/typecheck/build. It is pushed and deployed with explicit maintainer
+authorization; 27 live HTTPS isolation checks retain byte-identical ordinary
+responses. The trial is disabled and owned candidate assets removed afterward. Exact signed CI packages
 pass manual installed replacement on Linux x64, Windows x64 and macOS arm64:
 four records from two profiles, supported settings, rechecking, startup fences,
 registered legacy refusal, stable restart and source/payload preservation. See
 [manual evidence](evidence/jstorrent-upgrade-trial-252-manual-migration.json).
-Actual updater delivery, interruption/signature negatives, controlled repair and
-real extension journeys remain open. Native catalog branding is corrected after
+Original released HTTPS automatic updating passes on Linux x64 and macOS
+arm64, and the normal macOS Check for Updates / Install & Restart path passes.
+Linux signature refusal and interrupted-download retries pass; macOS signature
+refusal and retry also pass, with the original executable hash preserved. See
+[installed evidence](evidence/jstorrent-upgrade-trial-252-installed.json).
+Windows is reserved by another active claim. The old Linux release renders
+blank in the selected VM under default, DMA-BUF-disabled and software/X11
+settings, leaving its GUI path open. Broader installed cohorts, controlled
+repair and real extension journeys remain open. Native catalog branding is corrected after
 the candidate source and needs a fresh signed build.
 
 ## Candidate Identity And Delivery
@@ -110,7 +119,10 @@ select representative historical sources and browsers. Keep each unrun lane open
 - [ ] **P-01 Installed update:** real installed JSTorrent checks its normal route,
   verifies the candidate, replaces itself, relaunches and retains its OS identity.
   NSIS replacement, AppImage path and macOS bundle path are exercised. Package
-  manager lanes have their documented upgrade route.
+  manager lanes have their documented upgrade route. Bounded 252 evidence passes
+  original 0.2.1-to-0.3.0 HTTPS delivery on Linux x64 and macOS arm64, including
+  the ordinary macOS UI. Windows, other architectures and the Linux old-app UI
+  remain open; the complete row is not satisfied.
 - [ ] **P-02 Legacy shutdown:** running desktop/old native hosts, open legacy
   extension pages and idle pre-handshake helpers cannot remain payload writers.
   Managed old registrations refuse the legacy protocol. Failure to fence or prove

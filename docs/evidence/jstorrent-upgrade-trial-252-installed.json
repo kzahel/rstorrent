@@ -135,8 +135,73 @@
       "sourceVerification": "GUI logical values and inactive bytes; all bytes across successor restart",
       "imported": 4,
       "status": "passed"
+    },
+    "wrong-macos": {
+      "legacyArchiveSha256": "4bc5e979635fe9283d9ba60e43f86bfadcf619adf546cdbe4b68b27d424343f1",
+      "candidateArchiveSha256": "02431fc88e1790ee276f1e04405582ce9db8fefc6d3b996981b0c57f095a8516",
+      "checks": [
+        "pre-handshake-host-blocks-before-catalog",
+        "registration-failure-blocks-before-catalog",
+        "old-unmodified-HTTPS-check-offers-pinned-successor",
+        "wrong-signature-preserves-old-installation",
+        "old-updater-download-authenticates-and-installs-successor",
+        "four-record-import-and-paused-intent",
+        "valid-and-corrupt-reverification",
+        "missing-root-not-created",
+        "nine-registered-refusal-routes",
+        "restart-identities-and-single-marker",
+        "source-and-payload-preserved"
+      ],
+      "legacyBinaries": {
+        "jstorrent-desktop": "f008e2d00e7e414e16096d1ea319d870807ddeddb25d459740b01a0727b019e7",
+        "jstorrent-host": "cc5faaefa59e72d6ac098251ea7cc7c9ec90b35711c342a1211faa01e04a0411",
+        "jstorrent-io-daemon": "57b77c713f4f6b09c955f73694bd3dce7731042093d215e1ec64871d15f88f56"
+      },
+      "candidateBinarySha256": "751fb1f4b25db1277334011567d160a040e0b313822f117a447337955e9a04fe",
+      "negativeLegacyExecutableSha256": "f008e2d00e7e414e16096d1ea319d870807ddeddb25d459740b01a0727b019e7",
+      "imported": 4,
+      "status": "passed"
     }
   },
   "windows": "Not exercised: exact appliance held by another active exclusive claim",
-  "trialDisabled": false
+  "trialDisabled": true,
+  "disableVerification": {
+    "ordinaryResponsesByteIdentical": true,
+    "responseChecks": 24,
+    "candidateAssetRoutesDisabled": 5
+  },
+  "interruptedLinuxLegacyAppImageSha256": "1c35bb7dd5bdefcd780c19fc09e160dc7b0e6a5a2ada35f07007089d85e180df",
+  "unqualifiedAttempts": [
+    {
+      "platform": "macos",
+      "path": "ordinary GUI",
+      "observation": "Exact updater replacement and catalog checks succeeded; original frozen-source assertion failed because the old GUI changed discovery/active database bytes with all logical values identical",
+      "resolution": "Corrected active-writer oracle rerun passed; inactive bytes and all source bytes across successor restart are enforced"
+    },
+    {
+      "platform": "linux",
+      "path": "ordinary GUI",
+      "configurations": [
+        "default Wayland",
+        "WEBKIT_DISABLE_DMABUF_RENDERER=1",
+        "GDK_BACKEND=x11, WEBKIT_DISABLE_COMPOSITING_MODE=1, WEBKIT_DISABLE_DMABUF_RENDERER=1"
+      ],
+      "observation": "Old released WebKit window renders blank and no Install control is exposed; bounded attempts cancelled before installation",
+      "restoration": "All three passed"
+    }
+  ],
+  "remaining": [
+    "Windows original HTTPS updater: appliance held by another active exclusive claim",
+    "Linux old-release GUI rendering and ordinary Install & Restart",
+    "other architectures and historical cohorts",
+    "real legacy/successor extension combinations and launch routes",
+    "controlled payload repair transfer",
+    "native branding correction in fresh signed CI candidate"
+  ],
+  "cleanup": {
+    "linux": "All six runs restore file scopes and empty inherited backups; no owned product processes; six fixture roots/staging/three captures removed; initial off state restored; claim released",
+    "macos": "All four runs restore scopes and empty inherited backups; no owned product processes; four fixture roots/staging removed; initial suspended state restored; claim released",
+    "windows": "Never claimed or operated; other session remains undisturbed",
+    "server": "Trial drop-in/private manifest and owned assets removed; service restarted and active; original product descriptor retained"
+  }
 }

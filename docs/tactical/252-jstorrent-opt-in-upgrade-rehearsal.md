@@ -1,7 +1,7 @@
 # Tactical 252: Opt-In JSTorrent Installed Upgrade Rehearsal
 
-Status: **Active, end-to-end implementation and owned installed validation
-authorized 2026-10-01; test-only routing and deployment remain bounded below.**
+Status: **Bounded Linux/macOS HTTPS trial checkpoint complete, 2026-10-01.
+Windows, Linux ordinary GUI and extension follow-ups remain open.**
 
 Owners: `desktop-jstorrent-replacement`, `product-surfaces-and-migration`,
 `beta-release-readiness`. Generic routing belongs to `simple-app-update-server`;
@@ -218,7 +218,8 @@ by `--auto-update`, or the ordinary old GUI. Real installation requires the
 pinned AppImage/desktop executable bytes, joined updater-spawned owners, the same
 catalog/settings/source/payload assertions and native restart. Negative mode
 parks at `negative-complete` until owned `allow-retry` after valid routing returns.
-These real-updater branches remain unexecuted; their existence is not evidence.
+At this earlier checkpoint the real-updater branches were unexecuted; the
+subsequent execution sections record their actual installed evidence.
 
 Linux keeps AppImage's supported extract-and-run environment across Tauri restart;
 FUSE launch remains a separate lane. Windows preserves both expected per-user
@@ -229,8 +230,8 @@ the task child while an adjacent application remains running. Python compilation
 `--help`, malformed-ID/tampered-receipt refusal before manifest output and
 `git diff --check` pass. No Rust DTO/schema/engine behavior changes in this slice.
 
-Live deployment remains disabled and awaits explicit push/test-deployment
-authorization requested under the repository's no-push rule. Server commit
+At this earlier checkpoint live deployment was disabled pending explicit
+push/test-deployment authorization under the repository's no-push rule. Server commit
 `f45885c` and the private three-ID manifest are reviewable; existing ordinary
 product/channel configuration is retained. Deploy only that tested server commit,
 build before restart, configure immutable authenticated assets plus the private
@@ -239,9 +240,9 @@ manifest, and verify ordinary/malformed/unknown-ID responses before opening any
 restart and verify ordinary selection. Do not publish a GitHub release, promote
 the default feed or modify a store item.
 
-Actual HTTPS old-client installation and GUI restart, signature/interruption
-negatives, controlled repair and real extension/file/magnet/toolbar journeys
-remain open. These depend on the trial and further owned validation; the
+At this earlier checkpoint, HTTPS old-client installation, GUI restart,
+signature/interruption negatives, controlled repair and real extension/file/
+magnet/toolbar journeys remained open. These depend on the trial and further owned validation; the
 three-platform manual result does not close P-01 or full cutover acceptance.
 
 ### Clean Stop And Resume Input
@@ -311,3 +312,49 @@ WebKit DMA-BUF renderer test setting without changing either signed app. Windows
 remains held by another active exclusive claim and is not operated. These gates,
 real extension journeys, repair transfers and broader cutover qualification are
 still explicit remaining work.
+
+### Final Trial Disposition And Restart Checkpoint
+
+[Installed evidence](../evidence/jstorrent-upgrade-trial-252-installed.json)
+records six successful runs: Linux headless automatic upgrading, wrong-signature
+refusal/retry and interrupted-download/retry; macOS headless upgrading, ordinary
+GUI upgrading and wrong-signature refusal/retry. The macOS negative checks the
+exact old executable hash. All passing runs reuse the four-record, two-profile,
+settings, checking, missing-root, registration, stable-identity/marker and payload
+oracles. The corrected macOS GUI additionally proves every source byte unchanged
+across successor restart. The interrupted Linux AppImage independently matches
+the pinned old package hash before and after interruption.
+
+Linux's old GUI remains blank under default Wayland, disabled DMA-BUF and
+software-compositing/X11 configurations. Native captures and empty accessibility
+results confirm this rendering gate; the updater's GUI Install action was not
+executed. Three bounded cancellations restore files. The unsuccessful first
+macOS GUI source-oracle attempt also restores before its corrected passing rerun.
+These are recorded unqualified attempts, not extra migration passes. Windows
+still has another session's exclusive claim; no guest operation or claim takeover
+is performed. Existing manual Windows evidence is not substituted for updating.
+
+The server code remains deployed, but the private trial drop-in/manifest and all
+owned candidate files are removed. A restart restores ordinary selection for all
+three formerly opted-in IDs: 24 HTTPS response comparisons match the original
+six baselines, and all five candidate asset GET paths return 404. HEAD on an
+unknown path returns the existing normal handler's 405; delivery-disabled checks
+use GET rather than treating that method refusal as an asset-serving failure.
+No product descriptor, release, default feed, store or client signing input is
+promoted or changed by the trial. The ordinary service remains active.
+
+Resume Windows only after fresh claim availability. Qualify the old Linux GUI
+on a representative supported rendering/package environment before claiming its
+ordinary UI update; do not patch/rebuild the old app to manufacture that proof.
+Use newly generated IDs and the authenticated complete candidate receipts for
+any future isolated trial. Production rollout, extension journeys, controlled
+repair and the complete cutover matrix remain open.
+
+Cleanup verifies all six Linux and four macOS attempts finish restoration with
+empty inherited backups and no owned product processes. Exact fixture/staging
+roots and the three task captures are removed. Linux returns to its initially
+off state; macOS returns to suspended; both claims are released. Windows remains
+untouched. The staging HTTP server is stopped, controller-only candidate/legacy
+downloads and generated IDs/configuration are removed, and only sanitized
+checked-in evidence remains. Repository work is committed locally; only the
+explicitly approved update-server commit was pushed.

@@ -31,18 +31,22 @@ next opt-in HTTPS installed trial.
 Server commit `f45885c` implements the opt-in route and passes 86 tests plus
 lint/typecheck/build. The maintainer authorizes its push and isolated deployment.
 Twenty-seven live HTTPS checks preserve ordinary response bytes while selecting
-the pinned candidate only for three generated test IDs. Exact signed CI packages
+the pinned candidate only for three generated test IDs. After qualification,
+the private manifest/drop-in and owned assets are removed; 24 live HTTPS
+response comparisons and five asset GET refusals prove normal routing restored. Exact signed CI packages
 pass manual installed replacement on Linux x64, Windows x64 and macOS arm64:
 four records from two profiles, supported settings, rechecking, startup fences,
 registered legacy refusal, stable restart and source/payload preservation. See
 [manual evidence](../evidence/jstorrent-upgrade-trial-252-manual-migration.json).
 Original released HTTPS automatic upgrading passes on Linux x64 and macOS
 arm64, including the migration/restart checks; Linux signature refusal and
-interrupted-download retries also pass. macOS ordinary Check for Updates /
+interrupted-download retries also pass. macOS signature refusal preserves the
+old executable hash and valid retry passes. macOS ordinary Check for Updates /
 Install & Restart passes with the active legacy writer accounted for. See
 [installed evidence](../evidence/jstorrent-upgrade-trial-252-installed.json).
-Windows automatic updating awaits its reserved appliance; Linux UI, controlled
-repair and real extension journeys remain open. Native catalog branding is corrected after
+Windows automatic updating awaits its reserved appliance. The old Linux release
+renders blank in this VM under three tested configurations, leaving its ordinary
+UI path open. Controlled repair and real extension journeys remain open. Native catalog branding is corrected after
 the candidate source and needs a fresh signed build.
 
 Tactical [250](../tactical/250-jstorrent-production-identity-candidates.md)
