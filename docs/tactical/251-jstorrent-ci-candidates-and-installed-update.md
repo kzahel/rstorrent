@@ -124,6 +124,10 @@ bundle retry remains required; this is not source-offer/license graduation.
 Local validation passes: 18 distribution-review tests, both real asset hashes,
 and a wrong-byte download refusal that preserves the prior cache and cleans
 temporary download state. No Rust/application source changes in this repair.
+Before retry, correct the missing build-job `PACKAGE_PRODUCT` environment value
+so package activation/staging checks receive the selected identity consistently.
+The original manual release's source checks have passed on all native/web/tool
+checks in that job; current signing inputs still block authenticated delivery.
 
 ### Pre-Dispatch Checkpoint
 
