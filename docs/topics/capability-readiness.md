@@ -9,7 +9,9 @@ extension admission. Source/package/native/Android metadata gates are recorded
 in the tactical. This does not graduate signed/store/installed continuity:
 [the full cutover checklist](../jstorrent-cutover-checklist.md) remains open,
 including original private-key provisioning, Play signing/max versions, physical
-ARC, same-ID browser updates and the legacy API 26/27 disposition.
+ARC and same-ID browser updates. Minimum API 28 (Android 9) is accepted on
+2026-10-01; API 26/27 are outside the supported replacement cohort. Delivery
+qualification still needs clear unsupported-device guidance.
 
 Tactical [249](../tactical/249-jstorrent-brand-and-extension-refresh.md) completes
 bounded JSTorrent brand preparation and an extension popup/connection refresh:

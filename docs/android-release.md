@@ -13,7 +13,9 @@ this lane but has not provisioned private signing material, built a candidate
 with the production key, submitted to Play or published an update. Follow the
 [full cutover checklist](jstorrent-cutover-checklist.md) before any delivery.
 Check maximum versionCode in every Play track; code 25 exceeds only the pinned
-released 1.0.24 baseline. Minimum API 28 leaves legacy API 26/27 unresolved.
+released 1.0.24 baseline. Minimum API 28 (Android 9) is selected on 2026-10-01.
+API 26/27 are outside the replacement cohort; those devices keep the old app
+until an OS update permits replacement. Validate unsupported-device guidance.
 
 The former independent canary's first verified release is
 [Android 0.1.0](https://github.com/kzahel/rstorrent/releases/tag/android-v0.1.0)

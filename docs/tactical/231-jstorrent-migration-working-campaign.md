@@ -310,7 +310,7 @@ production routing remain separately scoped.
   adapter/component and backend migration evidence, without an installed rerun.
 - Next executable actions: qualify 250's production candidates against the
   [full cutover checklist](../jstorrent-cutover-checklist.md). Confirm original
-  private signing material, Play signing/max versions and API 26/27 disposition;
+  private signing material and Play signing/max versions;
   then exercise exact signed installed updates and same-ID extension replacement.
   Support/privacy/settings and historical launch-route dispositions remain open.
   Interrupted-update, physical sleep/wake

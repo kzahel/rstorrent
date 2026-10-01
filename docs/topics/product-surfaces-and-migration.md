@@ -19,8 +19,16 @@ The [full cutover checklist](../jstorrent-cutover-checklist.md) owns delivery,
 installed migration, staggered updates and recovery acceptance. Checked-in
 versions exceed the pinned sources, not yet authenticated store maxima. Original
 private-key availability, Play signing, signed installed delivery, same-ID browser
-updates, API 26/27 and legacy launch routes remain explicit gates. Candidate
+updates and legacy launch routes remain explicit gates. Minimum API 28
+(Android 9) is selected on 2026-10-01; API 26/27 installations are outside the
+replacement cohort and need explicit unsupported-device guidance. Candidate
 mechanics do not graduate the product for shipment.
+
+The destination is one JSTorrent shipping lane. Incubation source/key separation
+is temporary qualification protection, not a plan to maintain two products.
+Switch the existing desktop CI config/validation/public root to JSTorrent before
+replacing its existing Tauri secrets; keep publication gated by the checklist.
+Normal isolated debug builds remain useful after production succession.
 
 ## Production Replacement And Branding
 

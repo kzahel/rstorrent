@@ -23,9 +23,10 @@ native helper and original branding notices; it was not launched.
 
 No production private signing key has been provisioned or used. Play/Web Store
 maximum versions and app-signing certificate remain unverified. No signed
-installed or store row below is complete. Next: confirm those delivery inputs
-and API 26/27 policy, then qualify exact signed candidates in owned installed
-cohorts, including the same production extension ID and physical Chromebook.
+installed or store row below is complete. Next: confirm those delivery inputs,
+then qualify exact signed candidates in owned installed cohorts, including the same production extension ID and physical Chromebook.
+Minimum API 28 (Android 9) is accepted on 2026-10-01; API 26/27 are outside
+the replacement cohort and unsupported-device guidance still needs review.
 Keep historical `jstorrent:` launch/pairing and existing website integration
 explicitly in the launch-route review; the candidate currently retains magnet
 and torrent intake rather than claiming every legacy route.
@@ -115,9 +116,10 @@ rows independently; those tests use disposable signing and owned emulators.
 ## Product, Recovery And Release Decision
 
 - [ ] **R-01 Feature disposition:** review recorded unsupported VPN, battery/plugin
-  and other gaps. Migrate only implemented matching semantics. Explicitly decide
-  API 26/27: minSdk 28 currently leaves those installations on the old app, so their
-  extension compatibility and user guidance need a deliberate disposition.
+  and other gaps. Migrate only implemented matching semantics.
+  Minimum API 28 (Android 9) is accepted; API 26/27 remain on the old app and
+  outside the replacement cohort. Validate clear OS-update/unsupported-device
+  guidance, including staggered extension updates with no available Play update.
 - [ ] **R-02 User outcomes:** report imported/already-present/skipped/failed counts,
   actionable missing-folder repair and retry/recovery. Explain supported setting
   changes and dropped features. Verify voluntary support/export and privacy wording;

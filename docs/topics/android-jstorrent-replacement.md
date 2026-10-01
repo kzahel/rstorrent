@@ -17,8 +17,11 @@ have not been transferred/configured by this slice.
 
 Original APK signing is not proof of Play app-signing continuity. Confirm the
 existing Play app, upload certificate, app-signing certificate and maximum
-versionCode across tracks before a signed candidate. Minimum API remains 28;
-legacy API 26/27 support needs an explicit decision. Existing canary listing
+versionCode across tracks before a signed candidate. Maintainer direction on
+2026-10-01 selects minimum API 28 (Android 9) for the replacement; API 26/27
+are outside the supported cutover cohort. Those installations retain the old
+app until their OS supports the replacement. Qualify unsupported-device guidance
+so an unavailable Play update is not presented as a recoverable retry loop. Existing canary listing
 assets are historical material, unsuitable for this production app unchanged.
 The [cutover checklist](../jstorrent-cutover-checklist.md) keeps installed Play,
 physical ARC/SAF, launch routes and same-ID extension updating open.
@@ -217,7 +220,7 @@ Potential investment before cutover (unsupported settings are dropped):
 | Historical browser-local sessions | Pinned 1.0.24 routes connected extension session/settings to the same Android SQLite source; qualify its ordinary writer in 248. Browser-local fallback and older pre-remote-KV releases still require a separate disposition. Roots/preferences carry without a native DB. |
 | Per-torrent peer limits, old custom listening-port policy and other unmapped engine knobs | Drop unmapped knobs. Audit user demand and add only equivalent mappings or qualified capabilities in a follow-up. |
 | Private fallback file actions / root management | Existing payload and engine checking carry as a path root; broader Compose open/share/remove/clear/delete journeys for that imported path root still need qualification. |
-| API 26/27 | Old APK supports them; current app requires 28. Decide the supported cutover cohort explicitly. |
+| API 26/27 | Minimum API 28 (Android 9) accepted on 2026-10-01. These installations remain on the old app and outside the replacement cohort; qualify unsupported-device and extension guidance. |
 | Production delivery | Play-delivered signing continuity, branding, old components/deep links/notification routes and coordinated extension guidance remain release work. |
 | Migration feedback | Counts and ordinal outcomes are retained privately; qualify a user-facing skipped-record summary and recovery/support journey before production. |
 | Wider profile/device qualification | More historical captures, active old engine at replacement, multiple/removable roots, reboot/provider failure and complete clear/delete UI scenarios remain broader evidence. |
@@ -236,8 +239,9 @@ update or evidence that every seeded value came from ordinary old UI writers.
 Qualify the actual release signing/update lane and broader installed source
 cohorts in a separately authorized campaign. The public GitHub APK certificate does not
 by itself establish the Play-delivered certificate. Current RSTorrent minimum
-API 28 differs from the old APK's API 26: explicitly account for API 26/27 users
-before declaring the supported production replacement cohort.
+API 28 differs from the old APK's API 26. The accepted replacement cohort
+starts at 28; API 26/27 devices keep the old app and need clear unsupported-device
+guidance, including when the successor extension cannot offer a usable update.
 
 Required assertions cover fresh/empty, intact/corrupt payload, stopped/active/
 queued/held metadata, stopped pending magnets, multiple roots, private default

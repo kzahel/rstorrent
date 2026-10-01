@@ -123,7 +123,29 @@ are complete. Signed installed/store continuity remains unqualified.
   does not recur; keep Tauri packaging and workspace Rust validation sequential.
 
 Next executable slice: original signing-input/Play certificate and track-max
-review, explicit API 26/27 disposition, then exact signed installed updating and
+review, then exact signed installed updating and
 same-ID extension replacement under the full checklist. Also qualify historical
 launch/deep-link routes and current store artwork/copy. No publishing, physical
 ARC replacement, update-server descriptor or remote secrets are changed.
+
+## Follow-Up Decisions, 2026-10-01
+
+The maintainer selects existing minSdk 28 (Android 9) for replacement. API 26/27
+are outside the supported cutover cohort; no lowering of the Rust/Android
+minimum is required. Their installed legacy app remains until OS compatibility
+permits replacement. Unsupported-device/store/extension guidance still needs
+qualification; the decision alone does not satisfy installed delivery.
+
+The maintainer confirms one shipping-product cutover, not ongoing parallel
+JSTorrent and RSTorrent releases. Temporary source/incubation separation is a
+qualification safeguard. Switch the existing desktop CI candidate config,
+public trust and validation to JSTorrent, keeping publication gated, then reuse
+`TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` with the
+original JSTorrent inputs. Do not overwrite them before that pipeline switch.
+Ordinary debug identities remain isolated independently of shipping identity.
+
+The public roots differ: the published Latest 0.2.801 updater manifest declares
+key ID `788A785131367096`, versus production `415D3DF4B3D0CFB8`. CI secret
+metadata has not changed since that release. No secret is uploaded or workflow
+switched by this documentation update. Next desktop slice owns the one-lane CI
+transition and retained-public-root signature qualification before publication.

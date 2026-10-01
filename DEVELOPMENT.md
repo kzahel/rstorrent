@@ -585,6 +585,24 @@ launch can migrate installed legacy state; use owned guests for installed tests.
 Source versions exceed pinned legacy baselines; check all store tracks before
 shipment. No build command above publishes or changes an update service.
 
+Production succession selects one JSTorrent shipping lane. The existing desktop
+workflow must first switch its candidate config, public trust and validation to
+JSTorrent, keeping publication gated by the cutover checklist. Then replace its
+existing updater secrets with the original JSTorrent key:
+
+```bash
+gh secret set TAURI_SIGNING_PRIVATE_KEY --repo kzahel/rstorrent < /path/to/jstorrent.key
+gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD --repo kzahel/rstorrent
+```
+
+The second command prompts for a password; use it if the key is password
+protected. Supply the original Tauri key file's complete contents, keeping its
+existing encoding. Do not upload a public key file. These commands overwrite
+the existing incubation signing inputs, so do not run them while the workflow
+still packages and validates against the incubation public key. This is a
+pipeline transition, not authorization for parallel product releases or
+publication. Ordinary debug identities remain isolated after the cutover.
+
 ## Packaging The JSTorrent Beta Extension Seed
 
 Validate the Manifest V3 permission/local-code boundary and produce the exact
