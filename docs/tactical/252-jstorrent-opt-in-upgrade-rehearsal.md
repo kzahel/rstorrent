@@ -55,7 +55,10 @@ release, or selecting candidates automatically from mutable GitHub Latest.
 - Tactical 251 supplies exact original-key Windows/Linux artifacts from CI
   run 36831643488. All eight available payload signatures and 16 receipt hashes
   independently pass. A failed-only retry now passes both macOS app/DMG
-  notarization checks; fresh complete run 36845370571 remains pending.
+  notarization checks. Fresh complete run 36845370571 passes all five lanes,
+  exact release collection and all ten original-root updater payload signatures
+  on source `19eb3a88703088a2dfebb803342394938d305cb8`. Use this complete
+  same-attempt candidate for the trial; installed migration remains unqualified.
 - Reuse 242/243's independently checked released writers, multi-profile fixture
   generation, closed catalog inspection, fencing and source/payload oracles.
 

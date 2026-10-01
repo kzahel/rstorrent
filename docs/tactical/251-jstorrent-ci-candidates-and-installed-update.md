@@ -3,8 +3,8 @@
 Status: **Bounded CI attempt complete, 2026-10-01; production delivery blocked.**
 
 Follow-up: **Original desktop key and eight Windows/Linux payload signatures
-pass; macOS notarization recheck passes. Complete same-attempt collection
-and authenticated installed updating remain open.**
+pass; macOS notarization and complete same-attempt candidate collection
+pass. Authenticated installed updating remains open.**
 The maintainer supplies the original encoded key files and authorizes using them
 for the existing CI lane. Keep the existing password secret unchanged and verify
 it by signing an owned nonce; never expose or commit private signing material.
@@ -293,10 +293,10 @@ import is qualified by these attempts.
    complete platform/package and installed evidence before shipment.
    Provision original Android keystore/password/alias inputs under existing
    `ANDROID_UPLOAD_*` names and qualify Play upload/app-signing independently.
-2. Fresh macOS app/DMG notarization now passes on both architectures. Finish
-   complete desktop candidate run 36845370571 on the recorded source SHA.
-   Require every package lane and original-root signature gate; do not publish
-   diagnostic output. Android retains its independent original-signer gate.
+2. Complete desktop candidate run 36845370571 now passes all five lanes and
+   all ten original-root payload signatures on the recorded source SHA. Use
+   its pinned artifacts for Tactical 252; do not publish diagnostic output.
+   Android retains its independent original-signer gate.
 3. Reacquire an owned guest claim and explicit desktop grant for the installed
    rehearsal. Use the exact checksum-pinned old release and fresh authenticated
    candidate. Confine candidate feed/TLS routing to the guest; exercise the old
@@ -364,6 +364,10 @@ hash. The collector correctly refuses this two-leg retry because Windows/Linux
 artifacts belong to attempt 1; do not combine attempts to graduate that gate.
 
 Fresh complete non-publishing run [36845370571](https://github.com/kzahel/rstorrent/actions/runs/36845370571)
-starts at the same `19eb3a88703088a2dfebb803342394938d305cb8` source. Its outcome
-is pending; complete original-root collection and installed migration remain
-open. Tactical 252 is accepted/Ready; routing is not implemented or deployed.
+uses the same `19eb3a88703088a2dfebb803342394938d305cb8` source and completes
+successfully. All five package lanes and nonce identity proof pass. Collector job
+110322129210 assembles 23 assets and 15 updater target aliases, validates the
+complete release and verifies all ten JSTorrent payload signatures against the
+retained public key at 10:14:33 UTC. Publication steps are skipped. This closes
+complete same-attempt CI candidate collection, not installed update/migration.
+Tactical 252 is accepted/Ready; routing is not implemented or deployed.

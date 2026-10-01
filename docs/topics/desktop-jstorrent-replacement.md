@@ -40,9 +40,10 @@ Fresh attempt 2 of run 36831643488 now passes both macOS jobs: Apple accepts
 both apps and outer DMGs, with no DMG issues; signing, stapling and Gatekeeper
 checks pass. The agreement error is no longer blocking CI. The collector refuses
 the failed-only retry because it has only two current-attempt legs. Fresh complete
-non-publishing run [36845370571](https://github.com/kzahel/rstorrent/actions/runs/36845370571) is pending at the same
-source SHA. See [Apple recheck evidence](../evidence/jstorrent-ci-candidate-251-apple-recheck.json). Complete collection and
-installed migration remain open; no production feed/store change is made.
+non-publishing run [36845370571](https://github.com/kzahel/rstorrent/actions/runs/36845370571) now passes at the same
+source SHA: all five lanes, exact release collection and all ten original-root
+updater payload signatures. See [Apple recheck evidence](../evidence/jstorrent-ci-candidate-251-apple-recheck.json). Complete candidate collection passes;
+installed migration remains open. No production feed/store change is made.
 
 Accepted [252](../tactical/252-jstorrent-opt-in-upgrade-rehearsal.md) uses the
 released app's existing `X-CFU-Id` header for an explicitly opted-in test cohort
