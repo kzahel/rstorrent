@@ -3,9 +3,11 @@
 Topic: `android-jstorrent-replacement`
 
 Tactical [251](../tactical/251-jstorrent-ci-candidates-and-installed-update.md)
-attempts the production package in CI with existing canary signing inputs.
+completes a bounded production-package CI attempt with existing signing inputs.
 The first attempt builds APK/AAB, then exposes an explicit exported-attribute
 requirement in release-overlay lint. The overlay repeats the inherited value.
+The repaired retry passes signed APK/AAB building, JVM tests and release lint,
+then fails only at the mandatory original-certificate staging check.
 Its current signing certificate differs from the original GitHub APK signer;
 original inputs and independent Play upload/app-signing review remain required.
 Retained diagnostic artifacts cannot qualify an installed production upgrade.

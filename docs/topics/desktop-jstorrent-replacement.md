@@ -3,7 +3,7 @@
 Topic: `desktop-jstorrent-replacement`
 
 Tactical [251](../tactical/251-jstorrent-ci-candidates-and-installed-update.md)
-starts manual production-identity CI attempts using existing signing inputs,
+completes bounded production-identity CI attempts using existing signing inputs,
 with nonce identity proof, exact product receipts and retained-public-root
 signature verification. Automatic incubation publication is paused; candidate
 builds cannot publish. The successor update-service descriptor is prepared but
@@ -15,6 +15,17 @@ The fresh CI nonce proves the current secret signs with incubation key
 the original signing inputs before claiming installed delivery. A checksum-pinned
 macOS 0.2.1 guest checks the unchanged production endpoint successfully and sees
 no update; this is baseline reachability, not successor installation evidence.
+The macOS arm64 CI bundle passes original-team Developer ID signing,
+notarization/stapling and Gatekeeper; its updater signature remains wrong-root.
+A controlled manual-handoff attempt stops before import at the old-host refusal
+alert; the harness guidance now identifies its UserNotificationCenter owner.
+Desktop grant revocation ends UI actions; no installed delivery row is closed.
+The repaired retry also exposes a fresh Apple notarization HTTP 403 for a missing
+or expired team agreement. The earlier accepted bundle does not qualify that retry;
+resolve the account agreement along with original updater signing inputs.
+Windows NSIS/MSI, publisher/installed signatures, silent install and activation
+checks pass, as do both Linux AppImage/DEB/RPM package lanes. The failed macOS
+legs prevent complete matrix collection; no production update is authenticated.
 
 ## Production Candidate Preparation, 2026-10-01
 

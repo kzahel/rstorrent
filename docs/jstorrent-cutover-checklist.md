@@ -21,7 +21,7 @@ release launcher/package metadata, isolated debug assembly and both extension
 ZIP lanes pass. An unsigned macOS arm64 app bundle has the production metadata,
 native helper and original branding notices; it was not launched.
 
-No production private signing key has been provisioned or used. Play/Web Store
+Original updater/Android signing inputs have not been reprovisioned. Play/Web Store
 maximum versions and app-signing certificate remain unverified. No signed
 installed or store row below is complete. Next: confirm those delivery inputs,
 then qualify exact signed candidates in owned installed cohorts, including the same production extension ID and physical Chromebook.
@@ -38,6 +38,17 @@ retained updater key. Re-provisioning the original signing inputs is required.
 The released macOS 0.2.1 app successfully checked its unchanged production
 endpoint in an owned guest, but no successor install is qualified. The prepared
 successor server descriptor passes controlled routing checks and is not active.
+Android's repaired CI candidate builds signed APK/AAB and passes JVM tests/lint,
+but final staging rejects its incubation certificate. Original GitHub APK signing,
+Play upload certificate and Play app-signing certificate are separate gates.
+The macOS arm64 CI app passes original-team Developer ID/notarization checks;
+its updater signature fails the original root. A manual CI-bundle guest attempt
+stops at the live-old-host alert before import and does not close an installed row.
+Fresh macOS notarization then fails because Apple reports a missing/expired team
+agreement; the account holder must resolve it before a new candidate can pass.
+Windows signed NSIS/MSI, installed publisher/helper signatures and activation
+checks pass, as do both Linux package lanes. Ordinary CI is fully green. These
+partial checkpoints leave authenticated installed updating and all rows open.
 
 ## Candidate Identity And Delivery
 

@@ -2,8 +2,11 @@
 
 Topic: `capability-readiness`
 
-Active Tactical [251](../tactical/251-jstorrent-ci-candidates-and-installed-update.md)
-attempts manual, non-publishing desktop/Android CI candidates. Actual nonce
+Tactical [251](../tactical/251-jstorrent-ci-candidates-and-installed-update.md)
+completes the bounded manual, non-publishing CI attempt. Windows and both Linux
+production package lanes pass; Android builds/tests/lints but rejects its signer.
+Fresh macOS notarization needs a missing/expired team agreement resolved.
+Ordinary CI passes every executed job. Actual nonce
 verification identifies the desktop CI secret as the incubation key, failing
 the original JSTorrent root. Original signing inputs block installed successor
 authentication. Controlled successor-server routing and the old macOS client's

@@ -1,6 +1,6 @@
 # Tactical 251: JSTorrent CI Candidates And Installed Update
 
-Status: **Active, 2026-10-01.**
+Status: **Bounded CI attempt complete, 2026-10-01; production delivery blocked.**
 
 Topics: `product-surfaces-and-migration`, `desktop-jstorrent-replacement`,
 `android-jstorrent-replacement`, `beta-release-readiness`, `client-surfaces`.
@@ -26,6 +26,12 @@ for the successor update through an isolated candidate feed, install/relaunch
 and inspect retained library/source/payload. Test-feed routing must be confined
 to the guest; production users must not be offered the candidate. Do not weaken
 TLS, updater authentication, signing validation or host fencing to obtain a pass.
+
+While updater authentication is blocked, the existing controlled manual-handoff
+driver may independently exercise a CI Developer-ID-signed production bundle
+with checksum-pinned old writers. Label this installed migration evidence, never
+authenticated updater delivery. Preserve inherited guest state and existing
+fencing/source/payload oracles; no personal profile or public swarm is involved.
 
 Stop with the CI attempts, available installed evidence, exact blockers and a
 restart checkpoint. Missing original signing material is a delivery blocker;
@@ -76,7 +82,8 @@ Production feed and existing secrets remain unchanged. Manual desktop run
 [36822295713](https://github.com/kzahel/rstorrent/actions/runs/36822295713) and
 Android run
 [36822298091](https://github.com/kzahel/rstorrent/actions/runs/36822298091)
-use that exact source; package builds are still in progress.
+use that exact source. Both initial attempts failed; retries below record the
+repaired source and remaining signing blockers.
 
 The fresh CI nonce declares signing key `788A785131367096`. Independent minisign
 verification succeeds against the incubation root and fails against the retained
@@ -119,8 +126,8 @@ plugin API 0 and AppDir/output forwarding. Compared with September build
 `33467741325`, linuxdeploy remains revision `07333c6` and embedded appimagetool
 remains `8c8c91f` / build 295. Both newly downloaded assets match the GitHub
 release API digests. Update the two reviewed byte pins; maintain download/hash
-bounds, pre-signing attribution and final packaged-notice gates. Native hosted
-bundle retry remains required; this is not source-offer/license graduation.
+bounds, pre-signing attribution and final packaged-notice gates. The native
+hosted retry is recorded below; this is not source-offer/license graduation.
 Local validation passes: 18 distribution-review tests, both real asset hashes,
 and a wrong-byte download refusal that preserves the prior cache and cleans
 temporary download state. No Rust/application source changes in this repair.
@@ -128,6 +135,53 @@ Before retry, correct the missing build-job `PACKAGE_PRODUCT` environment value
 so package activation/staging checks receive the selected identity consistently.
 The original manual release's source checks have passed on all native/web/tool
 checks in that job; current signing inputs still block authenticated delivery.
+
+The repaired desktop retry
+[36824455228](https://github.com/kzahel/rstorrent/actions/runs/36824455228)
+uses `fc95b0ead6745213f84adc21fa45b753f1bd10d3`. Both Linux release lanes
+pass AppImage/DEB/RPM construction, product activation, native notices,
+distribution inventories and exact-source receipt staging. Independently
+downloaded arm64 receipts match all six payload/signature hashes; the three
+payloads verify with incubation key `788A785131367096` and fail against the
+retained original root. Arm64 AppImage SHA-256:
+`d99023047992751baed34b8621e71b96673e2c4862e45193b8ce4516a0563721`;
+DEB `dbdd66bd7db675a4492885b14454e21ba682fa53a279411df98b03694e4706c5`;
+RPM `100c9e0baf8f9e48b6b03625bf7f8b55b5265dc86bcd09dd93a27170fe9c9ad3`.
+
+Ordinary CI
+[36824924012](https://github.com/kzahel/rstorrent/actions/runs/36824924012)
+at `19eb3a88703088a2dfebb803342394938d305cb8` passes every executed job:
+Rust formatting/workspace clippy/tests, deterministic libtorrent transfer and
+application lifecycle/corruption repair; five desktop native/package lanes;
+web type/unit/build/E2E; extension/companion; workflow/release tools; Android
+dual ABI/JVM/lint/owned runtime; iOS simulator/unsigned archive. This is source
+regression evidence, not production signature or installed-update qualification.
+
+Both retry macOS architectures reach original-team code signing, then Apple
+rejects notarization twice with HTTP 403: a required agreement is missing or
+expired. The first run's accepted/stapled app remains independently verified;
+it does not make the retry qualified. The account holder must review the current
+team agreement before rerunning notarization. Do not disable this gate or accept
+legal agreements through automation.
+
+The same retry's Windows lane passes NSIS/MSI builds, expected-publisher
+Authenticode checks, silent NSIS installation, installed executable/helper
+signatures, production activation registry and packaged notices/inventory.
+The collector correctly refuses incomplete release legs because macOS failed;
+all-ten production updater authentication cannot run for this incomplete matrix.
+The workflow finishes failed with diagnostic artifacts only. No GitHub release,
+tag, public feed change, Play upload or Web Store update is performed.
+The [retained diagnostic receipts](../evidence/jstorrent-ci-candidate-251.json)
+record exact source/run/attempt and all available Windows/Linux hashes. Downloads
+match all 16 payload/signature receipt hashes. Independent minisign verification
+of all eight available payload signatures succeeds against the incubation root
+and fails against the original root; the two macOS lanes are absent. This does
+not qualify a complete original-key release.
+
+The bounded attempt's stopping condition is met: available package/source/server
+and installed-baseline evidence is recorded, with original signing inputs,
+Apple account agreement and resumed guest desktop access as concrete remaining
+prerequisites. The full in-place production upgrade remains unqualified.
 
 ### Android First Attempt
 
@@ -165,7 +219,7 @@ collector must verify all ten updater payload signatures against the retained
 production public root. A separate CI nonce proof diagnoses the existing secret
 without exposing private material; a failed proof cannot qualify delivery.
 
-The Android manual rehearsal may explicitly use existing canary inputs, but
+The Android manual candidate uses the existing secret names, but
 its original-certificate APK/AAB validator remains mandatory. A public certificate
 fingerprint is emitted before building; unqualified outputs are diagnostic only.
 Automatic incubation publication now needs an explicit opt-in variable, which
@@ -178,3 +232,68 @@ Python release tools pass (23). The actual generic update server accepts the
 new product-owned descriptor with the original hostname/root and successor repo.
 The live symlink/feed is not changed. Runtime Rust/DTO/engine code is unchanged;
 250's native baseline remains applicable and CI repeats desktop native checks.
+
+### Android Retry
+
+After the overlay lint repair and one-product secret simplification, run
+[36824981268](https://github.com/kzahel/rstorrent/actions/runs/36824981268)
+at `19eb3a88703088a2dfebb803342394938d305cb8` passes the signed release build,
+JVM tests and release lint. Final staging refuses `Unexpected APK signer`;
+publication is skipped. The actual APK v2 signature verifies with the same
+incubation certificate above. Independent APK/AAB manifest checks pass production
+package, 1.0.25/code 25, API 28/36 and the retained launcher alias; the AAB's
+signature verifies. Retry APK SHA-256:
+`a183d336cf7e9845a9784e46302677593561895f2e7f1f1baf41c443bf56607b`.
+The AAB bytes match the first attempt's SHA-256. These are diagnostic outputs,
+not a production certificate or installed Play upgrade qualification.
+
+### Independent CI Bundle Handoff Attempt
+
+The first desktop run builds the macOS arm64 production bundle and Apple
+accepts notarization. Independent `codesign --verify --deep --strict`, stapler
+validation and Gatekeeper assessment pass under original team `VD7BYQ6ABM`.
+The app archive SHA-256 is
+`3562e99c6657b5efb89d9d74ba4f5c2a1b5134713837652094d161a53dc3dbe1`;
+its updater signature still verifies only against incubation key
+`788A785131367096`, not JSTorrent's retained root. The original job then fails
+because package validation did not receive `PACKAGE_PRODUCT`; the retry fixes
+that workflow environment without weakening package checks.
+
+Two controlled manual-handoff attempts in the macOS arm64 guest use that exact
+CI archive and released old writers. Old UI Quit succeeds; successor startup
+shows the expected live-old-host refusal and creates no catalog. Both drivers
+time out before import because the controller initially looks for the alert
+under JSTorrent. Native capture and rfd 0.16's macOS `message_dialog.rs` /
+`utils/user_alert.rs` show the parentless `CFUserNotification` is owned by
+`UserNotificationCenter`. This is an incomplete harness attempt, not an imported
+library pass or a demonstrated product deadlock. The driver guidance now records
+the alert owner and requires inspection of the specific title/message.
+
+Machine Control subsequently reports that its desktop grant was stopped at the
+target and refuses further observation. No alternate UI transport is used.
+Both drivers finish their restoration paths, join children and restore inherited
+app/profile/browser registrations. Owned guest files/capture and the download
+server are removed; the guest returns to its prior suspended state and its
+exclusive claim is released. An outstanding task-created native alert may remain
+because its dismissal cannot be verified after grant revocation; do not dismiss unrelated
+permission alerts. No authenticated successor update or completed CI-bundle
+import is qualified by these attempts.
+
+### Next Executable Checkpoint
+
+1. Re-provision the original desktop key/password under the existing
+   `TAURI_SIGNING_PRIVATE_KEY` names; the original public root is already selected.
+   Provision original Android keystore/password/alias inputs under existing
+   `ANDROID_UPLOAD_*` names and qualify Play upload/app-signing independently.
+2. The Apple account holder resolves the team agreement rejection. Rerun manual
+   desktop and Android candidates on one recorded source SHA. Require every
+   package lane and original-root signature gate; do not publish diagnostic output.
+3. Reacquire an owned guest claim and explicit desktop grant for the installed
+   rehearsal. Use the exact checksum-pinned old release and fresh authenticated
+   candidate. Confine candidate feed/TLS routing to the guest; exercise the old
+   released updater's normal endpoint, download/install/relaunch, ordinary writers,
+   fencing and migrated library/recheck/source/payload oracles. No TLS/signature
+   relaxation or personal-profile import is allowed.
+4. Review the product descriptor and rollback/stop route before any separately
+   authorized production feed switch. Play/store versions, physical ARC/SAF and
+   same-ID extension/store cohorts remain independent open checklist gates.

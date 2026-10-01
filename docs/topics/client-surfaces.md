@@ -3,7 +3,10 @@
 Topic: `client-surfaces`
 
 Tactical [251](../tactical/251-jstorrent-ci-candidates-and-installed-update.md)
-runs production-identity CI candidates without publication. The current updater
+completes a bounded production-identity CI attempt without publication. Windows
+and both Linux package lanes pass; Android passes building/tests/lint then fails
+its original-certificate gate. Fresh macOS notarization needs the team agreement
+resolved. Ordinary CI passes every executed job. The current updater
 secret fails JSTorrent's original trust root; signed installed continuity remains
 open. An exact old macOS app checks its unchanged production route successfully.
 No product presentation, application DTO or engine behavior changes in this slice.

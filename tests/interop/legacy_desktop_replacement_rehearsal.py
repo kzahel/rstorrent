@@ -7,6 +7,10 @@ actions belong to Machine Control on the controller, not this driver. Watch
 root/phase.json; at legacy-ui use Quit, at idle-host-blocked/registration-blocked
 inspect and press OK, and at migrated/restarted inspect the connected native
 view then Quit. Closed SQLite checks own the library/verification assertions.
+Parentless macOS migration alerts belong to UserNotificationCenter, not the
+JSTorrent process. Inspect the alert's title/message before selecting its OK
+button; other applications may have alerts under that same owner. An ended
+Machine Control grant stops UI actions rather than changing control routes.
 The driver restores inherited app/profile/registration state in finally.
 No browser is started and no public swarm is used.
 """

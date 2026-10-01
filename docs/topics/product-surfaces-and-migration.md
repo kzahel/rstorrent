@@ -3,7 +3,7 @@
 Topic: `product-surfaces-and-migration`
 
 Tactical [251](../tactical/251-jstorrent-ci-candidates-and-installed-update.md)
-starts manual production-identity CI attempts using existing signing inputs,
+completes bounded production-identity CI attempts using existing signing inputs,
 with nonce identity proof, exact product receipts and retained-public-root
 signature verification. Automatic incubation publication is paused; candidate
 builds cannot publish. The successor update-service descriptor is prepared but
@@ -14,6 +14,10 @@ The actual CI signing proof fails against JSTorrent's retained public root and
 verifies against the incubation root. Original signing inputs are required.
 Controlled update-service routing and an old macOS app's unchanged-endpoint
 check pass; no successor download/install/relaunch is yet qualified.
+Windows and both Linux package lanes pass, and Android passes signed build/tests/
+lint before original-certificate refusal. Fresh macOS notarization also requires
+the account holder to resolve Apple's team agreement rejection. Ordinary CI
+passes all executed jobs; the controlled CI-bundle handoff stops before import.
 
 ## Production Candidates, 2026-10-01
 
@@ -39,8 +43,9 @@ mechanics do not graduate the product for shipment.
 
 The destination is one JSTorrent shipping lane. Incubation source/key separation
 is temporary qualification protection, not a plan to maintain two products.
-Switch the existing desktop CI config/validation/public root to JSTorrent before
-replacing its existing Tauri secrets; keep publication gated by the checklist.
+Manual desktop CI now selects JSTorrent config/validation/public trust and
+incubation publication is paused. Replace the existing Tauri secret contents
+with original inputs; keep publication gated by the checklist.
 Normal isolated debug builds remain useful after production succession.
 
 ## Production Replacement And Branding

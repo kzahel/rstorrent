@@ -3,7 +3,7 @@
 Topic: `beta-release-readiness`
 
 Tactical [251](../tactical/251-jstorrent-ci-candidates-and-installed-update.md)
-starts manual production-identity CI attempts using existing signing inputs,
+completes bounded production-identity CI attempts using existing signing inputs,
 with nonce identity proof, exact product receipts and retained-public-root
 signature verification. Automatic incubation publication is paused; candidate
 builds cannot publish. The successor update-service descriptor is prepared but
@@ -11,14 +11,25 @@ its live routing/feed is unchanged. Signed installed updating remains unqualifie
 until the exact candidate authenticates and an owned old-release guest passes.
 
 Existing CI updater inputs are positively identified as the incubation key,
-not JSTorrent's original key. Package attempts continue for diagnostic evidence,
+not JSTorrent's original key. Package attempts retain diagnostic evidence,
 but cannot qualify old-client updating. The owned macOS 0.2.1 endpoint check
 passes; production delivery rows remain open.
+The Android retry passes signed APK/AAB construction, JVM tests and release lint,
+then rejects the wrong original-APK certificate at staging. The first macOS
+arm64 CI app independently passes original-team Developer ID signing,
+notarization/stapling and Gatekeeper. Its updater signature is still wrong-root;
+the manual installed handoff does not reach import before UI access ends.
+Both Linux production package lanes pass the repaired source. Fresh macOS
+notarization additionally requires the account holder to resolve Apple's missing
+or expired team agreement; ordinary CI passes every executed job at 19eb3a88.
+The Windows release lane also passes NSIS/MSI, expected-publisher and installed
+signatures, silent installation and activation checks. Mac failures correctly
+prevent complete collection; no production update or release is qualified.
 
 The October 1 monthly rebuild of the unchanged upstream AppImage output plugin
 invalidated its byte pins. Tactical 251 reviews the source/build provenance and
 updates both architecture digests; hash refusal and final attribution checks
-remain enforced. Hosted native packaging must pass on the repaired source.
+remain enforced. Both hosted native package lanes pass the repaired source.
 
 ## JSTorrent Production Candidates, 2026-10-01
 
