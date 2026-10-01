@@ -1570,3 +1570,22 @@ modify the vendored crate without updating and reviewing its provenance.
 The audit collector restores the original GLib registry identity only in an
 in-memory audit projection, retaining detection of future advisories. Review
 requires that projection to match the current lock and verified backport.
+
+Physical Tactical 253 runners use explicitly selected Machine Control targets
+and isolated owned state:
+
+```bash
+uv run --project tests/interop --locked python tests/interop/chromeos_android_qualification.py --help
+uv run --project tests/interop --locked python tests/interop/chromeos_crostini_qualification.py --help
+PYTHONDONTWRITEBYTECODE=1 uv run --project tests/interop --locked python -m unittest discover -s tests/interop -p test_chromeos_qualification.py -v
+```
+
+Preflight the controller's explicitly selected seed TCP ports from the target.
+The Android runner requires the qualification APK installed in its separate
+package. The Crostini runner requires the exact package staged in its owned
+root and an isolated running gateway; it reports runtime coverage separately
+from installation/launcher/browser acceptance. Both use controlled payloads,
+three repetitions and a bounded 60-minute observation. Short observation runs
+leave endurance open. External teardown must uninstall only the owned APK,
+stop/remove the owned Linux runtime, restore initial VM/window state and remove
+only owned temporary transport exceptions. See Tactical 253 for current limits.

@@ -197,10 +197,10 @@ payloads/seeders; public swarms remain opt-in.
    restore approved non-destructive test settings, and reconcile topics and
    checklist. Any failed required route remains a ChromeOS shipment blocker.
 
-Next executable action: map the existing runners and retained passes onto the
-current candidate, identify missing troubleshooting/state coverage, and qualify
-the host-side Linux package build plus isolated pre-Play/second-device cohorts.
-No physical acceptance row is closed by this planning checkpoint.
+Next executable action: finish the controlled current-candidate observations,
+qualify physical extension recovery and Linux launcher handoff where accessible,
+and repeat the gap matrix on cohort B once its private target is reachable.
+Store, OS setup and installed migration rows remain open.
 
 ### Runner And Candidate Gap Audit, 2026-10-01
 
@@ -317,3 +317,55 @@ All are local non-published artifacts. The Crostini candidate has no production
 release signature; runtime installation must be labeled controlled local
 candidate, independently from the retained authenticated public-bootstrap pass.
 No signed/store gate is closed by these builds.
+
+### Isolated Physical Runner Checkpoint, 2026-10-02
+
+`tests/interop/chromeos_android_qualification.py` uses the common CLI and the
+exclusive qualification APK, a new owned SAF folder and controlled host seeder.
+It preserves inherited packages, grants and logs. Its actual ACTION_VIEW intake
+handles both external-input confirmation and subsequent enabled file selection;
+it does not use the debug magnet shortcut as cold-start intake. The real picker
+commits the current binary retained-root registry. Independent Android `sha1sum`
+checks downloaded bytes. Three separate runs use distinct torrent identities;
+clearing between them applies only to the owned qualification package. This is
+not evidence for the user's Remove flow or installed-library migration.
+
+`tests/interop/chromeos_crostini_qualification.py` exercises the exact candidate
+through the existing VM's LXC runtime, an owned temporary profile, ordinary
+application commands and unique Linux Downloads payload names. It checks the
+actual gateway owner before termination, source-offline restart and
+remove/keep/restart byte retention. Runtime results do not qualify ChromeOS OS
+setup, installation, registered launcher, browser or extension journeys.
+
+Six portable runner safety checks pass with
+`PYTHONDONTWRITEBYTECODE=1 uv run --project tests/interop --locked python -m
+unittest discover -s tests/interop -p test_chromeos_qualification.py -v`.
+They cover actual nested-shell metacharacter preservation, log-clear refusal,
+owned UI capture paths and separate external-input/metadata-selection stages.
+
+Cohort A: the exact transferred Ubuntu 22.04 package SHA-256 matches the host
+candidate. Both executables run; `ldd` resolves all native dependencies in the
+inherited Debian 12 container. Gateway health reports Crostini build 0.1.0,
+launch protocol 1. The inherited VM was initially stopped and the container
+STOPPED. Starting it does not restore ChromeOS/Cicerone container registration:
+normal `vsh --target_container=penguin` reports a missing container, while the
+existing LXC container is reachable and runs. No VM reset or OS repair was used.
+Normal Linux launcher/setup remains an observed blocked journey.
+
+Calibration failures are kept separate from acceptance: first-use disclosure,
+the old plaintext-grant assertion, shell quoting, debug cold-start intake and
+two separate confirmation screens required runner corrections. A random seed
+port was blocked by the controller firewall; narrowly owned temporary rules
+now allow only this cohort's two explicit seed ports. Concurrent UI inspections
+collided; the Android runner is now the sole UI inspector. No failed five-minute
+attempt was counted as a pass. Libtorrent's default LAN rate-limit exemption
+made the initial observation complete early; that observation cannot close
+endurance. The corrected seeder explicitly disables the exemption. Each
+observation must retain actual payload movement through the bounded hour and
+finish with an independent byte check. Final results and cleanup follow below.
+
+Real Play observation: the existing production listing opens and offers Open;
+production 1.0.23 and Play Store remain installed. No installation or update was
+performed. Preserving that inherited app prevents a fresh-install cohort; the
+unsigned qualification sideload cannot close Play installation or store update.
+Cohort B still fails transport doctor; all its product rows are unrun.
