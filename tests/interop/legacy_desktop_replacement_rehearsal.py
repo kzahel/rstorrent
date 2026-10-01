@@ -31,6 +31,7 @@ import tarfile
 import tempfile
 import time
 
+from legacy_desktop_signed_update import check_and_apply, owned_pids, stop_owned
 from legacy_desktop_fixture_cohort import Host, digest
 
 LEGACY_ARCHIVE = "4bc5e979635fe9283d9ba60e43f86bfadcf619adf546cdbe4b68b27d424343f1"
@@ -100,7 +101,12 @@ def main():
     parser.add_argument("--legacy", type=Path, required=True)
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--candidate-sha256", required=True)
+    parser.add_argument("--trial-installation-id", type=Path,
+                        help="Use the released HTTPS updater instead of manual replacement")
+    parser.add_argument("--trial-gui", action="store_true")
+    parser.add_argument("--trial-negative", choices=("wrong-signature", "interrupted"))
     args = parser.parse_args()
+    assert not (args.trial_gui or args.trial_negative) or args.trial_installation_id
     if sys.platform != "darwin" or not args.root.is_absolute() or args.root.exists():
         parser.error("requires macOS and a new absolute controlled root")
     assert digest(args.legacy) == LEGACY_ARCHIVE
@@ -144,7 +150,7 @@ def main():
         return child
 
     def quit_and_join(child):
-        wait_until(lambda: child.poll() is not None)
+        wait_until(lambda: child.poll() is not None, seconds=600)
         assert child.wait() == 0, "native Quit failed"
 
     def source_snapshot():
@@ -170,6 +176,8 @@ def main():
         with closed_copy(db, root) as connection:
             connection.row_factory = sqlite3.Row
             report = json.loads(connection.execute("SELECT report_json FROM legacy_desktop_import").fetchone()[0])
+            settings = connection.execute("SELECT dht_enabled, peer_exchange_enabled, peer_connection_limit, upload_slots, download_rate_limit FROM client_settings").fetchone()
+            assert tuple(settings) == (0, 0, 73, 5, 65536), "supported settings did not migrate"
             assert (report["imported"], report["skipped"], report["already_present"]) == (4, 0, 0)
             rows = list(connection.execute("SELECT t.*, lower(hex(i.full_hash)) AS identity FROM torrents t JOIN torrent_identities i USING(torrent_id)"))
             assert len(rows) == 4 and all(r["desired_state"] == "paused" for r in rows)
@@ -253,6 +261,10 @@ def main():
                 host.call("kvSet", key="session:torrents", value=json.dumps(dict(version=2, torrents=entries)))
                 host.call("kvSet", key="config:dhtEnabled", value="false")
                 host.call("kvSet", key="config:pexEnabled", value="false")
+                host.call("kvSet", key="config:maxGlobalPeers", value="73")
+                host.call("kvSet", key="config:maxUploadSlots", value="5")
+                host.call("kvSet", key="config:downloadSpeedUnlimited", value="false")
+                host.call("kvSet", key="config:downloadSpeedLimit", value="65536")
             finally:
                 host.close()
         old = launch("legacy", ("--force-desktop", "--profile", profiles[0]))
@@ -300,7 +312,19 @@ def main():
         assert not (product / "profile").exists() and source_snapshot() == before
         failure.unlink()
         results["checks"].append("registration-failure-blocks-before-catalog")
-        migrated = launch("migrated")
+        if args.trial_installation_id:
+            shutil.rmtree(app)
+            shutil.copytree(old_app, app)
+            wanted_binary = digest(new_app / "Contents/MacOS/rstorrent-desktop")
+            def installed():
+                binary = app / "Contents/MacOS/rstorrent-desktop"
+                return binary.exists() and digest(binary) == wanted_binary
+            args.rehearsal_profile = profiles[0]
+            phase("ready-for-signed-update")
+            wait_until(lambda: (root / "allow-update").is_file(), seconds=1800)
+            migrated = check_and_apply(args, native, app, launch, wait_until, phase, installed, results)
+        else:
+            migrated = launch("migrated")
         wait_until(lambda: (product / "profile/session.db").exists())
         phase("migrated")
         # Probe every installed legacy manifest's real executable route.
@@ -316,7 +340,11 @@ def main():
             assert set(result) == {"id", "ok", "error", "type"}
             assert result["id"] == "probe" and result["ok"] is False and result["type"] == "Empty"
             assert "Update the JSTorrent extension" in result["error"]
-        quit_and_join(migrated)
+        if args.trial_installation_id:
+            wait_until(lambda: not owned_pids(app), seconds=600)
+            migrated.wait(timeout=15)
+        else:
+            quit_and_join(migrated)
         identities = check_catalog()
         assert identities, "ordinary checker did not finish valid/corrupt work"
         restarted = launch("restarted")
@@ -338,6 +366,8 @@ def main():
         results["status"] = "failed"
         raise
     finally:
+        if args.trial_installation_id:
+            stop_owned(app)
         for child in reversed(children):
             if child.poll() is None:
                 child.terminate()

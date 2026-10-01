@@ -48,9 +48,16 @@ installed migration remains open. No production feed/store change is made.
 Accepted [252](../tactical/252-jstorrent-opt-in-upgrade-rehearsal.md) uses the
 released app's existing `X-CFU-Id` header for an explicitly opted-in test cohort
 on the normal HTTPS endpoint, with one pinned candidate and ordinary selection
-unchanged for everyone else. This server feature is not implemented/deployed.
-Start with an owned Linux AppImage update, generated old-writer data and actual
-install/relaunch/import oracles; qualify Windows, macOS and extension pairs next.
+unchanged for everyone else. Server commit `f45885c` implements the opt-in route and passes 86 tests plus
+lint/typecheck/build. It is not pushed or deployed; live routing remains disabled
+awaiting explicit push/test-deployment authorization. Exact signed CI packages
+pass manual installed replacement on Linux x64, Windows x64 and macOS arm64:
+four records from two profiles, supported settings, rechecking, startup fences,
+registered legacy refusal, stable restart and source/payload preservation. See
+[manual evidence](../evidence/jstorrent-upgrade-trial-252-manual-migration.json).
+Actual updater delivery, interruption/signature negatives, controlled repair and
+real extension journeys remain open. Native catalog branding is corrected after
+the candidate source and needs a fresh signed build.
 
 ## Production Candidate Preparation, 2026-10-01
 

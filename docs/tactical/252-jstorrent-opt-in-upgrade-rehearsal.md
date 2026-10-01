@@ -163,3 +163,83 @@ Linux and Windows exact x64 test appliances are available through their Linux
 controller; the local macOS test appliance is separately claimed. Claim identity,
 credentials and concrete machine selectors remain private. Restore initially
 powered-off guests to off, and initially suspended macOS to suspended.
+
+### Signed Manual Replacement Checkpoint
+
+Before live deployment, the exact signed 0.3.0 CI packages pass the extended
+242/243 installed rehearsal on Linux x64 AppImage, Windows x64 NSIS and macOS
+arm64. This uses manual package replacement, not the old updater. The sanitized
+[three-platform evidence](../evidence/jstorrent-upgrade-trial-252-manual-migration.json)
+records old/new package hashes, candidate source/run and each finished outcome.
+
+Ordinary released writers create four stopped records across two profiles.
+Closed imported catalogs, before and after native Quit/restart, preserve DHT/PEX
+false, peer limit 73, upload slots 5 and download limit 65,536 bytes/s. Four records
+import with zero skipped/already-present; intent remains paused. Intact content
+rechecks successfully, corrupt/missing content has zero verified pieces, and the
+pending magnet trusts no metadata. Missing roots stay absent. One completion
+marker and stable IDs survive restart. Source discovery/KV/main/nonempty WAL and
+independent payload hashes remain unchanged. This does not prove repair transfer.
+
+A pre-handshake old host and denied helper registration each stop startup before
+catalog creation. Retry after repairing registration succeeds. Eight Windows,
+six Linux and nine macOS executable registration routes return the exact legacy
+extension refusal. These probes do not qualify real mixed-version extension UI.
+The Windows view shows four rows, no Active rows, three Paused and one Needs
+attention, with the unavailable root showing Storage unavailable. Native tray
+text still says RSTorrent in this candidate: the separate Tauri catalog correction
+is committed in `34889e3e`, after the candidate's pinned source. Its focused Rust
+test, all four localization checks and formatting pass; a fresh signed candidate
+must qualify that correction. The reused Windows guest shortcut shows an old
+incubation icon. Independent 7z extraction of the pinned NSIS executable and
+Windows `ExtractAssociatedIcon` proves its embedded icon is the JSTorrent blue
+box; fresh-install shell-cache behavior remains a presentation qualification.
+
+Initial operator-timeout attempts restore their owned files rather than claiming
+success. The final three manual runs pass. Mac phase control uses the common
+resident AX route with freshly discovered product Quit/OK controls; Linux Quit
+uses the freshly introspected exported status-notifier menu, and Windows uses
+fresh tray/UIA discovery. No outer VM input, privacy acknowledgement, network
+allowance or public swarm is used. Windows Cancel creates four task-specific
+firewall Block rules across the runs; exact-program/baseline-guarded cleanup
+removes those four and the original rule-name set matches. File/registry scopes
+restore, macOS inherited backup directories are empty and product owners join.
+
+### Prepared Real-Updater Driver And Remaining Gate
+
+The installed drivers accept `--trial-installation-id PATH`, optional
+`--trial-gui`, and `--trial-negative wrong-signature|interrupted`. Stage the shared
+`legacy_desktop_signed_update.py` with the three existing fixture/rehearsal
+helpers. Trial mode performs the startup fences, restores the exact old package,
+and parks at `ready-for-signed-update` for the controller's owned `allow-update`
+file. It writes the generated guest ID to the isolated old configuration, removes
+stale check output and invokes the unchanged released `--check-update` followed
+by `--auto-update`, or the ordinary old GUI. Real installation requires the
+pinned AppImage/desktop executable bytes, joined updater-spawned owners, the same
+catalog/settings/source/payload assertions and native restart. Negative mode
+parks at `negative-complete` until owned `allow-retry` after valid routing returns.
+These real-updater branches remain unexecuted; their existence is not evidence.
+
+Linux keeps AppImage's supported extract-and-run environment across Tauri restart;
+FUSE launch remains a separate lane. Windows preserves both expected per-user
+install locations, its production torrent class and both registry views. Cleanup
+joins exact installation-owned processes, including updater-spawned children,
+before restoring files. A real macOS process smoke proves exact ownership stops
+the task child while an adjacent application remains running. Python compilation,
+`--help`, malformed-ID/tampered-receipt refusal before manifest output and
+`git diff --check` pass. No Rust DTO/schema/engine behavior changes in this slice.
+
+Live deployment remains disabled and awaits explicit push/test-deployment
+authorization requested under the repository's no-push rule. Server commit
+`f45885c` and the private three-ID manifest are reviewable; existing ordinary
+product/channel configuration is retained. Deploy only that tested server commit,
+build before restart, configure immutable authenticated assets plus the private
+manifest, and verify ordinary/malformed/unknown-ID responses before opening any
+`allow-update` gate. After test completion, remove the trial environment/config,
+restart and verify ordinary selection. Do not publish a GitHub release, promote
+the default feed or modify a store item.
+
+Actual HTTPS old-client installation and GUI restart, signature/interruption
+negatives, controlled repair and real extension/file/magnet/toolbar journeys
+remain open. These depend on the trial and further owned validation; the
+three-platform manual result does not close P-01 or full cutover acceptance.

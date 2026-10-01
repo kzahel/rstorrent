@@ -24,6 +24,7 @@ import sys
 import time
 import traceback
 
+from legacy_desktop_signed_update import check_and_apply, owned_pids, stop_owned
 from legacy_desktop_fixture_cohort import Host, digest, BINARIES
 from legacy_desktop_replacement_rehearsal import bencode, closed_copy, wait_until
 
@@ -70,7 +71,7 @@ class Registry:
                 r"Software\Microsoft\Windows\CurrentVersion\Uninstall\RSTorrent"]
         keys += ["Software\\Classes\\" + name for name in (
             "magnet", "jstorrent", ".torrent", "torrent", "torrentfile", "JSTorrent.torrent", "RSTorrent.torrent",
-            "com.jstorrent.rstorrent.torrent", r"Applications\JSTorrent.exe", r"Applications\jstorrent-desktop.exe",
+            "com.jstorrent.desktop.torrent", "com.jstorrent.rstorrent.torrent", r"Applications\JSTorrent.exe", r"Applications\jstorrent-desktop.exe",
             r"Applications\rstorrent-desktop.exe")]
         for browser in WIN_BROWSERS:
             keys += [rf"Software\{browser}\NativeMessagingHosts\{name}" for name in
@@ -167,13 +168,18 @@ def main():
     parser.add_argument("--legacy", type=Path, required=True)
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--candidate-sha256", required=True)
+    parser.add_argument("--trial-installation-id", type=Path,
+                        help="Use the released HTTPS updater instead of manual replacement")
+    parser.add_argument("--trial-gui", action="store_true")
+    parser.add_argument("--trial-negative", choices=("wrong-signature", "interrupted"))
     args = parser.parse_args()
+    assert not (args.trial_gui or args.trial_negative) or args.trial_installation_id
     platform = "windows" if os.name == "nt" else "linux" if sys.platform == "linux" else None
     if platform is None or not args.root.is_absolute() or args.root.exists():
         parser.error("requires Windows/Linux and a new absolute controlled root")
     assert digest(args.legacy) == PACKAGES[platform]
     assert digest(args.candidate) == args.candidate_sha256
-    assert not old_running() and "rstorrent-desktop" not in process_names()
+    assert not old_running() and not {"rstorrent-desktop", "rstorrent-deskt"}.intersection(process_names())
     args.root.mkdir(parents=True)
     sys.stdout = sys.stderr = (args.root / "driver.log").open("w", encoding="utf-8", buffering=1)
     root, home = args.root, Path.home()
@@ -181,7 +187,7 @@ def main():
         config, data = Path(os.environ["APPDATA"]), Path(os.environ["APPDATA"])
         local = Path(os.environ["LOCALAPPDATA"])
         app = local / "Programs/JSTorrent"
-        scopes = (app, config / "jstorrent-native", config / "com.jstorrent.desktop",
+        scopes = (app, local / "JSTorrent", config / "jstorrent-native", config / "com.jstorrent.desktop",
                   local / "com.jstorrent.desktop",
                   config / "Microsoft/Windows/Start Menu/Programs/JSTorrent.lnk",
                   home / "Desktop/JSTorrent.lnk")
@@ -244,8 +250,13 @@ def main():
             command = [str(binary), *arguments]
         else:
             command = [str(app), "--appimage-extract-and-run", *arguments]
+        environment = dict(os.environ)
+        if platform == "linux":
+            # Tauri's restart retains the environment, not AppImage's consumed
+            # runtime flag. Keep the same supported no-FUSE route on relaunch.
+            environment["APPIMAGE_EXTRACT_AND_RUN"] = "1"
         child = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
-                                 start_new_session=platform == "linux")
+                                 start_new_session=platform == "linux", env=environment)
         children.append(child)
         return child
 
@@ -271,6 +282,8 @@ def main():
             reports = list(connection.execute("SELECT report_json FROM legacy_desktop_import"))
             assert len(reports) == 1
             report = json.loads(reports[0][0])
+            settings = connection.execute("SELECT dht_enabled, peer_exchange_enabled, peer_connection_limit, upload_slots, download_rate_limit FROM client_settings").fetchone()
+            assert tuple(settings) == (0, 0, 73, 5, 65536), "supported settings did not migrate"
             assert (report["imported"], report["skipped"], report["already_present"]) == (4, 0, 0)
             rows = list(connection.execute("SELECT t.*, lower(hex(i.full_hash)) AS identity FROM torrents t JOIN torrent_identities i USING(torrent_id)"))
             assert len(rows) == 4 and all(row["desired_state"] == "paused" for row in rows)
@@ -378,6 +391,10 @@ def main():
                 host.call("kvSet", key="session:torrents", value=json.dumps(dict(version=2, torrents=entries)))
                 host.call("kvSet", key="config:dhtEnabled", value="false")
                 host.call("kvSet", key="config:pexEnabled", value="false")
+                host.call("kvSet", key="config:maxGlobalPeers", value="73")
+                host.call("kvSet", key="config:maxUploadSlots", value="5")
+                host.call("kvSet", key="config:downloadSpeedUnlimited", value="false")
+                host.call("kvSet", key="config:downloadSpeedLimit", value="65536")
             finally:
                 host.close()
         old = launch("legacy", ("--force-desktop", "--profile", profiles[0]))
@@ -419,7 +436,22 @@ def main():
         assert not (product / "profile").exists() and snapshot() == before
         failure.unlink()
         results["checks"].append("registration-failure-blocks-before-catalog")
-        migrated = launch("migrated")
+        if args.trial_installation_id:
+            wanted_binary = digest(app / "rstorrent-desktop.exe") if platform == "windows" else None
+            install(args.legacy)
+            def installed():
+                if platform == "linux":
+                    return (app.exists() and app.stat().st_size == args.candidate.stat().st_size
+                            and digest(app) == args.candidate_sha256)
+                binary = app / "rstorrent-desktop.exe"
+                return (binary.exists() and digest(binary) == wanted_binary
+                        and not (app / "jstorrent-desktop.exe").exists())
+            args.rehearsal_profile = profiles[0]
+            phase("ready-for-signed-update")
+            wait_until(lambda: (root / "allow-update").is_file(), seconds=1800)
+            migrated = check_and_apply(args, native, app, launch, wait_until, phase, installed, results)
+        else:
+            migrated = launch("migrated")
         wait_until(lambda: (product / "profile/session.db").exists())
         phase("migrated")
         manifests = list(registry.manifests()) if registry else [
@@ -441,7 +473,11 @@ def main():
             assert result["id"] == "probe" and result["ok"] is False and result["type"] == "Empty"
             assert "Update the JSTorrent extension" in result["error"]
         results["refusalRoutes"] = len(paths)
-        joined(migrated)
+        if args.trial_installation_id:
+            wait_until(lambda: not owned_pids(app), seconds=600)
+            migrated.wait(timeout=15)
+        else:
+            joined(migrated)
         identities = catalog()
         restarted = launch("restarted")
         time.sleep(2)
@@ -465,6 +501,10 @@ def main():
     finally:
         phase("restoring")
         print("Restoring owned children, files and registry", flush=True)
+        if args.trial_installation_id:
+            stop_owned(app)
+            if platform == "windows":
+                stop_owned(local / "JSTorrent")
         for child in reversed(children):
             if child.poll() is None:
                 if platform == "linux":

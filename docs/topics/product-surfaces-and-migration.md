@@ -40,6 +40,17 @@ deployment review precede any external change; ordinary production selection
 stays unchanged. It is a real update inside an owned guest, with actual legacy
 writers and source/settings/root/payload/restart assertions, not a feed check.
 
+Server commit `f45885c` implements the opt-in route and passes 86 tests plus
+lint/typecheck/build. It is not pushed or deployed; live routing remains disabled
+awaiting explicit push/test-deployment authorization. Exact signed CI packages
+pass manual installed replacement on Linux x64, Windows x64 and macOS arm64:
+four records from two profiles, supported settings, rechecking, startup fences,
+registered legacy refusal, stable restart and source/payload preservation. See
+[manual evidence](../evidence/jstorrent-upgrade-trial-252-manual-migration.json).
+Actual updater delivery, interruption/signature negatives, controlled repair and
+real extension journeys remain open. Native catalog branding is corrected after
+the candidate source and needs a fresh signed build.
+
 ## Production Candidates, 2026-10-01
 
 Tactical [250](../tactical/250-jstorrent-production-identity-candidates.md)
