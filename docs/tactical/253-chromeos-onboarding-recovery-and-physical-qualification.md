@@ -1,8 +1,8 @@
 # Tactical 253: ChromeOS Onboarding, Recovery And Physical Qualification
 
-Status: **Ready; priority accepted 2026-10-01.** Gap-focused acceptance plan
-recorded. Substantial prior physical evidence is credited below; this slice's
-remaining implementation and new physical evidence have not started.
+Status: **Active, 2026-10-01.** Baseline `223d5126` is clean and main is current.
+Retained evidence is mapped below; implementation and current-candidate
+physical acceptance remain open.
 
 ## Motivation And Outcome
 
@@ -201,3 +201,36 @@ Next executable action: map the existing runners and retained passes onto the
 current candidate, identify missing troubleshooting/state coverage, and qualify
 the host-side Linux package build plus isolated pre-Play/second-device cohorts.
 No physical acceptance row is closed by this planning checkpoint.
+
+### Runner And Candidate Gap Audit, 2026-10-01
+
+| Existing facility | Credit / safe reuse | Actual gap |
+| --- | --- | --- |
+| `clients/extension/scripts/popup.test.mjs`, `service-worker.test.mjs` | Platform chooser, launch intent, optional permission and singleton handoff | No pre-Play failure selection or launch-confirmation diagnosis; popup launch request is not proof an app opened. |
+| `clients/web/src/android-companion-upgrade.test.ts` | Strict old/current/incompatible discovery; current service takes precedence; no legacy authority | Unreachable service loops indefinitely; no bounded terminal help/manual recovery or support context. |
+| `clients/android/scripts/run-legacy-upgrade.py --source companion` | 248's API 28/35 ordinary-writer four-pair regression | Owns rooted emulators; cannot qualify physical/store installation or preserve an inherited physical package by substitution. |
+| `tests/interop/android_saf_session.py` and Android runtime/product runners | Existing deterministic fixtures, seeder and independent byte checks | SAF runner explicitly clears the fixed package and removes a fixed folder. Do not run unchanged against inherited physical state. |
+| `scripts/test-crostini-installer.sh`, `run-crostini-bootstrap-fixture.sh`, `validate-crostini-package.sh` | Installer ownership, authenticated bootstrap and package allowlist | Fixture success is not physical OS setup; source-host build must first meet Ubuntu 22.04 ABI baseline. |
+| 167/169/178 retained physical records | First device's install/VM recovery/storage passes, with exact historical hashes | Native package and web-only 178 evidence predate this source; no current package, full reboot or second-device product coverage. |
+| Machine Control common doctor | First device passes ten checks; unlocked, no pending update | Health is not Play/product qualification. ChromeOS adapter reports `unsupported_claim_interface`; use explicit selector and a controller-local exclusive ownership record before mutation. |
+
+No retained APK/ZIP/native hash is the candidate built from this checkpoint.
+Record freshly built hashes separately and preserve original installed state.
+The second target is declared in private inventory for another controller;
+qualify local reachability through the public explicit host selector without
+altering its private declaration or another device's selector.
+
+Implementation owner map: the popup owns only permission/launch handoff; the
+packaged Android page owns one bounded attach/pair attempt, cancellation,
+connection and mounted React view. Page departure cancels and joins owned work;
+retry is manual and attach-only. Static troubleshooting is available before
+connection and from the connected header. Support preview uses only closed
+stage/category/backend values and validated build versions, never raw errors,
+credentials, account values, torrent state or filesystem paths. No engine or
+application DTO changes are planned.
+
+Reference audit: JSTorrent's
+`extension/src/lib/daemon-bridge/chromeos/ws-connect.ts` uses a bounded 10-second
+handshake and closes on timeout; retain bounded ownership rather than its wire
+implementation. Existing 194/248 tests own current protocol compatibility;
+this presentation slice does not change peer/engine semantics.
