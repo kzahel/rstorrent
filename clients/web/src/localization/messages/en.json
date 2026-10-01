@@ -1,4 +1,7 @@
 {
+  "android.companion.pairing-canceled": {"defaultMessage": "Pairing canceled. The Android approval request may remain pending for up to two minutes. Wait for it to expire before selecting Retry.", "description": "Local cancellation does not cancel the bounded Android approval request."},
+  "android.companion.pairing-rejected": {"defaultMessage": "Pairing was rejected in the Android app. Select Retry to request approval again, or use the Android app directly.", "description": "Observed ChromeOS pairing failure with manual recovery."},
+  "android.companion.pairing-expired": {"defaultMessage": "The pairing request expired. Open the Android app, then select Retry and approve the new request.", "description": "Observed ChromeOS pairing failure with manual recovery."},
   "android.companion.unreachable": {"defaultMessage": "The Android service did not respond within 20 seconds. Open JSTorrent and confirm any ChromeOS launch prompt, then retry. Play availability, app installation and device policy are unknown.", "description": "ChromeOS pre-connection recovery and voluntary support context."},
   "android.companion.authenticating": {"defaultMessage": "Connecting to the approved Android library…", "description": "ChromeOS pre-connection recovery and voluntary support context."},
   "android.companion.help": {"defaultMessage": "Setup and troubleshooting", "description": "ChromeOS pre-connection recovery and voluntary support context."},

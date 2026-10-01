@@ -101,6 +101,14 @@ export class AndroidCompanionUnavailable extends Error {
   }
 }
 
+export class AndroidCompanionPairingFailed extends Error {
+  public constructor(public readonly outcome: "rejected" | "expired") {
+    super(outcome === "rejected"
+      ? localizedMessage("android.companion.pairing-rejected")
+      : localizedMessage("android.companion.pairing-expired"));
+  }
+}
+
 export class AndroidCompanionUpdateRequired extends Error {
   public constructor(public readonly component: "android" | "extension") {
     super(component === "android"
@@ -221,11 +229,17 @@ async function pair(
       ...(signal === undefined ? {} : { signal }),
     })) as PairingPending;
   boundedIdentifier(pending.request_id, "pairing request ID");
+  if (!Number.isInteger(pending.expires_in_seconds) || pending.expires_in_seconds < 1 || pending.expires_in_seconds > 120) {
+    throw new Error("Invalid Android pairing expiration");
+  }
+  const approvalExpires = performance.now() + pending.expires_in_seconds * 1000;
   status(localizedMessage("android.companion.client.approve.the.jstorrent.beta.pairing.request.in"), "pairing");
   while (!signal?.aborted) {
-    await delay(500, signal);
-    const poll =
-      (await companionJson(endpoint, "/pairing/poll", {
+    await delay(Math.min(500, Math.max(0, approvalExpires - performance.now())), signal);
+    if (performance.now() >= approvalExpires) throw new AndroidCompanionPairingFailed("expired");
+    let poll: PairingPoll;
+    try {
+      poll = (await companionJson(endpoint, "/pairing/poll", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -235,16 +249,19 @@ async function pair(
         }),
         ...(signal === undefined ? {} : { signal }),
       })) as PairingPoll;
+    } catch (error) {
+      if (!signal?.aborted && performance.now() >= approvalExpires) throw new AndroidCompanionPairingFailed("expired");
+      throw error;
+    }
     if (poll.status === "pending") continue;
     if (poll.status === "approved" && typeof poll.credential === "string") {
       boundedCredential(poll.credential);
       return poll.credential;
     }
-    throw new Error(
-      poll.status === "rejected"
-        ? "The Android pairing request was rejected."
-        : "The Android pairing request expired.",
-    );
+    if (poll.status === "rejected" || poll.status === "expired") {
+      throw new AndroidCompanionPairingFailed(poll.status);
+    }
+    throw new Error("Invalid Android pairing response");
   }
   throw signal.reason ?? new Error("Android pairing canceled");
 }

@@ -47,6 +47,24 @@
       "value": "Open JSTorrent in Google Play"
     }
   ],
+  "android.companion.pairing-canceled": [
+    {
+      "type": 0,
+      "value": "Pairing canceled. The Android approval request may remain pending for up to two minutes. Wait for it to expire before selecting Retry."
+    }
+  ],
+  "android.companion.pairing-expired": [
+    {
+      "type": 0,
+      "value": "The pairing request expired. Open the Android app, then select Retry and approve the new request."
+    }
+  ],
+  "android.companion.pairing-rejected": [
+    {
+      "type": 0,
+      "value": "Pairing was rejected in the Android app. Select Retry to request approval again, or use the Android app directly."
+    }
+  ],
   "android.companion.permission-denied": [
     {
       "type": 0,

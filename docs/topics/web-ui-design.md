@@ -7,11 +7,14 @@ manual Retry/Cancel, joined view/connection cleanup, offline stage-specific
 troubleshooting and explicit separate-library Linux guidance. A voluntary
 allowlisted context preview keeps Play/app/policy unknown and excludes raw
 errors and personal state. Six injected packaged-browser journeys, focused
-ownership tests and the full 450-test web suite pass. Cohort A adds real
+ownership tests and the full 462-test web suite pass. Cohort A adds real
 pairing rejection/retry/approval, shared-library recovery and offline guide
 rendering using isolated candidate assets. Connected Android identity remains
 visible. Reduced user-agent versions are labeled as such; actual browser/OS
-builds remain unknown in support context. Full physical/store journeys remain
+builds remain unknown in support context. Observed rejection and the bounded
+approval window have closed recovery categories. Pairing Cancel explains the
+separate Android request's expiry; canceled UI startup joins its authenticated
+client release before Retry. Full physical/store journeys remain
 open; see the tactical for artifact and per-device limits.
 
 Accepted 2026-10-01, not yet qualified: Tactical

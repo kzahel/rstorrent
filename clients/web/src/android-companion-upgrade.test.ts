@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AndroidCompanionUnavailable, AndroidCompanionUpdateRequired, connectAndroidCompanion, isLegacyAndroidStatus } from "./android-companion-client";
+import { AndroidCompanionPairingFailed, AndroidCompanionUnavailable, AndroidCompanionUpdateRequired, connectAndroidCompanion, isLegacyAndroidStatus } from "./android-companion-client";
 
 const origin = "chrome-extension://gcgoepclopkgijmclmlheafaglmbjlcc";
 const legacy = { port: 7800, protocolVersion: 1, behaviorVersion: 1, version: "1.0.24", paired: true,
@@ -39,6 +39,47 @@ describe("ChromeOS staggered upgrades", () => {
     const requests = fetch.mock.calls.length;
     await vi.advanceTimersByTimeAsync(90_000);
     expect(fetch).toHaveBeenCalledTimes(requests);
+    expect(set).not.toHaveBeenCalled();
+  });
+  it.each(["rejected", "expired", "unknown", "approved"])("validates actual pairing poll %s", async (outcome) => {
+    const { set } = setup(async (url) => {
+      if (url.port !== "3030") throw new TypeError("unavailable");
+      if (url.pathname.endsWith("/hello")) return json(current);
+      if (url.pathname.endsWith("/pairing/request")) return json({ request_id: "abcdefghijklmnop", expires_in_seconds: 120 });
+      if (url.pathname.endsWith("/pairing/poll")) return json({ status: outcome });
+      throw new Error("unexpected route");
+    });
+    if (outcome === "rejected" || outcome === "expired") {
+      await expect(connectAndroidCompanion(() => {})).rejects.toMatchObject(new AndroidCompanionPairingFailed(outcome));
+    } else {
+      await expect(connectAndroidCompanion(() => {})).rejects.toThrow("Invalid Android pairing response");
+    }
+    expect(set).not.toHaveBeenCalled();
+  });
+  it("ends the declared approval window without requiring a surviving server request", async () => {
+    vi.useFakeTimers();
+    const { fetch, set } = setup(async (url) => {
+      if (url.port !== "3030") throw new TypeError("unavailable");
+      if (url.pathname.endsWith("/hello")) return json(current);
+      if (url.pathname.endsWith("/pairing/request")) return json({ request_id: "abcdefghijklmnop", expires_in_seconds: 1 });
+      if (url.pathname.endsWith("/pairing/poll")) return json({ status: "pending" });
+      throw new Error("unexpected route");
+    });
+    const pending = expect(connectAndroidCompanion(() => {})).rejects.toMatchObject({ outcome: "expired" });
+    await vi.advanceTimersByTimeAsync(1000); await pending;
+    expect(set).not.toHaveBeenCalled();
+    const requests = fetch.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fetch).toHaveBeenCalledTimes(requests);
+  });
+  it.each([0, 121, "120"])("refuses invalid declared approval duration %s", async (duration) => {
+    const { fetch, set } = setup(async (url) => {
+      if (url.port !== "3030") throw new TypeError("unavailable");
+      if (url.pathname.endsWith("/hello")) return json(current);
+      return json({ request_id: "abcdefghijklmnop", expires_in_seconds: duration });
+    });
+    await expect(connectAndroidCompanion(() => {})).rejects.toThrow("Invalid Android pairing expiration");
+    expect(fetch.mock.calls.some(([url]) => url.pathname.endsWith("/pairing/poll"))).toBe(false);
     expect(set).not.toHaveBeenCalled();
   });
   it("recognizes the released legacy status without accepting generic or malformed responses", () => {

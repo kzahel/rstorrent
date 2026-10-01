@@ -399,7 +399,7 @@ with typecheck. The connected Android label, displaced during help extraction,
 is restored and covered. Test-specific wording is removed from user help.
 Both final packaged extensions pass all six injected browser scenarios again.
 
-Final extension SHA-256 after these physical findings:
+Extension SHA-256 at this recovery checkpoint:
 
 - Production identity 1.1.2: `9853fd75a8902e00b8f6dca045580880e8724cd5d98cb1644ccedc7285d2d766`.
 - Beta 0.4.0: `4b42233bf20a9ea2548368663cb7b054e0cfd57bbe28aad3ddc4d25f732097e1`.
@@ -430,3 +430,32 @@ blocking the supported launcher/browser journey; no alternate proxy or policy
 bypass turns the runtime pass into fallback acceptance. Reboot remains unrun
 without a declared post-boot login source; sleep/wake is unrun under the inherited
 always-awake appliance policy. Neither prerequisite is silently changed.
+
+### Approval Window And Cancellation Ownership
+
+Real rejection is now a closed `pairing_rejected` result, distinct from explicit
+server expiry and malformed/unknown responses. The first physical expiry trial
+returned a generic pairing API failure, not the injected fixture's expired JSON.
+Source inspection of `crates/rstorrent-gateway/src/chromeos_companion.rs`
+(`pending`, `prune_runtime`, `poll`, `request_pairing`, `pending_snapshot` and
+`companion_pairing_poll`) explains the race: the Android observer can prune the
+request before browser poll observes expiry, yielding NotFound. No HTTP NotFound
+is treated as proof of app absence, policy or expiry.
+
+The client validates declared approval duration as an integer in 1..120 seconds
+and owns a monotonic deadline for that approval window. An explicit expired poll
+or elapsed local window becomes `pairing_expired`; malformed outcomes and early
+API errors remain unknown connection failures. Invalid durations issue no polls
+and create no stored authority. Native protocol/server behavior is unchanged.
+Local Cancel stops polling and joins work; the separately owned single Android
+request remains bounded by its expiry. Pairing-stage cancellation now explains
+waiting up to two minutes before manual Retry, since rejecting a canceled
+request alone does not free that server slot. Static offline help says the same.
+
+Cancellation during asynchronous UI startup closes the authenticated client
+immediately and retains one shared close promise until termination. Retry stays
+disabled while that release is pending. A blocked-mount test verifies this join,
+in addition to declared-window/invalid-duration and rejected/expired/unknown
+poll cases. Typecheck, all localization catalogs (1327 English web messages),
+and the full web suite pass (462 passed, two skipped). The final artifact and
+physical window repetition records follow after validation/cleanup.

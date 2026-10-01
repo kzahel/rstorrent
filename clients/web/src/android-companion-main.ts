@@ -1,5 +1,5 @@
 import type { ApplicationViewClient } from "./api/client";
-import { AndroidCompanionUnavailable, AndroidCompanionUpdateRequired, connectAndroidCompanion, type AndroidConnectionStage } from "./android-companion-client";
+import { AndroidCompanionPairingFailed, AndroidCompanionUnavailable, AndroidCompanionUpdateRequired, connectAndroidCompanion, type AndroidConnectionStage } from "./android-companion-client";
 import { startCompanionInspection } from "./inspection/companion-bootstrap";
 import { message } from "./localization/runtime";
 
@@ -63,7 +63,7 @@ export async function startAndroidCompanion(): Promise<void> {
     if (!active || retry.disabled) return;
     if (connecting) {
       category = "canceled";
-      status.textContent = message("shell.companion.connection-canceled");
+      status.textContent = (stage === "pairing" ? message("android.companion.pairing-canceled") : message("shell.companion.connection-canceled"));
       retry.disabled = true;
       controller?.abort();
     } else {
@@ -86,7 +86,15 @@ export async function startAndroidCompanion(): Promise<void> {
     }, 150_000);
     let departed!: () => void;
     const departure = new Promise<void>(resolve => { departed = resolve; });
-    abort.signal.addEventListener("abort", departed, { once: true });
+    let closing: Promise<void> | undefined;
+    const closeClient = (): Promise<void> => {
+      if (!client) return Promise.resolve();
+      const ownedClient = client;
+      closing ??= Promise.resolve().then(() => ownedClient.close()).catch(() => {});
+      return closing;
+    };
+    const canceled = () => { departed(); void closeClient(); };
+    abort.signal.addEventListener("abort", canceled, { once: true });
     category = "none";
     stage = "discovery";
     context.hidden = true;
@@ -138,6 +146,10 @@ export async function startAndroidCompanion(): Promise<void> {
         versionStatus = category;
         element("companion-update-android").hidden = error.component !== "android";
         status.textContent = error.message;
+      } else if (error instanceof AndroidCompanionPairingFailed) {
+        category = `pairing_${error.outcome}`;
+        stage = "pairing";
+        status.textContent = error.message;
       } else if (error instanceof AndroidCompanionUnavailable) {
         category = "service_unreachable";
         status.textContent = error.message;
@@ -148,9 +160,9 @@ export async function startAndroidCompanion(): Promise<void> {
       status.setAttribute("role", "alert");
     } finally {
       clearTimeout(timeout);
-      abort.signal.removeEventListener("abort", departed);
+      abort.signal.removeEventListener("abort", canceled);
       try { await unmount?.(); } catch { /* Continue releasing the connection. */ }
-      try { await client?.close(); } catch { /* A closed transport can reject cleanup. */ }
+      await closeClient();
       unmount = undefined;
       client = undefined;
       app.hidden = true;
@@ -162,7 +174,6 @@ export async function startAndroidCompanion(): Promise<void> {
   const pagehide = (event: PageTransitionEvent) => {
     active = false;
     controller?.abort();
-    void client?.close();
     app.hidden = true;
     if (!event.persisted) {
       window.removeEventListener("pagehide", pagehide);
@@ -177,7 +188,7 @@ export async function startAndroidCompanion(): Promise<void> {
       await task;
       if (!active) return;
       category = "canceled";
-      status.textContent = message("shell.companion.connection-canceled");
+      status.textContent = (stage === "pairing" ? message("android.companion.pairing-canceled") : message("shell.companion.connection-canceled"));
       finish();
     })();
   };

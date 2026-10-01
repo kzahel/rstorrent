@@ -2,7 +2,7 @@
 
 Topic: `localization`
 
-Tactical 253 adds nine cataloged shared connection/recovery messages, preserving
+Tactical 253 adds twelve cataloged shared connection/recovery messages, preserving
 English-only shipping and the unchanged native catalogs. All four catalog
 checks pass. Static extension setup remains an offline English document under
 the existing extension-source classification.

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AndroidCompanionUnavailable, AndroidCompanionUpdateRequired } from "./android-companion-client";
+import { AndroidCompanionPairingFailed, AndroidCompanionUnavailable, AndroidCompanionUpdateRequired } from "./android-companion-client";
 const mock = vi.hoisted(() => ({ connect: vi.fn(), mount: vi.fn(), permission: vi.fn() }));
 vi.mock("./android-companion-client", async (original) => ({
   ...await original<typeof import("./android-companion-client")>(), connectAndroidCompanion: mock.connect,
@@ -40,6 +40,15 @@ describe("Android pre-connection recovery ownership", () => {
     const report = JSON.parse((document.getElementById("companion-context") as HTMLTextAreaElement).value);
     expect(report).toMatchObject({ category: "permission_denied", browser_permission: "denied", play_availability: "unknown", app_presence: "unknown", device_policy: "unknown" });
   });
+  it.each(["rejected", "expired"] as const)("reports observed pairing %s without a Play claim", async (outcome) => {
+    mock.connect.mockRejectedValue(new AndroidCompanionPairingFailed(outcome));
+    await startAndroidCompanion();
+    button("companion-preview").click();
+    const report = JSON.parse((document.getElementById("companion-context") as HTMLTextAreaElement).value);
+    expect(report).toMatchObject({ stage: "pairing", category: `pairing_${outcome}`, play_availability: "unknown", device_policy: "unknown" });
+    expect(status()).toBe(new AndroidCompanionPairingFailed(outcome).message);
+    expect(button().textContent).toBe("common.action.retry");
+  });
   it("offline failure stays terminal until manual attach-only retry", async () => {
     mock.connect.mockRejectedValue(new AndroidCompanionUnavailable());
     await startAndroidCompanion();
@@ -58,6 +67,37 @@ describe("Android pre-connection recovery ownership", () => {
     expect(status()).toBe("shell.companion.connection-canceled");
     expect(button().disabled).toBe(false);
     await vi.advanceTimersByTimeAsync(300_000);
+    expect(mock.connect).toHaveBeenCalledOnce();
+  });
+  it("cancel releases a client blocked during mount and joins that release", async () => {
+    const connection = connected();
+    let failed!: (error: Error) => void;
+    let released!: () => void;
+    mock.mount.mockReturnValue(new Promise((_, reject) => { failed = reject; }));
+    connection.close.mockImplementation(() => {
+      failed(new Error("transport closed"));
+      return new Promise<void>(resolve => { released = resolve; });
+    });
+    const task = startAndroidCompanion();
+    await vi.advanceTimersByTimeAsync(0);
+    button().click();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(connection.close).toHaveBeenCalledOnce();
+    expect(button().disabled).toBe(true);
+    released(); await task;
+    expect(button().disabled).toBe(false);
+    expect(document.getElementById("app")!.hidden).toBe(true);
+    expect(connection.close).toHaveBeenCalledOnce();
+  });
+  it("cancel during pairing explains the separately owned Android request", async () => {
+    mock.connect.mockImplementation((update, signal: AbortSignal) => {
+      update("approve", "pairing");
+      return new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+    });
+    const task = startAndroidCompanion(); await vi.advanceTimersByTimeAsync(0);
+    button().click(); await task;
+    expect(status()).toBe("android.companion.pairing-canceled");
+    expect(button().disabled).toBe(false);
     expect(mock.connect).toHaveBeenCalledOnce();
   });
   it("caps the whole pairing/authentication attempt and reports timeout", async () => {

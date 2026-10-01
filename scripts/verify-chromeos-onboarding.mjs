@@ -57,7 +57,7 @@ try {
       await page.getByRole("button", { name: "Preview connection support context" }).click();
       const report = JSON.parse(await page.locator("#companion-context").inputValue());
       assert.equal(report.app_presence, "unknown"); assert.equal(report.play_availability, "unknown");
-      assert.equal(report.category, { denied: "permission_denied", offline: "service_unreachable", legacy: "app_update_required", incompatible: "extension_update_required", rejected: "connection_failed", expired: "connection_failed" }[scenario]);
+      assert.equal(report.category, { denied: "permission_denied", offline: "service_unreachable", legacy: "app_update_required", incompatible: "extension_update_required", rejected: "pairing_rejected", expired: "pairing_expired" }[scenario]);
       if (scenario === "denied") assert.equal(await page.evaluate(() => globalThis.__probes), 0);
       assert.equal(await page.locator("#app").isVisible(), false);
       const popupPromise = context.waitForEvent("page");
