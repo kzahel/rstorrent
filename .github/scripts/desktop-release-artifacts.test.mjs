@@ -19,7 +19,7 @@ const attempt = "1";
 const repository = "kzahel/rstorrent";
 const signature = Buffer.from("untrusted comment: fixture signature\nfixture\n").toString("base64");
 
-function fixture() {
+function fixture(product = "RSTorrent") {
   const root = mkdtempSync(join(tmpdir(), "rstorrent-parallel-release-"));
   const input = join(root, "input");
   const output = join(root, "output");
@@ -54,14 +54,15 @@ function fixture() {
   };
   async function stage() {
     for (const lane of RELEASE_LANES) {
-      for (const [path, signed] of packages[lane]) {
+      for (const [originalPath, signed] of packages[lane]) {
+        const path = originalPath.replaceAll("RSTorrent", product);
         const file = join(root, path);
         mkdirSync(dirname(file), { recursive: true });
         writeFileSync(file, `package ${lane} ${path}`);
         if (signed) writeFileSync(`${file}.sig`, signature);
       }
       await stageDesktopReleaseLeg({
-        root, lane, sourceSha, runId, attempt, expectedVersion: version,
+        root, lane, sourceSha, runId, attempt, expectedVersion: version, product,
         output: join(input, `desktop-release-${lane}-${runId}-${attempt}`),
       });
     }
@@ -170,4 +171,21 @@ test("refuses a leg with an absent updater signature or wrong version", async ()
   } finally {
     rmSync(data.root, { recursive: true, force: true });
   }
+});
+
+test("JSTorrent candidates use exact product receipts and cannot publish", async () => {
+  const data=fixture("JSTorrent");
+  try {
+    await data.stage();
+    const options={root:data.root,input:data.input,output:data.output,sourceSha,runId,attempt,repository,channel:"stable",version,product:"JSTorrent"};
+    const result=await assembleDesktopRelease(options);
+    validateDesktopRelease({...result,tag:result.release.tagName,repository});
+    assert(Object.values(result.latest.platforms).every(p=>p.url.includes("/JSTorrent")));
+    assert(Object.values(result.latest.platforms).every(p=>!p.url.includes("RSTorrent")));
+    await assert.rejects(assembleDesktopRelease({...options,tag:`desktop-v${version}`,output:join(data.root,"forbidden")}),/publication is not enabled/u);
+    const directory=join(data.input,`desktop-release-${RELEASE_LANES[0]}-${runId}-${attempt}`);
+    const meta=JSON.parse(readFileSync(join(directory,"meta.json"),"utf8"));
+    meta.product="RSTorrent";writeFileSync(join(directory,"meta.json"),JSON.stringify(meta));
+    await assert.rejects(assembleDesktopRelease({...options,output:join(data.root,"mixed")}),/mixed release products/u);
+  } finally {rmSync(data.root,{recursive:true,force:true});}
 });

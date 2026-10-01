@@ -5,6 +5,11 @@ on:
     tags:
       - "desktop-v*"
   workflow_dispatch:
+    inputs:
+      production_candidate:
+        description: Build JSTorrent identity using existing signing inputs; never publish
+        type: boolean
+        default: true
   workflow_call:
     inputs:
       source_sha:
@@ -37,6 +42,7 @@ jobs:
       tag: ${{ steps.identity.outputs.tag }}
       channel: ${{ steps.identity.outputs.channel }}
       publish: ${{ steps.identity.outputs.publish }}
+      production: ${{ steps.identity.outputs.production }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
@@ -44,6 +50,7 @@ jobs:
           node-version: 22
       - id: identity
         env:
+          INPUT_PRODUCTION_CANDIDATE: ${{ inputs.production_candidate || false }}
           INPUT_SOURCE_SHA: ${{ inputs.source_sha }}
           INPUT_RELEASE_VERSION: ${{ inputs.release_version }}
           INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
@@ -117,7 +124,9 @@ jobs:
           else
             node scripts/validate-desktop-release.mjs
           fi
+          node scripts/validate-jstorrent-candidate.mjs
           node --test \
+            scripts/validate-jstorrent-candidate.test.mjs \
             scripts/validate-desktop-package.test.mjs \
             scripts/validate-desktop-release.test.mjs \
             .github/scripts/desktop-release-artifacts.test.mjs \
@@ -148,7 +157,11 @@ jobs:
       - name: Validate and package the JSTorrent Beta extension seed
         run: |
           npm test --prefix clients/extension
-          npm run package --prefix clients/extension
+          if [[ "${{ needs.release-input.outputs.production }}" == true ]]; then
+            npm run package:jstorrent --prefix clients/extension
+          else
+            npm run package --prefix clients/extension
+          fi
 
       - name: Provide the Tauri compile-time asset directory
         run: mkdir -p clients/web/dist
@@ -169,6 +182,34 @@ jobs:
 
       - name: Build the production web application
         run: npm run build --prefix clients/web
+
+  signing-probe:
+    name: Prove current CI updater signing identity
+    needs: release-input
+    if: needs.release-input.outputs.production == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ needs.release-input.outputs.source_sha }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+      - run: sudo apt-get update && sudo apt-get install -y minisign
+      - run: npm ci --prefix clients/web
+      - name: Sign and verify an owned nonce
+        continue-on-error: true
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: node scripts/probe-desktop-signing.mjs signing-proof.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: jstorrent-signing-proof-${{ github.run_id }}
+          path: signing-proof.json
+          if-no-files-found: warn
 
   build-desktop:
     name: Signed ${{ matrix.name }} packages
@@ -374,15 +415,16 @@ jobs:
             ${{ matrix.args }}
             ${{ runner.os == 'Linux' && '--verbose' || '' }}
             --config src-tauri/tauri.release.conf.json
+            ${{ needs.release-input.outputs.production == 'true' && '--config src-tauri/tauri.jstorrent.conf.json' || '' }}
             ${{ runner.os == 'Windows' && '--config ''{"bundle":{"windows":{"signCommand":"trusted-signing-cli -e https://eus.codesigning.azure.net -a kylegraehl -c jstorrent-profile %1"}}}''' || '' }}
 
       - name: Verify macOS signing and notarization
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          APP_PATH="target/${{ matrix.rust_target }}/release/bundle/macos/RSTorrent.app"
+          APP_PATH="target/${{ matrix.rust_target }}/release/bundle/macos/$PACKAGE_PRODUCT.app"
           test -d "$APP_PATH"
-          node scripts/validate-desktop-package.mjs --mac-app "$APP_PATH"
+          node scripts/validate-desktop-package.mjs --mac-app "$APP_PATH" --product "$PACKAGE_PRODUCT"
           python3 scripts/inspect-distribution.py --root "$APP_PATH" --output artifacts/distribution/macos.json
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
           spctl --assess --type execute --verbose=2 "$APP_PATH"
@@ -447,7 +489,7 @@ jobs:
           if ($installer.Count -ne 1) {
             throw "Expected one NSIS installer; found $($installer.Count)"
           }
-          $installDirectory = Join-Path $env:LOCALAPPDATA 'RSTorrent'
+          $installDirectory = Join-Path $env:LOCALAPPDATA $env:PACKAGE_PRODUCT
           $executable = Join-Path $installDirectory 'rstorrent-desktop.exe'
           try {
             $install = Start-Process -FilePath $installer[0].FullName -ArgumentList '/S' -Wait -PassThru
@@ -468,7 +510,8 @@ jobs:
               }
             }
             $torrentExtension = Get-Item 'Registry::HKEY_CURRENT_USER\Software\Classes\.torrent'
-            $torrentCommand = Get-Item 'Registry::HKEY_CURRENT_USER\Software\Classes\com.jstorrent.rstorrent.torrent\shell\open\command'
+            $fileClass = if ($env:PACKAGE_PRODUCT -eq 'JSTorrent') { 'com.jstorrent.desktop.torrent' } else { 'com.jstorrent.rstorrent.torrent' }
+            $torrentCommand = Get-Item "Registry::HKEY_CURRENT_USER\Software\Classes\$fileClass\shell\open\command"
             $magnet = Get-Item 'Registry::HKEY_CURRENT_USER\Software\Classes\magnet'
             $magnetCommand = Get-Item 'Registry::HKEY_CURRENT_USER\Software\Classes\magnet\shell\open\command'
             @{
@@ -482,7 +525,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) {
               throw "Installed Windows distribution inspection failed"
             }
-            node scripts/validate-desktop-package.mjs --windows-registry-json "$env:RUNNER_TEMP\rstorrent-registry.json"
+            node scripts/validate-desktop-package.mjs --windows-registry-json "$env:RUNNER_TEMP\rstorrent-registry.json" --product "$env:PACKAGE_PRODUCT"
             if ($LASTEXITCODE -ne 0) {
               throw "Installed Windows activation registry validation failed"
             }
@@ -526,7 +569,7 @@ jobs:
             DESKTOP_FILE=$(find "$SEARCH_ROOT" -type f -name '*.desktop' -print -quit)
             test -n "$DESKTOP_FILE"
             desktop-file-validate "$DESKTOP_FILE"
-            node scripts/validate-desktop-package.mjs --linux-desktop "$DESKTOP_FILE"
+            node scripts/validate-desktop-package.mjs --linux-desktop "$DESKTOP_FILE" --product "$PACKAGE_PRODUCT"
             python3 scripts/inspect-distribution.py --root "$SEARCH_ROOT" "${NATIVE_NOTICE_ARGS[@]}" --output "artifacts/distribution/linux-$kind.json"
           done
 
@@ -552,7 +595,7 @@ jobs:
             --run-id "$GITHUB_RUN_ID" \
             --attempt "$GITHUB_RUN_ATTEMPT" \
             --version "$RELEASE_VERSION" \
-            --output artifacts/desktop-release-leg
+            --output artifacts/desktop-release-leg --product "$PACKAGE_PRODUCT"
 
       - name: Retain signed release leg for collection
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -561,6 +604,18 @@ jobs:
           path: artifacts/desktop-release-leg/*
           if-no-files-found: error
           retention-days: 14
+          compression-level: 0
+
+      - name: Retain failed candidate bundle outputs
+        if: failure() && needs.release-input.outputs.production == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: jstorrent-failed-bundles-${{ matrix.lane }}-${{ github.run_id }}
+          path: |
+            target/release/bundle/
+            target/${{ matrix.rust_target }}/release/bundle/
+          if-no-files-found: ignore
+          retention-days: 7
           compression-level: 0
 
       - name: Clean up macOS keychain
@@ -582,6 +637,7 @@ jobs:
       RELEASE_TAG: ${{ needs.release-input.outputs.tag }}
       RELEASE_VERSION: ${{ needs.release-input.outputs.version }}
       RELEASE_CHANNEL: ${{ needs.release-input.outputs.channel }}
+      PACKAGE_PRODUCT: ${{ needs.release-input.outputs.production == 'true' && 'JSTorrent' || 'RSTorrent' }}
       SOURCE_SHA: ${{ needs.release-input.outputs.source_sha }}
     steps:
       - name: Check out source
@@ -620,7 +676,7 @@ jobs:
             --repository "$GITHUB_REPOSITORY" \
             --channel "$RELEASE_CHANNEL" \
             --version "$RELEASE_VERSION" \
-            --tag "$RELEASE_TAG"
+            --tag "$RELEASE_TAG" --product "$PACKAGE_PRODUCT"
           VALIDATION_TAG=$(jq -r .tagName artifacts/desktop-release-output/release.json)
           node .github/scripts/validate-desktop-release.mjs \
             --release artifacts/desktop-release-output/release.json \
@@ -628,15 +684,22 @@ jobs:
             --tag "$VALIDATION_TAG" \
             --repository "$GITHUB_REPOSITORY"
 
-      - name: Retain private rehearsal manifest
-        if: needs.release-input.outputs.publish == 'false' && needs.source-checks.result == 'success' && needs.build-desktop.result == 'success'
+      - name: Verify every production updater payload signature
+        if: needs.release-input.outputs.production == 'true' && needs.source-checks.result == 'success' && needs.build-desktop.result == 'success'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y minisign
+          node scripts/verify-desktop-signatures.mjs artifacts/desktop-release-output/assets JSTorrent
+
+      - name: Retain candidate diagnostic manifest and payloads
+        if: always() && needs.release-input.outputs.publish == 'false' && needs.source-checks.result == 'success' && needs.build-desktop.result == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: desktop-release-rehearsal-manifest-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             artifacts/desktop-release-output/release.json
             artifacts/desktop-release-output/notes.md
-            artifacts/desktop-release-output/assets/latest.json
+            artifacts/desktop-release-output/assets/*
           if-no-files-found: error
           retention-days: 14
 

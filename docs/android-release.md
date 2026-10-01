@@ -66,6 +66,13 @@ completed workflow run's Artifacts section. It contains the AAB and APK.
 Artifacts in a public repository are not private; signing keys are never
 included in them.
 
+For a **manual diagnostic build only**, the workflow's
+`existing_signing_rehearsal=true` option tries the existing canary inputs. Final
+validation still requires the original JSTorrent certificate. A mismatch is a
+failure, and any retained APK/AAB is explicitly unqualified; it cannot replace
+an old installation or establish Play continuity. This option cannot apply to
+tagged publication. No Play upload is automatic.
+
 ## Signing And Backup
 
 The workflow now requires dedicated original JSTorrent secrets:

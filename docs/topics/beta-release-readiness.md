@@ -2,6 +2,14 @@
 
 Topic: `beta-release-readiness`
 
+Tactical [251](../tactical/251-jstorrent-ci-candidates-and-installed-update.md)
+starts manual production-identity CI attempts using existing signing inputs,
+with nonce identity proof, exact product receipts and retained-public-root
+signature verification. Automatic incubation publication is paused; candidate
+builds cannot publish. The successor update-service descriptor is prepared but
+its live routing/feed is unchanged. Signed installed updating remains unqualified
+until the exact candidate authenticates and an owned old-release guest passes.
+
 ## JSTorrent Production Candidates, 2026-10-01
 
 Tactical [250](../tactical/250-jstorrent-production-identity-candidates.md)

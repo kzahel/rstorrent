@@ -1,7 +1,13 @@
 import { appendFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-export function resolveDesktopReleaseInput({ event, ref, sha, sourceSha, version, tag }) {
+export function resolveDesktopReleaseInput({ event, ref, sha, sourceSha, version, tag, productionCandidate = false }) {
+  if (productionCandidate) {
+    if (event !== "workflow_dispatch" || sourceSha || version || tag || !ref?.startsWith("refs/heads/")) {
+      throw new Error("Production candidates require a manual branch build without publication inputs");
+    }
+    return { sourceSha: sha, version: "", tag: "", channel: "stable", publish: false, production: true };
+  }
   if (sourceSha || version || tag) {
     if (!/^[0-9a-f]{40}$/.test(sourceSha ?? "") || !/^\d+\.\d+\.\d+$/.test(version ?? "") || tag !== `desktop-latest-v${version}`) {
       throw new Error("Nightly release requires exact source SHA, numeric version, and matching Latest tag");
@@ -27,6 +33,7 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       sourceSha: process.env.INPUT_SOURCE_SHA,
       version: process.env.INPUT_RELEASE_VERSION,
       tag: process.env.INPUT_RELEASE_TAG,
+      productionCandidate: process.env.INPUT_PRODUCTION_CANDIDATE === "true",
     });
     appendFileSync(process.env.GITHUB_OUTPUT, Object.entries(result).map(([key, value]) => `${key}=${value}\n`).join(""));
     console.log(JSON.stringify(result));

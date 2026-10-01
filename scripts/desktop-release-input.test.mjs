@@ -22,3 +22,12 @@ test("stable tags publish while manual rehearsals do not", () => {
   assert.throws(() => resolveDesktopReleaseInput({ event: "push", ref: "refs/tags/desktop-vbad", sha }), /Invalid Stable/);
   assert.throws(() => resolveDesktopReleaseInput({ event: "schedule", ref: "refs/heads/main", sha, sourceSha: sha, version: "0.2.101", tag: "desktop-v0.2.101" }), /matching Latest tag/);
 });
+
+test("production candidates cannot publish or reuse nightly/tag inputs", () => {
+  const input = {event: "workflow_dispatch", ref: "refs/heads/main", sha: "a".repeat(40), productionCandidate: true};
+  assert.equal(resolveDesktopReleaseInput(input).publish, false);
+  assert.equal(resolveDesktopReleaseInput(input).production, true);
+  for (const overrides of [{event:"push"}, {ref:"refs/tags/desktop-v0.3.0"}, {tag:"desktop-v0.3.0"}, {sourceSha:"b".repeat(40)}]) {
+    assert.throws(() => resolveDesktopReleaseInput({...input, ...overrides}), /manual branch build/u);
+  }
+});

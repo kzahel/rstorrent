@@ -115,3 +115,16 @@ test("rejects an unquoted Windows executable", () => {
     /unexpected Windows torrent command/,
   );
 });
+
+test("production Windows and Linux metadata reject an incubation selector", () => {
+  const executable = 'C:\\Users\\Test User\\AppData\\Local\\JSTorrent\\rstorrent-desktop.exe';
+  const registry = {executable, torrentProgId:'com.jstorrent.desktop.torrent',
+    torrentCommand:`"${executable}" "%1"`,magnetCommand:`"${executable}" "%1"`,magnetUrlProtocol:''};
+  assert.doesNotThrow(()=>validateWindowsAssociations(registry,'JSTorrent'));
+  assert.throws(()=>validateWindowsAssociations(registry,'RSTorrent'),/torrent file class/u);
+  const entry='[Desktop Entry]\nName=JSTorrent\nExec=rstorrent-desktop %U\nTerminal=false\nType=Application\nMimeType=application/x-bittorrent;x-scheme-handler/magnet;\n';
+  assert.doesNotThrow(()=>validateLinuxDesktop(entry,'JSTorrent'));
+  assert.throws(()=>validateLinuxDesktop(entry,'RSTorrent'),/handler name/u);
+  assert.throws(()=>validateLinuxDesktop(entry,'OtherApp'),/unknown package product/u);
+  assert.throws(()=>validateMacInfo({CFBundleIdentifier:'com.jstorrent.rstorrent'},'JSTorrent'),/bundle identifier/u);
+});

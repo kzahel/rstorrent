@@ -19,19 +19,20 @@ function requireValue(value, pattern, label) {
   return value;
 }
 
-function laneFiles(lane, version) {
+function laneFiles(lane, version, product = "RSTorrent") {
+  if (!["RSTorrent", "JSTorrent"].includes(product)) fail("unknown release product");
   const mac = (arch, target) => [
-    [`target/${target}/release/bundle/dmg/RSTorrent_${version}_${arch}.dmg`, `RSTorrent_${version}_${arch}.dmg`, false],
-    [`target/${target}/release/bundle/macos/RSTorrent.app.tar.gz`, `RSTorrent_${arch}.app.tar.gz`, true],
+    [`target/${target}/release/bundle/dmg/${product}_${version}_${arch}.dmg`, `${product}_${version}_${arch}.dmg`, false],
+    [`target/${target}/release/bundle/macos/${product}.app.tar.gz`, `${product}_${arch}.app.tar.gz`, true],
   ];
   const linux = (appArch, debArch, rpmArch) => [
-    [`target/release/bundle/appimage/RSTorrent_${version}_${appArch}.AppImage`, `RSTorrent_${version}_${appArch}.AppImage`, true],
-    [`target/release/bundle/deb/RSTorrent_${version}_${debArch}.deb`, `RSTorrent_${version}_${debArch}.deb`, true],
-    [`target/release/bundle/rpm/RSTorrent-${version}-1.${rpmArch}.rpm`, `RSTorrent-${version}-1.${rpmArch}.rpm`, true],
+    [`target/release/bundle/appimage/${product}_${version}_${appArch}.AppImage`, `${product}_${version}_${appArch}.AppImage`, true],
+    [`target/release/bundle/deb/${product}_${version}_${debArch}.deb`, `${product}_${version}_${debArch}.deb`, true],
+    [`target/release/bundle/rpm/${product}-${version}-1.${rpmArch}.rpm`, `${product}-${version}-1.${rpmArch}.rpm`, true],
   ];
   const windows = [
-    [`target/release/bundle/nsis/RSTorrent_${version}_x64-setup.exe`, `RSTorrent_${version}_x64-setup.exe`, true],
-    [`target/release/bundle/msi/RSTorrent_${version}_x64_en-US.msi`, `RSTorrent_${version}_x64_en-US.msi`, true],
+    [`target/release/bundle/nsis/${product}_${version}_x64-setup.exe`, `${product}_${version}_x64-setup.exe`, true],
+    [`target/release/bundle/msi/${product}_${version}_x64_en-US.msi`, `${product}_${version}_x64_en-US.msi`, true],
   ];
   const definitions = {
     "macos-aarch64": mac("aarch64", "aarch64-apple-darwin"),
@@ -100,14 +101,14 @@ function emptyOutput(directory) {
   mkdirSync(directory, { recursive: true });
 }
 
-export async function stageDesktopReleaseLeg({ root, lane, sourceSha, runId, attempt, expectedVersion, output }) {
+export async function stageDesktopReleaseLeg({ root, lane, sourceSha, runId, attempt, expectedVersion, output, product = "RSTorrent" }) {
   requireValue(sourceSha, SOURCE_SHA, "source SHA");
   requireValue(runId, /^\d+$/, "run ID");
   requireValue(attempt, /^\d+$/, "run attempt");
   const version = JSON.parse(readFileSync(join(root, "clients/desktop/src-tauri/tauri.conf.json"), "utf8")).version;
   requireValue(version, /^\d+\.\d+\.\d+$/, "package version");
   if (expectedVersion && version !== expectedVersion) fail(`package version ${version} does not match ${expectedVersion}`);
-  const files = laneFiles(lane, version);
+  const files = laneFiles(lane, version, product);
   emptyOutput(output);
   const assets = [];
   for (const file of files) {
@@ -118,13 +119,13 @@ export async function stageDesktopReleaseLeg({ root, lane, sourceSha, runId, att
     copyFileSync(source, destination);
     assets.push({ name: file.name, size: checkedFile(destination), sha256: await digestFile(destination) });
   }
-  const metadata = { lane, version, sourceSha, runId, attempt, assets };
+  const metadata = { product, lane, version, sourceSha, runId, attempt, assets };
   writeFileSync(join(output, "meta.json"), `${JSON.stringify(metadata, null, 2)}\n`);
   return metadata;
 }
 
-function releaseNotes({ root, channel, version, publish }) {
-  if (!publish) return "Signed RSTorrent desktop release rehearsal.";
+function releaseNotes({ root, channel, version, publish, product }) {
+  if (!publish) return `Signed ${product} desktop release rehearsal.`;
   if (channel === "latest") return "Signed Latest build from verified main source.";
   const changelog = readFileSync(join(root, "CHANGELOG.md"), "utf8");
   const marker = `## [${version}]`;
@@ -137,32 +138,34 @@ function releaseNotes({ root, channel, version, publish }) {
   return notes;
 }
 
-function updaterPlatforms(version, tag, repository, assetDirectory) {
+function updaterPlatforms(version, tag, repository, assetDirectory, product) {
   const prefix = `https://github.com/${repository}/releases/download/${tag}/`;
   const platforms = {};
   function add(keys, name) {
     const sig = signature(join(assetDirectory, `${name}.sig`));
     for (const key of keys) platforms[key] = { signature: sig, url: `${prefix}${name}` };
   }
-  add(["darwin-aarch64", "darwin-aarch64-app"], "RSTorrent_aarch64.app.tar.gz");
-  add(["darwin-x86_64", "darwin-x86_64-app"], "RSTorrent_x64.app.tar.gz");
-  add(["linux-aarch64", "linux-aarch64-appimage"], `RSTorrent_${version}_aarch64.AppImage`);
-  add(["linux-aarch64-deb"], `RSTorrent_${version}_arm64.deb`);
-  add(["linux-aarch64-rpm"], `RSTorrent-${version}-1.aarch64.rpm`);
-  add(["linux-x86_64", "linux-x86_64-appimage"], `RSTorrent_${version}_amd64.AppImage`);
-  add(["linux-x86_64-deb"], `RSTorrent_${version}_amd64.deb`);
-  add(["linux-x86_64-rpm"], `RSTorrent-${version}-1.x86_64.rpm`);
-  add(["windows-x86_64", "windows-x86_64-nsis"], `RSTorrent_${version}_x64-setup.exe`);
-  add(["windows-x86_64-msi"], `RSTorrent_${version}_x64_en-US.msi`);
+  add(["darwin-aarch64", "darwin-aarch64-app"], `${product}_aarch64.app.tar.gz`);
+  add(["darwin-x86_64", "darwin-x86_64-app"], `${product}_x64.app.tar.gz`);
+  add(["linux-aarch64", "linux-aarch64-appimage"], `${product}_${version}_aarch64.AppImage`);
+  add(["linux-aarch64-deb"], `${product}_${version}_arm64.deb`);
+  add(["linux-aarch64-rpm"], `${product}-${version}-1.aarch64.rpm`);
+  add(["linux-x86_64", "linux-x86_64-appimage"], `${product}_${version}_amd64.AppImage`);
+  add(["linux-x86_64-deb"], `${product}_${version}_amd64.deb`);
+  add(["linux-x86_64-rpm"], `${product}-${version}-1.x86_64.rpm`);
+  add(["windows-x86_64", "windows-x86_64-nsis"], `${product}_${version}_x64-setup.exe`);
+  add(["windows-x86_64-msi"], `${product}_${version}_x64_en-US.msi`);
   return platforms;
 }
 
-export async function assembleDesktopRelease({ root, input, output, sourceSha, runId, attempt, repository, channel, version, tag, now = new Date() }) {
+export async function assembleDesktopRelease({ root, input, output, sourceSha, runId, attempt, repository, channel, version, tag, now = new Date(), product = "RSTorrent" }) {
   requireValue(sourceSha, SOURCE_SHA, "source SHA");
   requireValue(runId, /^\d+$/, "run ID");
   requireValue(attempt, /^\d+$/, "run attempt");
   requireValue(repository, /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, "repository");
   if (!["stable", "latest"].includes(channel)) fail(`invalid channel: ${channel}`);
+  if (!["RSTorrent", "JSTorrent"].includes(product)) fail("unknown release product");
+  if (product === "JSTorrent" && tag) fail("JSTorrent candidate publication is not enabled");
   const publish = Boolean(tag);
   const metadataDirs = readdirSync(input, { withFileTypes: true });
   if (metadataDirs.length !== RELEASE_LANES.length || metadataDirs.some((entry) => !entry.isDirectory())) {
@@ -173,13 +176,14 @@ export async function assembleDesktopRelease({ root, input, output, sourceSha, r
     const legPath = join(input, directory.name);
     checkedFile(join(legPath, "meta.json"), MAX_METADATA_BYTES);
     const meta = JSON.parse(readFileSync(join(legPath, "meta.json"), "utf8"));
+    if (meta.product !== product) fail("mixed release products");
     if (!RELEASE_LANES.includes(meta.lane) || legs.has(meta.lane)) fail(`duplicate or unknown release lane: ${meta.lane}`);
     if (meta.sourceSha !== sourceSha || meta.runId !== runId || meta.attempt !== attempt) {
       fail(`stale release leg: ${meta.lane}`);
     }
     requireValue(meta.version, /^\d+\.\d+\.\d+$/, "leg version");
     if (version && meta.version !== version) fail(`release leg version mismatch: ${meta.lane}`);
-    const expectedFiles = laneFiles(meta.lane, meta.version).map((file) => file.name);
+    const expectedFiles = laneFiles(meta.lane, meta.version, product).map((file) => file.name);
     exactNames(legPath, ["meta.json", ...expectedFiles]);
     if (!Array.isArray(meta.assets) ||
         JSON.stringify(meta.assets.map((asset) => asset.name).sort()) !== JSON.stringify([...expectedFiles].sort())) {
@@ -217,8 +221,8 @@ export async function assembleDesktopRelease({ root, input, output, sourceSha, r
       assets.push({ name: asset.name, size: asset.size, digest: `sha256:${digest}` });
     }
   }
-  const notes = releaseNotes({ root, channel, version: releaseVersion, publish });
-  const latest = { version: releaseVersion, notes, pub_date: now.toISOString(), platforms: updaterPlatforms(releaseVersion, releaseTag, repository, assetsDir) };
+  const notes = releaseNotes({ root, channel, version: releaseVersion, publish, product });
+  const latest = { version: releaseVersion, notes, pub_date: now.toISOString(), platforms: updaterPlatforms(releaseVersion, releaseTag, repository, assetsDir, product) };
   const latestPath = join(assetsDir, "latest.json");
   writeFileSync(latestPath, `${JSON.stringify(latest, null, 2)}\n`);
   assets.push({ name: "latest.json", size: statSync(latestPath).size, digest: `sha256:${await digestFile(latestPath)}` });
@@ -261,14 +265,14 @@ async function main() {
     const result = await stageDesktopReleaseLeg({
       root: process.cwd(), lane: args.lane, sourceSha: args["source-sha"],
       runId: args["run-id"], attempt: args.attempt,
-      expectedVersion: args.version, output: resolve(args.output),
+      expectedVersion: args.version, output: resolve(args.output), product: args.product,
     });
     console.log(`Staged ${result.lane} ${result.version}: ${result.assets.length} files`);
   } else if (command === "assemble") {
     const result = await assembleDesktopRelease({
       root: process.cwd(), input: resolve(args.input), output: resolve(args.output),
       sourceSha: args["source-sha"], runId: args["run-id"], attempt: args.attempt,
-      repository: args.repository, channel: args.channel, version: args.version, tag: args.tag,
+      repository: args.repository, channel: args.channel, version: args.version, tag: args.tag, product: args.product,
     });
     console.log(`Assembled ${result.release.tagName}: ${result.release.assets.length} assets, ${Object.keys(result.latest.platforms).length} updater keys`);
   } else if (command === "verify-upload") {

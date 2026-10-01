@@ -157,9 +157,12 @@ jobs:
       - name: Validate desktop release configuration and tools
         run: |
           node scripts/validate-desktop-release.mjs
+          sudo apt-get update
+          sudo apt-get install -y minisign
           node scripts/validate-jstorrent-candidate.mjs
           node --test \
             scripts/validate-jstorrent-candidate.test.mjs \
+            scripts/verify-desktop-signatures.test.mjs \
             scripts/validate-desktop-package.test.mjs \
             scripts/validate-desktop-release.test.mjs \
             .github/scripts/desktop-release-artifacts.test.mjs \
