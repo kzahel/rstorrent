@@ -264,3 +264,18 @@ if unavailable, require a fresh complete signed candidate and new receipts,
 not a mutable Latest substitute. Deploy/restart the tested server route with
 ordinary selection intact, verify cohort isolation over HTTPS, and run the
 prepared actual-updater branches before advancing the remaining acceptance rows.
+
+### Authorized Live Trial, 2026-10-01
+
+After reviewing exact installation-ID isolation, the maintainer explicitly
+authorizes pushing and deploying the test-only trial. Server commit `f45885c`
+is pushed, built and restarted with the existing product descriptor retained.
+The complete CI artifact is downloaded again; all 23 receipts and five delivery
+signatures pass before enabling the private three-ID manifest and immutable
+assets. Six no-ID baseline responses, across three targets and two installed
+versions, remain byte-identical after the server deployment. With the trial
+enabled, 27 HTTPS checks prove missing/malformed/unknown IDs retain those exact
+responses and each owned ID receives the pinned candidate. Windows is currently
+claimed by unrelated acceptance work and is left untouched; Linux and macOS
+are freshly claimed for actual installed updating. No default-feed promotion,
+public release, tag, or store change occurs.
