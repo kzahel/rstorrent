@@ -106,6 +106,25 @@ restored inherited app data, removed owned files, returned the guest to its
 prior suspended state and released its claim. This is baseline updater reachability;
 no successor download/install/relaunch has been qualified.
 
+### Linux Packaging Repair
+
+Ordinary CI run `36822289035` failed its ARM64 unsigned bundle because the
+upstream continuous AppImage output-plugin assets were replaced by a monthly
+rebuild at 04:30 UTC on 2026-10-01. The SHA-256 gate refused the moved asset;
+it was not bypassed. Review of the pinned source (`src/main.cpp`,
+`.github/workflows/main.yml`) and upstream
+[build 36815339264](https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/actions/runs/36815339264)
+confirms unchanged plugin revision `536b068787179ea901964bd7dabc7bf61e4941c3`,
+plugin API 0 and AppDir/output forwarding. Compared with September build
+`33467741325`, linuxdeploy remains revision `07333c6` and embedded appimagetool
+remains `8c8c91f` / build 295. Both newly downloaded assets match the GitHub
+release API digests. Update the two reviewed byte pins; maintain download/hash
+bounds, pre-signing attribution and final packaged-notice gates. Native hosted
+bundle retry remains required; this is not source-offer/license graduation.
+Local validation passes: 18 distribution-review tests, both real asset hashes,
+and a wrong-byte download refusal that preserves the prior cache and cleans
+temporary download state. No Rust/application source changes in this repair.
+
 ### Pre-Dispatch Checkpoint
 
 Manual desktop production selection now merges 250's overlay, validates exact

@@ -15,6 +15,11 @@ not JSTorrent's original key. Package attempts continue for diagnostic evidence,
 but cannot qualify old-client updating. The owned macOS 0.2.1 endpoint check
 passes; production delivery rows remain open.
 
+The October 1 monthly rebuild of the unchanged upstream AppImage output plugin
+invalidated its byte pins. Tactical 251 reviews the source/build provenance and
+updates both architecture digests; hash refusal and final attribution checks
+remain enforced. Hosted native packaging must pass on the repaired source.
+
 ## JSTorrent Production Candidates, 2026-10-01
 
 Tactical [250](../tactical/250-jstorrent-production-identity-candidates.md)
