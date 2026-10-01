@@ -4,8 +4,11 @@ Topic: `client-surfaces`
 
 Tactical 253's portable recovery checkpoint passes bounded Android discovery,
 manual recovery, detached-view cleanup, offline troubleshooting and explicit
-Linux guidance in the packaged extension. Host-built/current-candidate physical
-acceptance remains open. Cohort A retains its installed legacy/debug apps;
+Linux guidance in the packaged extension. Host-built isolated candidates add
+cohort-A Android and Linux-runtime byte checks/repetitions, real Android
+pairing/manual recovery and extension file-input evidence. Normal Crostini
+launcher/browser registration fails; runtime success does not close fallback.
+Full physical/store acceptance remains open. Cohort A retains legacy/debug apps;
 cohort B is presently unreachable from this controller. Neither injected
 presentation nor appliance health qualifies Play installation.
 

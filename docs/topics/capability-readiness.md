@@ -1220,7 +1220,10 @@ hosted repeats.
   See [the acceptance plan](../tactical/253-chromeos-onboarding-recovery-and-physical-qualification.md).
   Retain physical passes from 167/168/169/178/194/198/200; new work targets
   pre-Play/installation failures, the second device, current-candidate
-  regression and unrun lifecycle/endurance states. New execution has not started.
+  regression and unrun lifecycle/endurance states. Cohort A adds host-built
+  isolated APK and Ubuntu 22.04 package runtime/repetition evidence, plus real
+  pairing/manual recovery and byte-checked file intake. Normal Linux browser
+  registration fails; cohort B and real store installation remain unrun.
 
 - Selected three-platform beta package matrices pass in **236/237**, signed
   published-cohort updates in **238**, and bounded browser/transfer recovery in

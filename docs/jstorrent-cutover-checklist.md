@@ -180,13 +180,16 @@ rows independently; those tests use disposable signing and owned emulators.
   not enabled/setup unfinished, real app installation, unavailable/failed
   installation and mixed-version recovery. Record actual versus injected
   states, exact artifacts and every unrun condition; sideload/emulator evidence
-  cannot close the Play journey. Tactical 253 portable recovery passes six
-  injected packaged-browser journeys; current physical/store acceptance stays open.
+  cannot close the Play journey. Tactical 253 passes six injected packaged-browser
+  journeys and bounded cohort-A sideload/extension recovery. Real Play and
+  cohort-B acceptance stay open.
 - [ ] **A-07 Troubleshooting and Linux fallback:** before backend connection,
   explain the observed failed stage and manual next action; offer explicit
   Crostini setup where permitted. Qualify Linux-not-enabled, package absent,
   stopped VM and unshared folder. Explain separate libraries, preserve Android
   state and show an unsupported outcome if neither backend is available.
+  Cohort-A offline help and exact Linux package runtime pass; normal Linux
+  launcher/browser registration fails, so fallback acceptance remains open.
 - [ ] **A-08 Physical repetition:** Tactical
   [253](tactical/253-chromeos-onboarding-recovery-and-physical-qualification.md)'s
   bounded cold-launch, verified transfer, view detach, interrupted connection,

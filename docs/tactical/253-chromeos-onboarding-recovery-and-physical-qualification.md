@@ -1,8 +1,8 @@
 # Tactical 253: ChromeOS Onboarding, Recovery And Physical Qualification
 
 Status: **Active, 2026-10-01.** Baseline `223d5126` is clean and main is current.
-Retained evidence is mapped below; implementation and current-candidate
-physical acceptance remain open.
+Portable implementation and bounded cohort-A physical slices have landed.
+Full two-device/store/fallback acceptance remains open.
 
 ## Motivation And Outcome
 
@@ -369,3 +369,64 @@ production 1.0.23 and Play Store remain installed. No installation or update was
 performed. Preserving that inherited app prevents a fresh-install cohort; the
 unsigned qualification sideload cannot close Play installation or store update.
 Cohort B still fails transport doctor; all its product rows are unrun.
+
+### Physical Recovery And Presentation, 2026-10-02
+
+The candidate extension assets are staged in a new exclusively owned
+subdirectory of the inherited unpacked beta extension. Its registered popup,
+worker, original files and identity are preserved. The candidate companion and
+offline guide are opened directly under that known beta origin; this qualifies
+those exact page assets, not a fresh extension installation or the production
+store pair. The single inherited Android-pairing storage key is privately
+backed up before connection and must be restored after page departure.
+
+Real rejection of the qualification app's Android approval returns the candidate
+page to manual Retry. Retry and explicit approval connect to the same controlled
+Compose library. The connected header identifies **JSTorrent Android** and
+retains troubleshooting. Native cold restart returns the browser to disconnected
+help; manual attach-only Retry restores the active torrent without a new launch
+loop. Real guide rendering in ChromeOS Chrome passes at the 1600-pixel viewport
+without horizontal overflow. Physical display capture reports no active CRTC;
+these are semantic/browser-layout observations, not physical-panel screenshots.
+
+The real support preview exposed Chrome's reduced user agent: it reports
+ChromeOS `14541.0.0` despite the device's separately observed `16700.65.0`.
+Support fields now explicitly name `chrome_user_agent_version` and
+`chromeos_user_agent_version`; actual browser/OS build fields remain unknown.
+Manifest and authenticated product versions retain their separate provenance.
+An added regression case and the full web suite pass (450 passed, two skipped),
+with typecheck. The connected Android label, displaced during help extraction,
+is restored and covered. Test-specific wording is removed from user help.
+Both final packaged extensions pass all six injected browser scenarios again.
+
+Final extension SHA-256 after these physical findings:
+
+- Production identity 1.1.2: `9853fd75a8902e00b8f6dca045580880e8724cd5d98cb1644ccedc7285d2d766`.
+- Beta 0.4.0: `4b42233bf20a9ea2548368663cb7b054e0cfd57bbe28aad3ddc4d25f732097e1`.
+
+APK and Crostini hashes above are unchanged: these fixes affect only extension
+companion/help entry points, not the native app or normal Crostini web bundle.
+
+A private controlled HTTP tracker/seed feeds independently authored private
+metainfo through the actual extension file input. A 64-KiB payload independently
+verifies on Android and, through byte-upload API intake, the separate Linux
+profile: SHA-1 `9d18c16c51954b29cf228754f795ccdd5fd1aecf`. A real ten-second
+controlled source pause/reconnect is distinguished from unrun device network
+loss. This file-input run does not qualify the OS file picker. The first view
+close established retained bytes but not completion timing; a separate slower
+payload checks that distinction. Actual extension Remove/keep completes, then
+native cold restart preserves the bytes while the removed row stays absent and
+the active observation torrent returns through manual Retry. An earlier owner
+kill before Remove acknowledgement retained the row and bytes; that interrupted
+attempt was not treated as completed removal. The hour observation includes
+these two explicit native owner restarts and their recovery, rather than claiming
+an uninterrupted session.
+
+Normal Crostini browser navigation returns `net::ERR_NAME_NOT_RESOLVED` for the
+registered `penguin.linux.test` authority. Normal container-targeted vsh still
+reports missing container despite healthy candidate runtime through LXC. Existing
+guest agents are observed, not repaired. This is a current infrastructure failure
+blocking the supported launcher/browser journey; no alternate proxy or policy
+bypass turns the runtime pass into fallback acceptance. Reboot remains unrun
+without a declared post-boot login source; sleep/wake is unrun under the inherited
+always-awake appliance policy. Neither prerequisite is silently changed.

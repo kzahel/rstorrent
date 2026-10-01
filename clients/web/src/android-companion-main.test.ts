@@ -89,11 +89,23 @@ describe("Android pre-connection recovery ownership", () => {
     expect(JSON.parse(report)).toMatchObject({ category: "connection_failed", extension_version: "unknown" });
     expect(status()).toBe("android.companion.failed");
   });
+  it("labels frozen browser user-agent versions without claiming actual OS builds", async () => {
+    vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) Chrome/150.0.0.0" });
+    mock.permission.mockResolvedValue(false);
+    await startAndroidCompanion();
+    button("companion-preview").click();
+    const report = JSON.parse((document.getElementById("companion-context") as HTMLTextAreaElement).value);
+    expect(report).toMatchObject({ chrome_user_agent_version: "150.0.0.0", chromeos_user_agent_version: "14541.0.0",
+      chrome_build_version: "unknown", chromeos_build_version: "unknown" });
+    expect(report).not.toHaveProperty("os_version");
+    expect(report).not.toHaveProperty("chrome_version");
+  });
   it("disconnect unmounts and closes before exposing manual recovery", async () => {
     const connection = connected();
     const task = startAndroidCompanion();
     await vi.advanceTimersByTimeAsync(0);
     expect(document.getElementById("companion-identity")!.querySelector("a")!.href).toContain("crostini/setup.html#android");
+    expect(document.getElementById("companion-identity")!.textContent).toContain("shell.companion.title");
     connection.disconnect(); await task;
     expect(connection.unmount).toHaveBeenCalledOnce(); expect(connection.close).toHaveBeenCalledOnce();
     expect(document.getElementById("app")!.hidden).toBe(true);

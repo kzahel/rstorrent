@@ -38,14 +38,17 @@ export async function startAndroidCompanion(): Promise<void> {
   help.target = "_blank";
   help.rel = "noopener noreferrer";
   help.textContent = message("android.companion.help");
-  identity.append(help);
+  const backendLabel = document.createElement("span");
+  backendLabel.textContent = message("shell.companion.title");
+  identity.append(backendLabel, " ", help);
   preview.onclick = () => {
     context.hidden = false;
     element("companion-context-privacy").hidden = false;
     const chromeVersion = navigator.userAgent.match(/Chrome\/(\d+(?:\.\d+){0,3})/u)?.[1] ?? "unknown";
     const osVersion = navigator.userAgent.match(/CrOS (?:x86_64|aarch64|armv7l) (\d+(?:\.\d+){0,3})/u)?.[1] ?? "unknown";
     context.value = JSON.stringify({ schema: "chromeos-connection/v1", backend: "android", stage,
-      category, extension_version: version, chrome_version: chromeVersion, os_version: osVersion,
+      category, extension_version: version, chrome_user_agent_version: chromeVersion, chromeos_user_agent_version: osVersion,
+      chrome_build_version: "unknown", chromeos_build_version: "unknown",
       browser_permission: permission, app_presence: "unknown", play_availability: "unknown",
       device_policy: "unknown", app_version: appVersion, version_status: versionStatus }, null, 2);
     context.focus();

@@ -661,8 +661,12 @@ The same direction selects host-built artifacts from an x86_64 Linux
 development machine; physical Chromebooks need only installed runtime packages,
 not Rust/build toolchains. Portable recovery presentation and deterministic
 tests can proceed on the current workstation, and physical Android-only cases
-do not depend on enabling Crostini. Exact Linux runtime compatibility remains
-a package/device gate under Tactical 253.
+do not depend on enabling Crostini. The exact Ubuntu 22.04 x86_64 package now resolves dependencies and runs in
+cohort A's Debian 12 container. Its normal launcher/browser registration still
+fails; runtime/API byte checks cannot qualify the user fallback journey.
+Cohort-A isolated Android approval/retry, shared-library recovery and controlled
+file intake pass bounded slices. Real Play installation, store pairs, cohort B
+and full lifecycle acceptance remain open under Tactical 253.
 
 The first-run UX should emphasize two backend choices:
 
