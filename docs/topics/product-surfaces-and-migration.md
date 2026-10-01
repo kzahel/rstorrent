@@ -15,16 +15,24 @@ verifies against the incubation root. That attempt required original inputs.
 Controlled update-service routing and an old macOS app's unchanged-endpoint
 check pass; no successor download/install/relaunch is yet qualified.
 Windows and both Linux package lanes pass, and Android passes signed build/tests/
-lint before original-certificate refusal. Fresh macOS notarization also requires
-the account holder to resolve Apple's team agreement rejection. Ordinary CI
+lint before original-certificate refusal. Fresh macOS notarization initially
+fails Apple's team agreement gate; the recheck below passes. Ordinary CI
 passes all executed jobs; the controlled CI-bundle handoff stops before import.
 The maintainer-supplied original desktop key is now provisioned. Fresh CI nonce
 proof passes JSTorrent's root with the existing password unchanged. Windows/Linux
 package lanes and eight independently checked original-key signatures pass.
-Android signing, the Apple team agreement and
-authenticated installed updating remain open independently.
+Android signing, complete same-attempt collection and authenticated installed
+updating remain open independently.
 
-Proposed [252](../tactical/252-jstorrent-opt-in-upgrade-rehearsal.md) records a
+Fresh attempt 2 of run 36831643488 now passes both macOS jobs: Apple accepts
+both apps and outer DMGs, with no DMG issues; signing, stapling and Gatekeeper
+checks pass. The agreement error is no longer blocking CI. The collector refuses
+the failed-only retry because it has only two current-attempt legs. Fresh complete
+non-publishing run [36845370571](https://github.com/kzahel/rstorrent/actions/runs/36845370571) is pending at the same
+source SHA. See [Apple recheck evidence](../evidence/jstorrent-ci-candidate-251-apple-recheck.json). Complete collection and
+installed migration remain open; no production feed/store change is made.
+
+Accepted [252](../tactical/252-jstorrent-opt-in-upgrade-rehearsal.md) records a
 test-only cohort on the existing HTTPS updater URL, using the old release's
 already-sent installation ID and a pinned candidate. Implementation and private
 deployment review precede any external change; ordinary production selection

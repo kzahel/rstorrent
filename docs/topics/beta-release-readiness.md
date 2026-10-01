@@ -20,8 +20,8 @@ arm64 CI app independently passes original-team Developer ID signing,
 notarization/stapling and Gatekeeper. Its updater signature is still wrong-root;
 the manual installed handoff does not reach import before UI access ends.
 Both Linux production package lanes pass the repaired source. Fresh macOS
-notarization additionally requires the account holder to resolve Apple's missing
-or expired team agreement; ordinary CI passes every executed job at 19eb3a88.
+notarization initially fails Apple's missing/expired agreement gate; the fresh
+recheck below passes. Ordinary CI passes every executed job at 19eb3a88.
 The Windows release lane also passes NSIS/MSI, expected-publisher and installed
 signatures, silent installation and activation checks. Mac failures correctly
 prevent complete collection; no production update or release is qualified.
@@ -29,8 +29,18 @@ The maintainer-supplied original key subsequently replaces the existing desktop
 secret. Fresh nonce proof passes original-root verification with the unchanged
 password. Run 36831643488 completes Windows/Linux package lanes and independent
 verification passes all eight available original-key payload signatures and
-16 receipt hashes. macOS still fails Apple's agreement gate; complete-matrix
-and installed gates remain open. Proposed
+16 receipt hashes. Attempt 1 fails Apple's agreement gate; complete-matrix
+and installed gates remain open.
+
+Fresh attempt 2 of run 36831643488 now passes both macOS jobs: Apple accepts
+both apps and outer DMGs, with no DMG issues; signing, stapling and Gatekeeper
+checks pass. The agreement error is no longer blocking CI. The collector refuses
+the failed-only retry because it has only two current-attempt legs. Fresh complete
+non-publishing run [36845370571](https://github.com/kzahel/rstorrent/actions/runs/36845370571) is pending at the same
+source SHA. See [Apple recheck evidence](../evidence/jstorrent-ci-candidate-251-apple-recheck.json). Complete collection and
+installed migration remain open; no production feed/store change is made.
+
+Accepted
 [252](../tactical/252-jstorrent-opt-in-upgrade-rehearsal.md) records a pinned,
 opt-in installed trial; no candidate feed/server change is yet made.
 

@@ -5,7 +5,7 @@ Topic: `capability-readiness`
 Tactical [251](../tactical/251-jstorrent-ci-candidates-and-installed-update.md)
 completes the bounded manual, non-publishing CI attempt. Windows and both Linux
 production package lanes pass; Android builds/tests/lints but rejects its signer.
-Fresh macOS notarization needs a missing/expired team agreement resolved.
+Initial macOS notarization fails the agreement gate; its fresh recheck passes.
 Ordinary CI passes every executed job. Actual nonce
 verification initially identifies the desktop CI secret as the incubation key, failing
 the original JSTorrent root. Original signing inputs blocked installed successor
@@ -14,8 +14,17 @@ unchanged production-endpoint check pass without graduating installed updating.
 The maintainer-supplied original desktop key is now provisioned; a fresh CI nonce
 passes the retained JSTorrent root with the unchanged password. Windows/Linux
 package validation and independent checks of eight original-key signatures and
-16 hashes pass; Apple agreement and installed delivery remain unqualified.
-Proposed [252](../tactical/252-jstorrent-opt-in-upgrade-rehearsal.md) records the
+16 hashes pass; complete same-attempt collection and installed delivery remain
+unqualified.
+Fresh attempt 2 of run 36831643488 now passes both macOS jobs: Apple accepts
+both apps and outer DMGs, with no DMG issues; signing, stapling and Gatekeeper
+checks pass. The agreement error is no longer blocking CI. The collector refuses
+the failed-only retry because it has only two current-attempt legs. Fresh complete
+non-publishing run [36845370571](https://github.com/kzahel/rstorrent/actions/runs/36845370571) is pending at the same
+source SHA. See [Apple recheck evidence](../evidence/jstorrent-ci-candidate-251-apple-recheck.json). Complete collection and
+installed migration remain open; no production feed/store change is made.
+
+Accepted [252](../tactical/252-jstorrent-opt-in-upgrade-rehearsal.md) records the
 next opt-in HTTPS installed trial; no live routing feature/change is implemented.
 
 Tactical [250](../tactical/250-jstorrent-production-identity-candidates.md)

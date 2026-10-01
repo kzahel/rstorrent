@@ -1,6 +1,7 @@
 # Tactical 252: Opt-In JSTorrent Installed Upgrade Rehearsal
 
-Status: **Proposed, 2026-10-01; implementation and deployment not started.**
+Status: **Ready, validation plan accepted 2026-10-01;
+implementation and deployment not started.**
 
 Owners: `desktop-jstorrent-replacement`, `product-surfaces-and-migration`,
 `beta-release-readiness`. Generic routing belongs to `simple-app-update-server`;
@@ -8,7 +9,7 @@ private deployment configuration belongs to dotfiles.
 
 ## Scope And Stopping Condition
 
-Propose one bounded end-to-end desktop checkpoint: an exact released JSTorrent
+Plan one bounded end-to-end desktop checkpoint: an exact released JSTorrent
 0.2.1 installation receives a pinned, original-key-signed CI successor through
 its ordinary HTTPS updater, installs/relaunches and migrates generated legacy
 state. Start with Linux x64 AppImage, then independently qualify Windows NSIS
@@ -20,7 +21,8 @@ deployment. The existing release already sends `X-CFU-Id`; explicitly registered
 test installation IDs can select a pinned candidate response on the existing
 URL. Ordinary/missing/unknown IDs keep the existing production release selection.
 There is no required old-client rebuild, intermediate old-app update or new
-client-visible channel. This remains a proposal, not an accepted live change.
+client-visible channel. The maintainer accepts this validation plan; a concrete
+external deployment still follows implementation, testing and review.
 
 Stop the first implementation slice with local cohort-routing negative tests,
 reviewable pinned artifacts/deployment/disable configuration, and the Linux
@@ -52,7 +54,8 @@ release, or selecting candidates automatically from mutable GitHub Latest.
   statistics must not break normal updating; do not force identifier emission.
 - Tactical 251 supplies exact original-key Windows/Linux artifacts from CI
   run 36831643488. All eight available payload signatures and 16 receipt hashes
-  independently pass. macOS notarization still fails Apple's agreement gate.
+  independently pass. A failed-only retry now passes both macOS app/DMG
+  notarization checks; fresh complete run 36845370571 remains pending.
 - Reuse 242/243's independently checked released writers, multi-profile fixture
   generation, closed catalog inspection, fencing and source/payload oracles.
 

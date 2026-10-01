@@ -39,7 +39,7 @@ The maintainer-supplied original key replaces that secret; fresh run
 [36831643488](https://github.com/kzahel/rstorrent/actions/runs/36831643488)
 passes original-key signing with the unchanged password. Windows/Linux package
 lanes complete; independent checks pass eight original-key payload signatures
-and all 16 receipt hashes. macOS still fails its Apple agreement gate; this
+and all 16 receipt hashes. Attempt 1 fails its Apple agreement gate; this
 partial matrix does not close a delivery row.
 The released macOS 0.2.1 app successfully checked its unchanged production
 endpoint in an owned guest, but no successor install is qualified. The prepared
@@ -50,12 +50,20 @@ Play upload certificate and Play app-signing certificate are separate gates.
 The first macOS arm64 CI app passes original-team Developer ID/notarization checks;
 its updater signature fails the original root. A manual CI-bundle guest attempt
 stops at the live-old-host alert before import and does not close an installed row.
-Fresh macOS notarization then fails because Apple reports a missing/expired team
-agreement; the account holder must resolve it before a new candidate can pass.
+Initial macOS notarization fails Apple's missing/expired agreement gate; its
+fresh recheck below now passes.
 Windows signed NSIS/MSI, installed publisher/helper signatures and activation
 checks pass, as do both Linux package lanes. Ordinary CI is fully green. These
 partial checkpoints leave authenticated installed updating and all rows open.
-Proposed [252](tactical/252-jstorrent-opt-in-upgrade-rehearsal.md) records an
+Fresh attempt 2 of run 36831643488 now passes both macOS jobs: Apple accepts
+both apps and outer DMGs, with no DMG issues; signing, stapling and Gatekeeper
+checks pass. The agreement error is no longer blocking CI. The collector refuses
+the failed-only retry because it has only two current-attempt legs. Fresh complete
+non-publishing run [36845370571](https://github.com/kzahel/rstorrent/actions/runs/36845370571) is pending at the same
+source SHA. See [Apple recheck evidence](evidence/jstorrent-ci-candidate-251-apple-recheck.json). Complete collection and
+installed migration remain open; no production feed/store change is made.
+
+Accepted [252](tactical/252-jstorrent-opt-in-upgrade-rehearsal.md) records an
 opt-in test cohort at the normal HTTPS endpoint, one pinned candidate and a
 real owned-guest installed migration. Routing is not implemented or deployed.
 

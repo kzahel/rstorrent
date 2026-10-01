@@ -3,7 +3,8 @@
 Status: **Bounded CI attempt complete, 2026-10-01; production delivery blocked.**
 
 Follow-up: **Original desktop key and eight Windows/Linux payload signatures
-pass; macOS agreement and authenticated installed updating remain blocked.**
+pass; macOS notarization recheck passes. Complete same-attempt collection
+and authenticated installed updating remain open.**
 The maintainer supplies the original encoded key files and authorizes using them
 for the existing CI lane. Keep the existing password secret unchanged and verify
 it by signing an owned nonce; never expose or commit private signing material.
@@ -292,9 +293,10 @@ import is qualified by these attempts.
    complete platform/package and installed evidence before shipment.
    Provision original Android keystore/password/alias inputs under existing
    `ANDROID_UPLOAD_*` names and qualify Play upload/app-signing independently.
-2. The Apple account holder resolves the team agreement rejection. Rerun manual
-   desktop and Android candidates on one recorded source SHA. Require every
-   package lane and original-root signature gate; do not publish diagnostic output.
+2. Fresh macOS app/DMG notarization now passes on both architectures. Finish
+   complete desktop candidate run 36845370571 on the recorded source SHA.
+   Require every package lane and original-root signature gate; do not publish
+   diagnostic output. Android retains its independent original-signer gate.
 3. Reacquire an owned guest claim and explicit desktop grant for the installed
    rehearsal. Use the exact checksum-pinned old release and fresh authenticated
    candidate. Confine candidate feed/TLS routing to the guest; exercise the old
@@ -332,10 +334,11 @@ original root and fail the incubation root. Preserve their exact identity in
 [original-key package receipts](../evidence/jstorrent-ci-candidate-251-original-key.json).
 These packages unlock an owned Windows/Linux installed updater trial; this is
 partial package authentication, not an installed-upgrade or complete-matrix pass.
-Apple agreement resolution, Android signing and guest desktop access remain
-independent prerequisites.
+At attempt 1, Apple agreement resolution, Android signing and guest desktop
+access remained independent prerequisites; the Apple recheck below supersedes
+that account blocker.
 
-Proposed [252](252-jstorrent-opt-in-upgrade-rehearsal.md) records the next bounded
+Accepted [252](252-jstorrent-opt-in-upgrade-rehearsal.md) records the next bounded
 dry run: the exact old release already sends `X-CFU-Id`, allowing explicit test
 cohort selection on the ordinary HTTPS endpoint. The server currently uses that
 header only for analytics; local implementation/tests and a reviewable private
@@ -343,3 +346,24 @@ deployment precede any externally authorized change. Ordinary users retain the
 old feed. Start a Linux AppImage trial, then Windows and notarized macOS, with
 ordinary writer fixtures, actual updater installation/relaunch and migration
 oracles. No live cohort/feed/server change is made in this survey.
+
+### Apple Agreement Recheck, 2026-10-01
+
+The maintainer reports accepting the agreement. Failed-only attempt 2 of run
+36831643488 freshly submits both architecture apps and outer DMGs using the
+existing CI credentials. Apple accepts the Intel app at 09:47:29 UTC and arm64
+app at 09:47:31 UTC. Both DMG reports are Accepted with no issues. Original-team
+code-signature, stapling and Gatekeeper checks pass for apps and DMGs; both macOS
+jobs conclude successfully. The agreement error is no longer a current blocker.
+This verifies service access, not the private account portal acceptance record.
+
+[Recheck evidence](../evidence/jstorrent-ci-candidate-251-apple-recheck.json)
+preserves source/run/attempt, job/submission identity and notarization report
+hashes. The submitted DMG hash precedes stapling and is not its final delivery
+hash. The collector correctly refuses this two-leg retry because Windows/Linux
+artifacts belong to attempt 1; do not combine attempts to graduate that gate.
+
+Fresh complete non-publishing run [36845370571](https://github.com/kzahel/rstorrent/actions/runs/36845370571)
+starts at the same `19eb3a88703088a2dfebb803342394938d305cb8` source. Its outcome
+is pending; complete original-root collection and installed migration remain
+open. Tactical 252 is accepted/Ready; routing is not implemented or deployed.

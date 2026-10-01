@@ -20,9 +20,9 @@ notarization/stapling and Gatekeeper; its updater signature remains wrong-root.
 A controlled manual-handoff attempt stops before import at the old-host refusal
 alert; the harness guidance now identifies its UserNotificationCenter owner.
 Desktop grant revocation ends UI actions; no installed delivery row is closed.
-The repaired retry also exposes a fresh Apple notarization HTTP 403 for a missing
-or expired team agreement. The earlier accepted bundle does not qualify that retry;
-resolve the account agreement along with original updater signing inputs.
+An earlier repaired retry exposes Apple notarization HTTP 403 for a missing
+or expired team agreement. Its failure is historical; the recheck below now
+qualifies fresh macOS notarization.
 Windows NSIS/MSI, publisher/installed signatures, silent install and activation
 checks pass, as do both Linux AppImage/DEB/RPM package lanes. The failed macOS
 legs prevent complete matrix collection; no production update is authenticated.
@@ -33,10 +33,18 @@ name and fresh CI nonce signing now pass with the unchanged password. Run
 verifies against root `415D3DF4B3D0CFB8` and refuses the incubation root.
 The run completes with Windows and both Linux lanes passing. Independent checks
 verify all eight available payload signatures against the original root and all
-16 receipt hashes. Both macOS lanes still fail Apple's agreement gate; installed
+16 receipt hashes. Attempt 1 fails Apple's agreement gate; installed
 updating remains open. No production feed is changed.
 
-Proposed [252](../tactical/252-jstorrent-opt-in-upgrade-rehearsal.md) uses the
+Fresh attempt 2 of run 36831643488 now passes both macOS jobs: Apple accepts
+both apps and outer DMGs, with no DMG issues; signing, stapling and Gatekeeper
+checks pass. The agreement error is no longer blocking CI. The collector refuses
+the failed-only retry because it has only two current-attempt legs. Fresh complete
+non-publishing run [36845370571](https://github.com/kzahel/rstorrent/actions/runs/36845370571) is pending at the same
+source SHA. See [Apple recheck evidence](../evidence/jstorrent-ci-candidate-251-apple-recheck.json). Complete collection and
+installed migration remain open; no production feed/store change is made.
+
+Accepted [252](../tactical/252-jstorrent-opt-in-upgrade-rehearsal.md) uses the
 released app's existing `X-CFU-Id` header for an explicitly opted-in test cohort
 on the normal HTTPS endpoint, with one pinned candidate and ordinary selection
 unchanged for everyone else. This server feature is not implemented/deployed.
