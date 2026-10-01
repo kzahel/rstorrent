@@ -56,7 +56,7 @@ test("ChromeOS copy uses only the exact published Android listing", () => {
 
 // Execute the actual popup entry point with browser/document boundaries mocked.
 // A tab with the popup URL must not be mistaken for the toolbar action.
-async function runPopup({ os = "mac", popupView = false } = {}) {
+async function runPopup({ os = "mac", popupView = false, granted = true, launchRequested = true } = {}) {
   const { runInNewContext } = await import("node:vm");
   const requests = [];
   const elements = new Map();
@@ -74,11 +74,13 @@ async function runPopup({ os = "mac", popupView = false } = {}) {
     applyPresentation, presentationForPlatform, window: view,
     document: { querySelector: element },
     chrome: {
+      permissions: { request: async () => granted },
       extension: { getViews: () => popupView ? [view] : [{}] },
       runtime: {
         getPlatformInfo: async () => ({ os }),
         async sendMessage(request) {
           requests.push(request);
+          if (request.type === "androidBootstrap") return { ok: true, result: { launchRequested } };
           if (request.type === "productMetrics") return { ok: true, state: metrics };
           return { ok: true, result: { kind: request.op === "hello" ? "hello" : "desktop_ui", hostVersion: "test" } };
         },
@@ -86,7 +88,7 @@ async function runPopup({ os = "mac", popupView = false } = {}) {
     },
   });
   await new Promise(resolve => setImmediate(resolve));
-  return { requests, launch: () => element("#launch").click() };
+  return { requests, launch: () => element("#launch").click(), android: () => element("#connect-android").click(), androidStatus: () => element("#android-status").textContent };
 }
 
 for (const os of ["mac", "win", "linux"]) {
@@ -107,4 +109,18 @@ test("ChromeOS and uncertain platform popup never auto-launch desktop", async ()
     const { requests } = await runPopup({ os, popupView: true });
     assert.equal(requests.filter(value => value.type === "desktopBootstrap").length, 0);
   }
+});
+
+test("denied Android permission never launches or contacts the app", async () => {
+  const popup = await runPopup({ os: "cros", granted: false });
+  await popup.android();
+  assert.equal(popup.requests.some(request => request.type === "androidBootstrap"), false);
+  assert.match(popup.androidStatus(), /not granted/u);
+});
+
+test("rejected OS launch remains unknown app and Play state", async () => {
+  const popup = await runPopup({ os: "cros", launchRequested: false });
+  await popup.android();
+  assert.match(popup.androidStatus(), /did not accept the launch request/u);
+  assert.match(popup.androidStatus(), /installation and Play availability are unknown/u);
 });

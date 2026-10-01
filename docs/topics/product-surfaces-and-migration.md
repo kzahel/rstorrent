@@ -2,6 +2,14 @@
 
 Topic: `product-surfaces-and-migration`
 
+Tactical 253 is active. Portable pre-connection troubleshooting, manual
+Retry/Cancel, explicit Linux choice and private-context preview pass focused
+ownership tests and six injected packaged-browser journeys. Android/Crostini
+libraries remain separate, with no inferred store/policy diagnosis or automatic
+switch. Current artifacts and both physical acceptance matrices remain open;
+cohort B is unreachable at its private inventory address. Cutover A-06/07/08
+remain unchecked.
+
 Tactical [251](../tactical/251-jstorrent-ci-candidates-and-installed-update.md)
 completes bounded production-identity CI attempts using existing signing inputs,
 with nonce identity proof, exact product receipts and retained-public-root

@@ -32,6 +32,9 @@ body:has(#companion-bootstrap) {
 }
 #companion-update-android { background: var(--accent-action); color: #fff; text-decoration: none; }
 #companion-bootstrap button:not(:disabled) { cursor: pointer; }
+#companion-bootstrap a, #companion-identity a { color: var(--accent-action); }
+#companion-context { box-sizing: border-box; width: 100%; resize: vertical; }
+#companion-bootstrap p { overflow-wrap: anywhere; }
 #companion-identity {
   display: flex;
   height: 40px;

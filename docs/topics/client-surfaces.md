@@ -2,6 +2,13 @@
 
 Topic: `client-surfaces`
 
+Tactical 253's portable recovery checkpoint passes bounded Android discovery,
+manual recovery, detached-view cleanup, offline troubleshooting and explicit
+Linux guidance in the packaged extension. Host-built/current-candidate physical
+acceptance remains open. Cohort A retains its installed legacy/debug apps;
+cohort B is presently unreachable from this controller. Neither injected
+presentation nor appliance health qualifies Play installation.
+
 Priority accepted 2026-10-01: qualify ChromeOS onboarding and recovery on both
 available physical Chromebooks, starting with Play not enabled or Android
 installation failing. Tactical

@@ -2,6 +2,14 @@
 
 Topic: `web-ui-design`
 
+Tactical 253 implements portable pre-connection recovery: bounded discovery,
+manual Retry/Cancel, joined view/connection cleanup, offline stage-specific
+troubleshooting and explicit separate-library Linux guidance. A voluntary
+allowlisted context preview keeps Play/app/policy unknown and excludes raw
+errors and personal state. Six injected packaged-browser journeys, focused
+ownership tests and the full 449-test web suite pass. Physical/store journeys
+remain open; see the tactical for artifact and per-device limits.
+
 Accepted 2026-10-01, not yet qualified: Tactical
 [253](../tactical/253-chromeos-onboarding-recovery-and-physical-qualification.md)
 prioritizes ChromeOS troubleshooting from the pre-connection extension screen

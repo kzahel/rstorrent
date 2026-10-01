@@ -2,6 +2,11 @@
 
 Topic: `localization`
 
+Tactical 253 adds nine cataloged shared connection/recovery messages, preserving
+English-only shipping and the unchanged native catalogs. All four catalog
+checks pass. Static extension setup remains an offline English document under
+the existing extension-source classification.
+
 Tactical [249](../tactical/249-jstorrent-brand-and-extension-refresh.md) changes
 shared React and Android presentation to JSTorrent, retaining semantic message
 IDs and all persistence/wire names. Two obsolete text lettermarks are replaced

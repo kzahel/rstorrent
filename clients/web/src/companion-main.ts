@@ -1,77 +1,14 @@
 import "./companion-shell.css";
 import { startDesktopCompanion } from "./desktop-companion-main";
-import { AndroidCompanionUpdateRequired, connectAndroidCompanion } from "./android-companion-client";
-import { startCompanionInspection } from "./inspection/companion-bootstrap";
-import { localizeDocumentShell, message } from "./localization/runtime";
+import { startAndroidCompanion } from "./android-companion-main";
+import { localizeDocumentShell } from "./localization/runtime";
 
 localizeDocumentShell();
-
 if (new URL(window.location.href).searchParams.get("backend") === "desktop") {
+  document.getElementById("companion-help")!.hidden = true;
+  document.getElementById("companion-linux")!.hidden = true;
+  document.getElementById("companion-preview")!.hidden = true;
   void startDesktopCompanion();
 } else {
-const abort = new AbortController();
-const status = requiredElement("companion-status");
-const cancel = requiredButton("companion-cancel");
-let cancelAction = () => {
-  abort.abort(new Error("Connection canceled"));
-  cancel.disabled = true;
-  status.textContent = message("shell.companion.connection-canceled");
-};
-
-cancel.addEventListener("click", () => {
-  cancelAction();
-});
-
-void connectAndroidCompanion(
-  (message) => {
-    status.textContent = message;
-  },
-  abort.signal,
-)
-  .then(async ({ client, hello, disconnected }) => {
-    const backend = hello.backend;
-    if (backend === undefined || backend === null) {
-      throw new Error("Android backend identity is unavailable");
-    }
-    requiredElement("companion-bootstrap").hidden = true;
-    const identity = requiredElement("companion-identity");
-    identity.hidden = false;
-    identity.textContent = message("shell.companion.title");
-    const closeInspection = await startCompanionInspection(client);
-    void disconnected.then(async () => {
-      await closeInspection().catch(() => {});
-      requiredElement("app").hidden = true;
-      identity.hidden = true;
-      requiredElement("companion-bootstrap").hidden = false;
-      status.setAttribute("role", "alert");
-      status.textContent = message("shell.companion.disconnected");
-      cancel.textContent = message("common.action.retry");
-      cancel.disabled = false;
-      cancelAction = () => window.location.reload();
-    });
-  })
-  .catch((error: unknown) => {
-    if (abort.signal.aborted) return;
-    status.setAttribute("role", "alert");
-    status.textContent = error instanceof Error ? error.message : String(error);
-    cancel.textContent = message("common.action.retry");
-    cancel.disabled = false;
-    cancelAction = () => window.location.reload();
-    if (error instanceof AndroidCompanionUpdateRequired && error.component === "android") {
-      requiredElement("companion-update-android").hidden = false;
-    }
-  });
-
-}
-
-function requiredElement(id: string): HTMLElement {
-  const element = document.getElementById(id);
-  if (element === null) throw new Error(`missing ${id}`);
-  return element;
-}
-
-function requiredButton(id: string): HTMLButtonElement {
-  const element = document.getElementById(id);
-  if (!(element instanceof HTMLButtonElement)) throw new Error(`missing ${id}`);
-  return element;
+  void startAndroidCompanion();
 }

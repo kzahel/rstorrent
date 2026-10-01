@@ -40,6 +40,7 @@ const EXTENSION_ORIGINS = [
 ] as const;
 const PROBE_TIMEOUT_MILLIS = 2_000;
 const PROBE_INTERVAL_MILLIS = 2_000;
+const DISCOVERY_TIMEOUT_MILLIS = 20_000;
 const MAX_BOOTSTRAP_RESPONSE_BYTES = 64 * 1024;
 const REQUIRED_PROFILE = [
   "android_saf_acquisition",
@@ -91,7 +92,14 @@ export interface AndroidCompanionConnection {
   readonly disconnected: Promise<void>;
 }
 
-export type AndroidCompanionStatus = (message: string) => void;
+export type AndroidConnectionStage = "discovery" | "pairing" | "authentication";
+export type AndroidCompanionStatus = (message: string, stage?: AndroidConnectionStage) => void;
+
+export class AndroidCompanionUnavailable extends Error {
+  public constructor() {
+    super(localizedMessage("android.companion.unreachable"));
+  }
+}
 
 export class AndroidCompanionUpdateRequired extends Error {
   public constructor(public readonly component: "android" | "extension") {
@@ -107,7 +115,15 @@ export async function connectAndroidCompanion(
 ): Promise<AndroidCompanionConnection> {
   const stored = await readStoredCompanion();
   const installationId = stored?.installationId ?? randomIdentifier();
-  const endpoint = await probeUntilAvailable(installationId, status, signal);
+  const discovery = AbortSignal.timeout(DISCOVERY_TIMEOUT_MILLIS);
+  let endpoint: string;
+  try {
+    endpoint = await probeUntilAvailable(installationId, status,
+      signal === undefined ? discovery : AbortSignal.any([signal, discovery]));
+  } catch (error) {
+    if (!signal?.aborted && discovery.aborted) throw new AndroidCompanionUnavailable();
+    throw error;
+  }
   let credential = stored?.credential;
   if (credential === undefined) {
     credential = await pair(endpoint, installationId, status, signal);
@@ -118,6 +134,7 @@ export async function connectAndroidCompanion(
     readonly disconnected: Promise<void>;
   };
   try {
+    status(localizedMessage("android.companion.authenticating"), "authentication");
     connected = await openApplication(
       endpoint,
       installationId,
@@ -152,7 +169,7 @@ async function probeUntilAvailable(
   signal?: AbortSignal,
 ): Promise<string> {
   while (!signal?.aborted) {
-    status(localizedMessage("android.companion.unavailable-guidance"));
+    status(localizedMessage("android.companion.unavailable-guidance"), "discovery");
     const current = await Promise.allSettled(ENDPOINTS.map(async (endpoint) => {
       await hello(endpoint, installationId, signal);
       return endpoint;
@@ -204,7 +221,7 @@ async function pair(
       ...(signal === undefined ? {} : { signal }),
     })) as PairingPending;
   boundedIdentifier(pending.request_id, "pairing request ID");
-  status(localizedMessage("android.companion.client.approve.the.jstorrent.beta.pairing.request.in"));
+  status(localizedMessage("android.companion.client.approve.the.jstorrent.beta.pairing.request.in"), "pairing");
   while (!signal?.aborted) {
     await delay(500, signal);
     const poll =
@@ -452,6 +469,8 @@ async function companionJson(
 ): Promise<unknown> {
   const source = await companionText(new URL(`${API_ROOT}${path}`, endpoint), {
     ...init,
+    signal: init.signal == null ? AbortSignal.timeout(PROBE_TIMEOUT_MILLIS)
+      : AbortSignal.any([init.signal, AbortSignal.timeout(PROBE_TIMEOUT_MILLIS)]),
     credentials: "omit",
     headers: { Accept: "application/json", ...init.headers },
   });

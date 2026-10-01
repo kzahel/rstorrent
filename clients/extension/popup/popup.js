@@ -127,7 +127,9 @@ androidButton.addEventListener("click", async () => {
       throw new Error(response?.error?.message || "Chrome could not start the Android flow.");
     }
     androidStatus.textContent =
-      "Launch requested. ChromeOS may ask which Android app to open; open JSTorrent and approve the connection if asked.";
+      response.result?.launchRequested === false
+        ? "Chrome did not accept the launch request. Open JSTorrent from the Launcher, then retry in the connection page. App installation and Play availability are unknown."
+        : "Launch requested; app startup is not confirmed. Confirm any ChromeOS Open with prompt, open JSTorrent and approve pairing. Use troubleshooting or Linux if setup is unavailable.";
   } catch (error) {
     androidStatus.textContent = error instanceof Error ? error.message : String(error);
   } finally {

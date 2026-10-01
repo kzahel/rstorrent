@@ -234,3 +234,49 @@ Reference audit: JSTorrent's
 handshake and closes on timeout; retain bounded ownership rather than its wire
 implementation. Existing 194/248 tests own current protocol compatibility;
 this presentation slice does not change peer/engine semantics.
+
+### Portable Recovery Checkpoint
+
+The packaged Android page now owns a 20-second discovery deadline and a
+150-second complete connection/pairing deadline, followed by manual Retry.
+Cancel and page departure terminate the attempt; a frozen/restored page offers
+manual recovery. Retry never sends OS launch intent. Disconnect and failed UI
+mount release the mounted view and authenticated client before recovery.
+The popup distinguishes a rejected launch request from unconfirmed startup.
+Optional browser permission denial contacts no service. Local Network Access
+and Play/app/policy state are not inferred from failed requests.
+
+Static offline troubleshooting is reachable from the popup, connection screen
+and connected Android header. It covers user-confirmed Play setup, unavailable
+installation, opening/confirming launch, permission/pairing, incompatible
+updates and folder repair. **Use Linux instead** opens explicit setup,
+authenticated published installation and separate-library/unsupported guidance.
+The volunteered support preview contains closed stage/category/backend and
+permission/version facts with unknown Play/app/policy values. No raw error,
+paths, accounts, credential, automatic copy or upload enters that report.
+
+Validation: `npm run typecheck --prefix clients/web`; full
+`npm run test --prefix clients/web` (449 passed, two skipped);
+`npm test --prefix clients/extension` (45 passed); all four catalogs via
+`node scripts/check-localization.mjs`; `bash scripts/test-crostini-installer.sh`;
+beta and production-identity extension packaging and CSP/allowlist checks.
+One intervening full web run exposed the existing external-intake test's
+command-versus-notification timing race during concurrent native builds;
+the unchanged test passes on the subsequent complete run. No product change
+was made for that unrelated failure.
+
+`node scripts/verify-chromeos-onboarding.mjs <extension.zip>` drives the actual
+packaged extension in owned Playwright Chromium, preserving exact extension
+origin checks. Six explicitly injected scenarios (denied optional permission,
+unreachable service with cancel/retry/deadline, old app, incompatible protocol,
+rejected and expired pairing) pass support preview and offline Linux help,
+including 320/1440-pixel overflow checks. All profiles/browser processes are
+removed/joined. This is presentation evidence, not physical or Play acceptance.
+
+Hardware preflight: cohort A is x86_64 ChromeOS 150 `16700.65.0`, ARC Android
+13/API 33. Inherited production Android 1.0.23/code 23, debug 0.1/code 1 and
+Play Store are present. Preserve all three. Cohort B's explicit private target
+fails common doctor and network preflight with LAN `No route to host`, without
+VPN interception. It has not been mutated; its product rows remain unrun.
+The attempted Crostini inventory reports a concierge/message-bus disconnect;
+do not infer Linux is disabled from that infrastructure failure.

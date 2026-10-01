@@ -1,4 +1,16 @@
 {
+  "android.companion.attempt-timeout": [
+    {
+      "type": 0,
+      "value": "The connection attempt timed out. Open JSTorrent, check pairing approval and retry manually."
+    }
+  ],
+  "android.companion.authenticating": [
+    {
+      "type": 0,
+      "value": "Connecting to the approved Android library…"
+    }
+  ],
   "android.companion.client.approve.the.jstorrent.beta.pairing.request.in": [
     {
       "type": 0,
@@ -11,16 +23,58 @@
       "value": "The saved pairing is no longer accepted. Approve a replacement in Android."
     }
   ],
+  "android.companion.failed": [
+    {
+      "type": 0,
+      "value": "The connection attempt failed. Open setup and troubleshooting for the failed stage, then retry manually."
+    }
+  ],
+  "android.companion.help": [
+    {
+      "type": 0,
+      "value": "Setup and troubleshooting"
+    }
+  ],
+  "android.companion.linux": [
+    {
+      "type": 0,
+      "value": "Use Linux instead"
+    }
+  ],
   "android.companion.open-update": [
     {
       "type": 0,
       "value": "Open JSTorrent in Google Play"
     }
   ],
+  "android.companion.permission-denied": [
+    {
+      "type": 0,
+      "value": "Browser access to the Android service is not granted. Use Connect Android app in the extension popup to request access. No Android service was contacted."
+    }
+  ],
+  "android.companion.support-preview": [
+    {
+      "type": 0,
+      "value": "Preview connection support context"
+    }
+  ],
+  "android.companion.support-privacy": [
+    {
+      "type": 0,
+      "value": "Review before copying or sharing. This context contains no paths, accounts, credentials or torrent data. Nothing is uploaded."
+    }
+  ],
   "android.companion.unavailable-guidance": [
     {
       "type": 0,
       "value": "Looking for the Android service. Open the Android app and enable browser control. If you recently updated JSTorrent, update both the Android app and extension; you can use Android directly meanwhile."
+    }
+  ],
+  "android.companion.unreachable": [
+    {
+      "type": 0,
+      "value": "The Android service did not respond within 20 seconds. Open JSTorrent and confirm any ChromeOS launch prompt, then retry. Play availability, app installation and device policy are unknown."
     }
   ],
   "android.companion.update-android": [

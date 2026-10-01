@@ -180,7 +180,8 @@ rows independently; those tests use disposable signing and owned emulators.
   not enabled/setup unfinished, real app installation, unavailable/failed
   installation and mixed-version recovery. Record actual versus injected
   states, exact artifacts and every unrun condition; sideload/emulator evidence
-  cannot close the Play journey.
+  cannot close the Play journey. Tactical 253 portable recovery passes six
+  injected packaged-browser journeys; current physical/store acceptance stays open.
 - [ ] **A-07 Troubleshooting and Linux fallback:** before backend connection,
   explain the observed failed stage and manual next action; offer explicit
   Crostini setup where permitted. Qualify Linux-not-enabled, package absent,

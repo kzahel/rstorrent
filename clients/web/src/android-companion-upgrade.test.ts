@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AndroidCompanionUpdateRequired, connectAndroidCompanion, isLegacyAndroidStatus } from "./android-companion-client";
+import { AndroidCompanionUnavailable, AndroidCompanionUpdateRequired, connectAndroidCompanion, isLegacyAndroidStatus } from "./android-companion-client";
 
 const origin = "chrome-extension://gcgoepclopkgijmclmlheafaglmbjlcc";
 const legacy = { port: 7800, protocolVersion: 1, behaviorVersion: 1, version: "1.0.24", paired: true,
@@ -22,9 +22,25 @@ function setup(handler: (url: URL, init: RequestInit) => Promise<Response>) {
   vi.stubGlobal("fetch", fetch);
   return { fetch, set };
 }
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe("ChromeOS staggered upgrades", () => {
+  it("ends unavailable discovery after 20 seconds without implying app or Play status", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((milliseconds) => {
+      const abort = new AbortController();
+      setTimeout(() => abort.abort(new DOMException("timed out", "TimeoutError")), milliseconds);
+      return abort.signal;
+    });
+    const { fetch, set } = setup(async () => { throw new TypeError("offline"); });
+    const pending = expect(connectAndroidCompanion(() => {})).rejects.toBeInstanceOf(AndroidCompanionUnavailable);
+    await vi.advanceTimersByTimeAsync(20_000);
+    await pending;
+    const requests = fetch.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(90_000);
+    expect(fetch).toHaveBeenCalledTimes(requests);
+    expect(set).not.toHaveBeenCalled();
+  });
   it("recognizes the released legacy status without accepting generic or malformed responses", () => {
     expect(isLegacyAndroidStatus(legacy, 7800)).toBe(true);
     for (const value of [null, "ok", {}, { ...legacy, port: 3030 }, { ...legacy, protocolVersion: "1" },
