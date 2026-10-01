@@ -64,10 +64,10 @@ jobs:
 
       - name: Build signed release and run Android checks
         env:
-          UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
-          UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
-          UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
-          UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+          UPLOAD_KEYSTORE_BASE64: ${{ secrets.JSTORRENT_ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.JSTORRENT_ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          UPLOAD_KEY_ALIAS: ${{ secrets.JSTORRENT_ANDROID_UPLOAD_KEY_ALIAS }}
+          UPLOAD_KEY_PASSWORD: ${{ secrets.JSTORRENT_ANDROID_UPLOAD_KEY_PASSWORD }}
         run: |
           for name in UPLOAD_KEYSTORE_BASE64 UPLOAD_KEYSTORE_PASSWORD UPLOAD_KEY_ALIAS UPLOAD_KEY_PASSWORD; do
             if [[ -z "${!name}" ]]; then echo "::error::Missing $name"; exit 1; fi
@@ -83,8 +83,8 @@ jobs:
           python3 scripts/validate-android-release.py --bundletool "$RUNNER_TEMP/bundletool.jar"
           VERSION=$(python3 -c 'import re; from pathlib import Path; print(re.search(r"versionName = \"([^\"]+)\"", Path("clients/android/app/build.gradle.kts").read_text())[1])')
           mkdir -p "$RUNNER_TEMP/android-release"
-          cp clients/android/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/android-release/rstorrent-android-$VERSION.apk"
-          cp clients/android/app/build/outputs/bundle/release/app-release.aab "$RUNNER_TEMP/android-release/rstorrent-android-$VERSION.aab"
+          cp clients/android/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/android-release/jstorrent-android-$VERSION.apk"
+          cp clients/android/app/build/outputs/bundle/release/app-release.aab "$RUNNER_TEMP/android-release/jstorrent-android-$VERSION.aab"
           cp "$RUNNER_TEMP/release-notes.md" "$RUNNER_TEMP/android-release/RELEASE-NOTES.md"
           cd "$RUNNER_TEMP/android-release"
           sha256sum ./*.apk ./*.aab > SHA256SUMS
@@ -116,7 +116,7 @@ jobs:
         with:
           name: android-release-${{ github.run_id }}
           path: release
-      - name: Publish downloadable canary prerelease
+      - name: Publish downloadable JSTorrent candidate prerelease
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -126,5 +126,5 @@ jobs:
           cd release
           sha256sum --check SHA256SUMS
           gh release create "$RELEASE_TAG" --verify-tag --prerelease --latest=false \
-            --title "RSTorrent Android ${RELEASE_TAG#android-v}" \
+            --title "JSTorrent Android ${RELEASE_TAG#android-v}" \
             --notes-file RELEASE-NOTES.md ./*.apk ./*.aab SHA256SUMS

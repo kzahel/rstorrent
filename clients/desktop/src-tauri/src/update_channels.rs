@@ -4,9 +4,21 @@ use serde::{Deserialize, Serialize};
 use tauri::{Manager, State, ipc::Channel};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
-const ROOT: &str = "https://updates.graehlarts.com/rstorrent";
-const ENDPOINT: &str =
+const INCUBATION_ROOT: &str = "https://updates.graehlarts.com/rstorrent";
+const INCUBATION_ENDPOINT: &str =
     "https://updates.graehlarts.com/rstorrent/tauri/{{target}}/{{arch}}/{{current_version}}";
+const JSTORRENT_ROOT: &str = "https://updates.jstorrent.com";
+const JSTORRENT_ENDPOINT: &str =
+    "https://updates.jstorrent.com/tauri/{{target}}/{{arch}}/{{current_version}}";
+
+fn update_routes(identifier: &str) -> Result<(&'static str, &'static str), String> {
+    match identifier {
+        "com.jstorrent.desktop" => Ok((JSTORRENT_ROOT, JSTORRENT_ENDPOINT)),
+        "com.jstorrent.rstorrent" => Ok((INCUBATION_ROOT, INCUBATION_ENDPOINT)),
+        _ => Err("This application has no qualified update route".into()),
+    }
+}
+
 const SELECTION_FILE: &str = "update-channel";
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
 const CHECK_TIMEOUT: Duration = Duration::from_secs(20);
@@ -267,12 +279,13 @@ pub(crate) async fn desktop_check_update(
         updates.candidate = None;
         (updates.selected, updates.generation)
     };
+    let (root, endpoint) = update_routes(&app.config().identifier)?;
     let (supported, waiting_for_stable) =
-        discover_at(ROOT, channel, env!("CARGO_PKG_VERSION")).await?;
+        discover_at(root, channel, env!("CARGO_PKG_VERSION")).await?;
     let endpoint = if supported {
-        format!("{ENDPOINT}?channel={}", channel.as_str())
+        format!("{endpoint}?channel={}", channel.as_str())
     } else {
-        ENDPOINT.to_owned()
+        endpoint.to_owned()
     };
     let mut builder = app
         .updater_builder()
@@ -388,6 +401,18 @@ pub(crate) async fn desktop_install_update(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn update_routes_are_bound_to_product_identity() {
+        let (root, endpoint) = super::update_routes("com.jstorrent.desktop").unwrap();
+        assert_eq!(root, "https://updates.jstorrent.com");
+        assert!(endpoint.starts_with("https://updates.jstorrent.com/tauri/"));
+        assert!(!endpoint.contains("rstorrent"));
+        let (root, endpoint) = super::update_routes("com.jstorrent.rstorrent").unwrap();
+        assert_eq!(root, "https://updates.graehlarts.com/rstorrent");
+        assert!(endpoint.starts_with("https://updates.graehlarts.com/rstorrent/tauri/"));
+        assert!(super::update_routes("com.jstorrent.desktop.attacker").is_err());
+    }
+
     use super::*;
     use std::io::{Read, Write};
 

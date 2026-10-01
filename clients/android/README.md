@@ -266,7 +266,13 @@ an eligible global-unicast address must report typed `Degraded` state with
 effective IPv6 disabled while IPv4 remains usable; that is an expected
 environment outcome rather than an application error.
 
-## Signed Canary Releases
+## Signed JSTorrent Candidates
+
+Release targets `com.jstorrent.app`, versionCode 25, with the original public
+upload certificate. Normal debug builds retain `org.rstorrent.bootstrap`.
+Original private signing material and existing Play app-signing/version
+continuity must be qualified; the former canary key cannot sign this release.
 
 See [the Android release runbook](../../docs/android-release.md) for version
 bumps, tag-triggered CI, signing backups, APK/AAB downloads, and Play upload.
+The [cutover checklist](../../docs/jstorrent-cutover-checklist.md) remains open.

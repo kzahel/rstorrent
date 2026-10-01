@@ -2,6 +2,16 @@
 
 Topic: `client-surfaces`
 
+Tactical [250](../tactical/250-jstorrent-production-identity-candidates.md)
+prepares production desktop/Android/extension identities and public trust
+configuration. Desktop has an explicit candidate overlay, Android release is
+`com.jstorrent.app`, and `package:jstorrent` selects the original extension ID.
+Normal debug builds stay isolated. Desktop updater routing and production
+extension-origin admission are corrected; Android keeps its existing exact
+origin boundary. No view DTO, generated contract or Compose presentation change
+is introduced. [Full signed/installed cutover](../jstorrent-cutover-checklist.md)
+remains unqualified.
+
 Tactical [249](../tactical/249-jstorrent-brand-and-extension-refresh.md) starts
 production branding: shared React/desktop window and Android presentation use
 JSTorrent; original desktop/tray, Android adaptive/launcher/store and extension

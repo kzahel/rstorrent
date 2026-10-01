@@ -2,6 +2,26 @@
 
 Topic: `product-surfaces-and-migration`
 
+## Production Candidates, 2026-10-01
+
+Tactical [250](../tactical/250-jstorrent-production-identity-candidates.md)
+prepares explicit production candidates: desktop `com.jstorrent.desktop`
+0.3.0 with the existing updater public root/route, Android `com.jstorrent.app`
+1.0.25 (code 25) with the original public upload certificate and launcher
+alias, and extension `dbokmlpefliilbjldladbimlcfgbolhk` 1.1.2. The desktop
+runtime selects its updater by package identity and admits both exact reviewed
+extension origins; generic gateways retain their configured origin boundary.
+Normal desktop/Android debug builds and optional beta extension packaging stay
+isolated. No private signing material is committed or transferred, and no
+update service, store item, physical app or personal profile is changed.
+
+The [full cutover checklist](../jstorrent-cutover-checklist.md) owns delivery,
+installed migration, staggered updates and recovery acceptance. Checked-in
+versions exceed the pinned sources, not yet authenticated store maxima. Original
+private-key availability, Play signing, signed installed delivery, same-ID browser
+updates, API 26/27 and legacy launch routes remain explicit gates. Candidate
+mechanics do not graduate the product for shipment.
+
 ## Production Replacement And Branding
 
 Maintainer direction on 2026-09-30 selects a near-term in-place JSTorrent

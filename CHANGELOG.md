@@ -4,6 +4,12 @@ All notable desktop incubation changes are recorded here. RSTorrent follows
 three-component versions, and desktop release tags use
 `desktop-v<version>`.
 
+## [0.3.0]
+
+- Prepare JSTorrent production identity and retained updater trust candidates.
+- Restore original branding and best-effort desktop/Android legacy migration.
+- Qualification candidate only; production publication is a separate operation.
+
 ## [Unreleased]
 
 ## [0.1.4] - 2026-09-26

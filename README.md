@@ -124,6 +124,11 @@ recorded in the
 [product deployment and graduation plan](docs/topics/product-surfaces-and-migration.md)
 and [long-term product vision](docs/vision.md).
 
+Production candidate commands are in [DEVELOPMENT.md](DEVELOPMENT.md).
+The [full cutover checklist](docs/jstorrent-cutover-checklist.md) tracks exact
+signed/store artifacts, installed migration, staggered updates and recovery.
+Preparing source identities and public trust does not qualify shipment.
+
 ## Incubation Compatibility Policy
 
 All public desktop `0.1.x` packages and current mobile, ChromeOS Linux, and

@@ -2,6 +2,27 @@
 
 Topic: `android-jstorrent-replacement`
 
+## Production Candidate Preparation, 2026-10-01
+
+Tactical [250](../tactical/250-jstorrent-production-identity-candidates.md)
+changes release packaging to `com.jstorrent.app`, 1.0.25/code 25. Normal debug
+builds remain `org.rstorrent.bootstrap`; Kotlin/JNI namespace stays unchanged.
+A release-only alias preserves `com.jstorrent.app.MainActivity` as the single
+launcher. Generated release manifest and isolated debug APK metadata pass.
+`upload-certificate.pem` now pins the verified original 1.0.24 GitHub APK
+certificate; `incubation-upload-certificate.pem` preserves the former canary
+public root. The release workflow requires dedicated `JSTORRENT_ANDROID_UPLOAD_*`
+secrets and validates final APK/AAB signers and launcher metadata. These secrets
+have not been transferred/configured by this slice.
+
+Original APK signing is not proof of Play app-signing continuity. Confirm the
+existing Play app, upload certificate, app-signing certificate and maximum
+versionCode across tracks before a signed candidate. Minimum API remains 28;
+legacy API 26/27 support needs an explicit decision. Existing canary listing
+assets are historical material, unsuitable for this production app unchanged.
+The [cutover checklist](../jstorrent-cutover-checklist.md) keeps installed Play,
+physical ARC/SAF, launch routes and same-ID extension updating open.
+
 Tactical [249](../tactical/249-jstorrent-brand-and-extension-refresh.md) restores
 JSTorrent Android display text and original adaptive/launcher/store icons.
 Debug assembly, 113 JVM tests and packaged attribution checks pass. This is

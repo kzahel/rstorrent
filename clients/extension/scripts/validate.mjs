@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 
 export const extensionRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+export const productionExtensionId = "dbokmlpefliilbjldladbimlcfgbolhk";
 export const storeExtensionId = "gcgoepclopkgijmclmlheafaglmbjlcc";
 
 export const companionPackagedFiles = Object.freeze([
@@ -55,14 +56,31 @@ export function extensionIdFromPublicKey(publicKey) {
     );
 }
 
-export function validateSource() {
-  const manifest = JSON.parse(readFileSync(path.join(extensionRoot, "manifest.json"), "utf8"));
+export function validateSource(production = false) {
+  let manifest = JSON.parse(readFileSync(path.join(extensionRoot, "manifest.json"), "utf8"));
+  if (production) {
+    const overlay = JSON.parse(readFileSync(path.join(extensionRoot, "manifest.jstorrent.json"), "utf8"));
+    if (JSON.stringify(Object.keys(overlay).sort()) !== JSON.stringify(["key", "version"])) {
+      fail("production overlay may change only the key and version");
+    }
+    manifest = { ...manifest, ...overlay };
+    if (typeof manifest.version !== "string" || !/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/u.test(manifest.version)) {
+      fail("production version must contain three canonical integers");
+    }
+    const version = manifest.version.split(".").map(Number);
+    if (version.some((v) => !Number.isInteger(v) || v > 65535) ||
+        (version[0] < 1 || (version[0] === 1 && version[1] < 1) ||
+         (version[0] === 1 && version[1] === 1 && version[2] <= 1))) {
+      fail("production version must exceed pinned JSTorrent 1.1.1");
+    }
+  }
+  const expectedExtensionId = production ? productionExtensionId : storeExtensionId;
   if (manifest.manifest_version !== 3 || manifest.name !== "JSTorrent") {
     fail("expected the reviewed JSTorrent Manifest V3 identity");
   }
   const derivedExtensionId = extensionIdFromPublicKey(manifest.key);
-  if (derivedExtensionId !== storeExtensionId) {
-    fail(`manifest key derives ${derivedExtensionId}, expected store item ${storeExtensionId}`);
+  if (derivedExtensionId !== expectedExtensionId) {
+    fail(`manifest key derives ${derivedExtensionId}, expected store item ${expectedExtensionId}`);
   }
   if (JSON.stringify(manifest.permissions) !== JSON.stringify(["nativeMessaging", "storage"])) {
     fail("only nativeMessaging and storage permissions are accepted");
@@ -154,6 +172,7 @@ export function validateSource() {
   if (/<script/iu.test(setup) || /\son[a-z]+\s*=/iu.test(setup)) {
     fail("Crostini setup must remain a static offline document");
   }
+  return manifest;
 }
 
 export function validateCompanionBuild(companionRoot) {
@@ -209,7 +228,7 @@ function listFiles(root, relative = "") {
     .sort();
 }
 
-export function validateArchive(archivePath) {
+export function validateArchive(archivePath, production = false) {
   const entries = execFileSync("unzip", ["-Z1", archivePath], { encoding: "utf8" })
     .trim()
     .split("\n")
@@ -219,17 +238,22 @@ export function validateArchive(archivePath) {
   if (JSON.stringify(entries) !== JSON.stringify(expected)) {
     fail(`archive entries differ from reviewed allowlist: ${entries.join(", ")}`);
   }
+  const manifest = JSON.parse(execFileSync("unzip", ["-p", archivePath, "manifest.json"], { encoding: "utf8" }));
+  if (JSON.stringify(manifest) !== JSON.stringify(validateSource(production))) {
+    fail("archive manifest differs from the selected production/incubation identity");
+  }
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  validateSource();
+  const production = process.argv.includes("--production");
+  validateSource(production);
   const archiveIndex = process.argv.indexOf("--archive");
   if (archiveIndex !== -1) {
     const archivePath = process.argv[archiveIndex + 1];
     if (!archivePath) {
       fail("--archive requires a path");
     }
-    validateArchive(path.resolve(archivePath));
+    validateArchive(path.resolve(archivePath), production);
   }
   console.log("JSTorrent extension validation passed.");
 }

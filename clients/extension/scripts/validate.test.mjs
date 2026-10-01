@@ -3,12 +3,17 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { execFileSync } from "node:child_process";
 
 import {
   extensionIdFromPublicKey,
   extensionRoot,
   storeExtensionId,
   validateCompanionBuild,
+  validateSource,
+  validateArchive,
+  packagedFiles,
+  productionExtensionId,
 } from "./validate.mjs";
 
 test("the dashboard public key derives the pinned store item ID", () => {
@@ -22,6 +27,27 @@ test("the dashboard public key derives the pinned store item ID", () => {
 test("a different public key cannot impersonate the pinned store item", () => {
   const replacementKey = Buffer.from("not the dashboard key").toString("base64");
   assert.notEqual(extensionIdFromPublicKey(replacementKey), storeExtensionId);
+});
+
+test("production and incubation archives cannot be confused", (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "jstorrent-manifest-validation-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const stage = path.join(root, "stage");
+  for (const relative of packagedFiles) {
+    const file = path.join(stage, relative);
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, "archive inventory fixture");
+  }
+  const manifest = validateSource(true);
+  assert.equal(extensionIdFromPublicKey(manifest.key), productionExtensionId);
+  writeFileSync(path.join(stage, "manifest.json"), JSON.stringify(manifest));
+  const archive = path.join(root, "production.zip");
+  execFileSync("zip", ["-q", archive, ...packagedFiles], { cwd: stage });
+  assert.doesNotThrow(() => validateArchive(archive, true));
+  assert.throws(() => validateArchive(archive, false), /selected production\/incubation identity/u);
+  writeFileSync(path.join(stage, "manifest.json"), JSON.stringify(validateSource(false)));
+  execFileSync("zip", ["-q", archive, "manifest.json"], { cwd: stage });
+  assert.throws(() => validateArchive(archive, true), /selected production\/incubation identity/u);
 });
 
 function companionFixture(t, extraSource) {

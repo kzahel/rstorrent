@@ -28,7 +28,7 @@ def run(*args):
 
 def check_manifest(text, version, code):
     root = ET.fromstring(text)
-    assert root.get('package') == 'com.jstorrent.rstorrent', 'Wrong package'
+    assert root.get('package') == 'com.jstorrent.app', 'Wrong package'
     assert root.get(ANDROID + 'versionName') == version, 'Wrong versionName'
     assert root.get(ANDROID + 'versionCode') == str(code), 'Wrong versionCode'
     sdk = root.find('uses-sdk')
@@ -36,6 +36,19 @@ def check_manifest(text, version, code):
     assert sdk.get(ANDROID + 'minSdkVersion') == '28', 'Wrong minimum SDK'
     app = root.find('application')
     assert app.get(ANDROID + 'debuggable', 'false') == 'false', 'Debuggable release'
+    launchers = []
+    for component in app:
+        for intent in component.findall('intent-filter'):
+            actions = {item.get(ANDROID + 'name') for item in intent.findall('action')}
+            categories = {item.get(ANDROID + 'name') for item in intent.findall('category')}
+            if 'android.intent.action.MAIN' in actions and 'android.intent.category.LAUNCHER' in categories:
+                launchers.append(component)
+    assert len(launchers) == 1, 'Release must have exactly one launcher'
+    launcher = launchers[0]
+    assert launcher.tag == 'activity-alias', 'Legacy launcher must be an alias'
+    assert launcher.get(ANDROID + 'name') == 'com.jstorrent.app.MainActivity', 'Lost legacy launcher component'
+    assert launcher.get(ANDROID + 'targetActivity') == 'org.rstorrent.bootstrap.MainActivity', 'Wrong launcher owner'
+    assert launcher.get(ANDROID + 'exported') == 'true', 'Launcher must be exported'
     for item in app.iter():
         name = item.get(ANDROID + 'name', '')
         assert not name.endswith(('CommandReceiver', 'ProductTestReceiver')), 'Diagnostic receiver in release'
@@ -94,7 +107,7 @@ def main():
                 check_elf(data, name)
             native.append(libs)
     assert native[0] == native[1], 'APK and AAB native libraries differ'
-    print(f'Validated {version} ({code}): signed APK/AAB, canary manifest, both ABIs, 16 KiB ELF/ZIP alignment')
+    print(f'Validated {version} ({code}): signed APK/AAB, JSTorrent manifest, both ABIs, 16 KiB ELF/ZIP alignment')
 
 
 if __name__ == '__main__':

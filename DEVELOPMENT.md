@@ -561,6 +561,30 @@ records process/catalog identity before and after warm activation, and restores
 the inherited OS defaults and machine state afterward. Never print or persist
 the complete magnet or source path in product logs.
 
+## Building JSTorrent Production Candidates
+
+The [cutover checklist](docs/jstorrent-cutover-checklist.md) owns full signed,
+store and installed migration acceptance. Validate source identities/public
+trust, build a production extension ZIP, and construct an unsigned desktop
+bundle without launching it:
+
+```bash
+source ~/.profile
+node scripts/validate-jstorrent-candidate.mjs
+npm run package:jstorrent --prefix clients/extension
+node scripts/build-jstorrent-desktop.mjs --unsigned --debug --bundles app
+```
+
+Desktop candidates merge the package/release overlay followed by
+`tauri.jstorrent.conf.json`. Without `--unsigned`, the build requires the
+existing JSTorrent `TAURI_SIGNING_PRIVATE_KEY`; final signatures must verify
+against its retained public key before delivery. Android release now targets
+`com.jstorrent.app` and requires original signing material under the runbook
+below. Ordinary desktop/Android debug builds stay isolated. A production app
+launch can migrate installed legacy state; use owned guests for installed tests.
+Source versions exceed pinned legacy baselines; check all store tracks before
+shipment. No build command above publishes or changes an update service.
+
 ## Packaging The JSTorrent Beta Extension Seed
 
 Validate the Manifest V3 permission/local-code boundary and produce the exact
@@ -1421,8 +1445,8 @@ fixtures, or test data.
 
 ## Android Release Automation
 
-[`docs/android-release.md`](docs/android-release.md) owns the independent
-canary tag/version workflow, pinned Android toolchain, signing setup, and
+[`docs/android-release.md`](docs/android-release.md) owns the production
+candidate tag/version workflow, pinned Android toolchain, signing setup, and
 artifact checks. `clients/android/build.sh release` builds the signed APK/AAB
 and runs release JVM tests and lint when signing environment variables exist.
 

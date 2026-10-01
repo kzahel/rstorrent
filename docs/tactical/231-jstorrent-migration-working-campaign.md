@@ -99,7 +99,7 @@ remain an explicit installed qualification slice before shipment.
 | M-04 | Support/report continuity | Required before user cohort | Failure-page report, bounded migration/backend context, familiar voluntary feedback journey and disclosure verification |
 | M-05 | Installed desktop replacement rehearsal | Depends on M-01/03/04 | Old installed JSTorrent -> exact candidate -> restart/repair/rollback on macOS, Windows and Linux |
 | M-06 | Extension update coordination | [236](236-desktop-compatibility-refusal-and-recovery.md)/[237](237-macos-windows-package-recovery.md): selected three-platform beta matrix passes | Terminal refusal, attach-only recovery, open-page replacement, credential rotation, repair and same-schema rollback pass. [238](238-signed-desktop-channel-recovery.md) passes three-platform signed updating of an older published cohort. [240](240-signed-desktop-control-qualification.md) adds signed current-source 801 publication, native updates and installed control/helper qualification. Original legacy pairs and ChromeOS shipment gates remain open. |
-| M-07 | JSTorrent replacement cohort and graduation | Near-term direction selected; branding in [249](249-jstorrent-brand-and-extension-refresh.md), publication not scheduled | Existing branding/identity/updater trust, explicit source baseline, observation window, stop thresholds and approved production operation; no synchronized Android-control gate |
+| M-07 | JSTorrent replacement cohort and graduation | Branding in [249](249-jstorrent-brand-and-extension-refresh.md), production candidates in [250](250-jstorrent-production-identity-candidates.md); publication not scheduled | [Full cutover checklist](../jstorrent-cutover-checklist.md): original-key provisioning, exact signed/store artifacts, installed updating/import/recovery, source baseline, observation window and stop thresholds; no synchronized delivery requirement |
 
 No entry above implies feature completion from source presence alone. Keep
 unrelated release and engine campaigns running under their own ownership.
@@ -308,9 +308,11 @@ production routing remain separately scoped.
   Windows, Linux and macOS. The unavailable-root row still displays Downloading
   despite paused intent; 244 corrects the shared React mapping with deterministic
   adapter/component and backend migration evidence, without an installed rerun.
-- Next executable actions: production packaging, support/privacy/settings
-  dispositions, branding and
-  extension/store coordination before graduation.
+- Next executable actions: qualify 250's production candidates against the
+  [full cutover checklist](../jstorrent-cutover-checklist.md). Confirm original
+  private signing material, Play signing/max versions and API 26/27 disposition;
+  then exercise exact signed installed updates and same-ID extension replacement.
+  Support/privacy/settings and historical launch-route dispositions remain open.
   Interrupted-update, physical sleep/wake
   and broader endurance evidence remain independent work.
 - Rehearsal A: **partial; three-platform installed control and bounded

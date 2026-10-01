@@ -2,6 +2,18 @@
 
 Topic: `beta-release-readiness`
 
+## JSTorrent Production Candidates, 2026-10-01
+
+Tactical [250](../tactical/250-jstorrent-production-identity-candidates.md)
+prepares explicit JSTorrent desktop and extension candidate lanes while retaining
+the incubation configurations. Android release now targets the existing
+`com.jstorrent.app` app, code 25, and requires original-key secrets under
+`JSTORRENT_ANDROID_UPLOAD_*`; the separate canary certificate is retained only
+as historical evidence. Earlier canary setup/publication records below do not
+qualify this new production lane. No private secret provisioning or release
+operation has run. [The cutover checklist](../jstorrent-cutover-checklist.md)
+owns production graduation and installed delivery evidence.
+
 Tactical [240](../tactical/240-signed-desktop-control-qualification.md) completes
 signed current-source delivery with [Latest 0.2.801](../evidence/desktop-latest-v0.2.801.md).
 Exact-source CI, five signed package lanes, public signatures/checksums and both

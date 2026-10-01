@@ -225,7 +225,9 @@ mod tests {
             .unwrap();
         request.headers_mut().insert(
             "Origin",
-            chromeos_companion::BETA_EXTENSION_ORIGIN.parse().unwrap(),
+            chromeos_companion::PRODUCTION_EXTENSION_ORIGIN
+                .parse()
+                .unwrap(),
         );
         let cancel = CancellationToken::new();
         let task = tokio::spawn(server.serve(cancel.clone()));
@@ -512,6 +514,10 @@ mod tests {
         };
         for (header, value) in [
             ("Origin", "https://example.com"),
+            (
+                "Origin",
+                "chrome-extension://dbokmlpefliilbjldladbimlcfgbolhk.attacker",
+            ),
             ("Host", "localhost:1234"),
         ] {
             let mut bad = request();

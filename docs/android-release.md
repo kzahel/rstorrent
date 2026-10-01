@@ -1,13 +1,21 @@
 # Android Release Runbook
 
-RSTorrent Canary uses `com.jstorrent.rstorrent`, independent Android versions,
-and `android-vX.Y.Z` tags. Debug builds retain `org.rstorrent.bootstrap` for
-existing test harnesses. Kotlin's internal namespace remains unchanged.
+Android release now targets the existing JSTorrent `com.jstorrent.app` app,
+starting with source candidate 1.0.25/versionCode 25 and `android-vX.Y.Z` tags.
+Debug builds retain `org.rstorrent.bootstrap`; Kotlin/JNI namespace stays
+unchanged. A release-only alias preserves the legacy launcher component.
 The Android Release workflow builds both arm64-v8a and x86_64, runs release
 JVM tests and lint, and verifies signed APK/AAB artifacts before publication.
 Google Play upload and rollout remain manual.
 
-The first verified release is
+Tactical [250](tactical/250-jstorrent-production-identity-candidates.md) prepares
+this lane but has not provisioned private signing material, built a candidate
+with the production key, submitted to Play or published an update. Follow the
+[full cutover checklist](jstorrent-cutover-checklist.md) before any delivery.
+Check maximum versionCode in every Play track; code 25 exceeds only the pinned
+released 1.0.24 baseline. Minimum API 28 leaves legacy API 26/27 unresolved.
+
+The former independent canary's first verified release is
 [Android 0.1.0](https://github.com/kzahel/rstorrent/releases/tag/android-v0.1.0)
 (versionCode 1). Its
 [tagged workflow](https://github.com/kzahel/rstorrent/actions/runs/34039237324)
@@ -15,12 +23,12 @@ passed build, signature/packaging validation, and prerelease publication.
 
 ## Release A Version
 
-Add a nonempty `## [0.1.1]` section to `clients/android/CHANGELOG.md` and
-commit it first. From a clean `main` checkout:
+Only after explicit release authorization, add a nonempty `## [1.0.26]`
+section to `clients/android/CHANGELOG.md` and commit it first. From a clean `main` checkout:
 
 ```sh
-scripts/release-android.sh 0.1.1 --dry-run
-scripts/release-android.sh 0.1.1
+scripts/release-android.sh 1.0.26 --dry-run
+scripts/release-android.sh 1.0.26
 ```
 
 The helper validates the version and changelog, increments Gradle's integer
@@ -33,14 +41,14 @@ do not run the bump helper again blindly.
 The tag workflow checks that the tag matches the checked-in version, builds
 signed artifacts, then creates a GitHub **prerelease** with:
 
-- `rstorrent-android-X.Y.Z.aab` for Play Console;
-- `rstorrent-android-X.Y.Z.apk` for direct installation; and
+- `jstorrent-android-X.Y.Z.aab` for Play Console;
+- `jstorrent-android-X.Y.Z.apk` for direct installation; and
 - `SHA256SUMS` for exact artifact hashes.
 
 Android releases do not take over the repository's desktop latest release.
 Publication refuses to overwrite an existing release. Failed builds never
-reach the publication job. Minification remains disabled for the first
-canary; no mapping file is implied or fabricated.
+reach the publication job. Minification remains disabled for these candidates;
+no mapping file is implied or fabricated.
 
 ## Build Without A Tag
 
@@ -58,24 +66,34 @@ included in them.
 
 ## Signing And Backup
 
-A dedicated RSTorrent upload key is configured in these repository secrets:
+The workflow now requires dedicated original JSTorrent secrets:
 
-- `ANDROID_UPLOAD_KEYSTORE_BASE64`
-- `ANDROID_UPLOAD_KEYSTORE_PASSWORD`
-- `ANDROID_UPLOAD_KEY_ALIAS`
-- `ANDROID_UPLOAD_KEY_PASSWORD`
+- `JSTORRENT_ANDROID_UPLOAD_KEYSTORE_BASE64`
+- `JSTORRENT_ANDROID_UPLOAD_KEYSTORE_PASSWORD`
+- `JSTORRENT_ANDROID_UPLOAD_KEY_ALIAS`
+- `JSTORRENT_ANDROID_UPLOAD_KEY_PASSWORD`
 
-The maintainer's local backup contains `upload.keystore`, `signing.env`,
-`upload-certificate.pem`, and `README.txt`. Back up the entire directory to
-secure storage; `signing.env` contains the passwords. Keep it outside Git. A portable backup ZIP contains the same four files.
-The setup handoff supplies its actual local path. Directory permissions are
-0700 and files 0600. CI decodes the key into its temporary directory and
-removes it when the signing step exits, including on ordinary failure.
+They are required inputs, **not configured/verified by Tactical 250**. Do not
+reuse the former `ANDROID_UPLOAD_*` canary secrets. Provision the original key
+through an authorized secure handoff and verify its certificate. CI decodes it
+into its temporary directory and removes it on normal exit/failure. Local builds
+consume `UPLOAD_KEYSTORE_PATH`, `UPLOAD_KEYSTORE_PASSWORD`, `UPLOAD_KEY_ALIAS`
+and `UPLOAD_KEY_PASSWORD`. Keep keystore/password backups outside Git, with
+restricted permissions; never print their values in diagnostics.
 
-`clients/android/upload-certificate.pem` is the public upload certificate,
-not a secret. Artifact validation checks both outputs against this certificate.
-A future upload-key rotation must update the local backup, Play enrollment,
-CI secrets, and this public certificate together.
+`clients/android/upload-certificate.pem` is public and now pins the verified
+GitHub-released JSTorrent 1.0.24 APK signer:
+`ccb5af8e44d626e9aefb1f0fbd8496dbf23ad27da9347248e71fb3ce70044915`.
+The provenance/hash is in `distribution/jstorrent-production.json`.
+`incubation-upload-certificate.pem` retains the former independent canary root.
+Final APK/AAB validation refuses that old key and debug keys.
+
+Confirm that the existing Play app accepts this upload certificate. Record its
+**app-signing certificate separately**. Play may use a different distribution
+key, so a GitHub-signed APK does not prove it can replace an installed Play APK.
+Do not create a new Play app or enroll new app signing as part of replacement.
+An intentional upload-key rotation needs a separate enrollment/backup/secrets
+and expected-certificate change.
 
 For a local signed build, load the backup's `signing.env`, then:
 
@@ -92,15 +110,13 @@ therefore have a different signing identity from the Play-installed app.
 
 ## Upload To Play
 
-Select RSTorrent Canary → Test and release → Testing → Internal testing →
-Create new release → App bundles → Upload. Upload the `.aab` and follow Play's
-app signing enrollment if this is the first upload. Add release notes and
-testers, then use Play's review/rollout controls. Promote the tested artifact
-to a wider track when ready.
-
-Console form completion does not establish installed release qualification.
-Check fresh install, upgrade, background transfers, file access, and ChromeOS
-coexistence on representative devices before promoting the canary.
+Select the **existing JSTorrent (`com.jstorrent.app`)** app. After signing,
+version and cutover gates pass and upload is explicitly authorized, upload the
+AAB to an appropriate internal/testing track. Install Play-generated artifacts
+over selected existing Play builds without uninstall/data clear. Check migrated
+torrents/settings, real SAF access, background behavior and staggered extension
+updates before promotion. Store form completion or a disposable-signature
+emulator rehearsal cannot satisfy signed installed delivery qualification.
 
 ## Toolchain And Verification
 
@@ -110,7 +126,8 @@ AGP 8.10 supports API 36 with this existing Gradle version:
 https://developer.android.com/build/releases/agp-8-10-0-release-notes
 
 The workflow checksum-pins bundletool 1.18.3. Validation checks the package,
-versions, SDK, non-debuggable manifest, absence of diagnostic receivers,
+versions, SDK, retained single legacy launcher alias, non-debuggable manifest,
+absence of diagnostic receivers,
 upload certificate and signatures, matching native libraries in both
 artifacts, both supported ABIs, ELF segment alignment, APK ZIP alignment,
 and AAB 16 KiB alignment configuration. These are packaging checks, not a
@@ -118,7 +135,7 @@ claim of runtime qualification on a 16 KiB device.
 
 ```sh
 python3 -m unittest discover -s scripts -p 'test_*android*.py'
-scripts/release-android.sh --check --tag android-v0.1.0
+scripts/release-android.sh --check --tag android-v1.0.25
 python3 scripts/validate-android-release.py --bundletool /path/to/bundletool.jar
 ```
 

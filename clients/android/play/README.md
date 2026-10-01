@@ -1,5 +1,11 @@
 # RSTorrent Canary Play Listing
 
+**Historical canary material.** Tactical 250 changes Android release packaging
+to the existing `com.jstorrent.app` JSTorrent app. This separate canary listing,
+banner and placeholder screenshots must not be uploaded there unchanged. Prepare
+current JSTorrent screenshots/copy under the full cutover checklist before store
+submission; this directory does not configure publication.
+
 Prepared on 2026-09-06 for the separate `com.jstorrent.rstorrent` app.
 The listing is saved in Play Console, ready to send for review; this directory
 is source material, not automated publishing configuration. No release has

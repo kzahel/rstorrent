@@ -640,6 +640,9 @@ pub(crate) async fn upgrade_application_connection(
             GatewayAuthentication::ChromeOsCompanion(_) => {
                 super::CompanionPairingOwner::origin_allowed(origin)
             }
+            GatewayAuthentication::Bearer { .. } if desktop_control_connection(&state) => {
+                super::CompanionPairingOwner::origin_allowed(origin)
+            }
             _ => origin == state.allowed_origin.as_ref(),
         })
     {

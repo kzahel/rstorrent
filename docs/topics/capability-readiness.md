@@ -2,6 +2,15 @@
 
 Topic: `capability-readiness`
 
+Tactical [250](../tactical/250-jstorrent-production-identity-candidates.md)
+prepares production package/store identities, original public trust roots,
+increasing pinned-baseline versions, native updater routing and exact production
+extension admission. Source/package/native/Android metadata gates are recorded
+in the tactical. This does not graduate signed/store/installed continuity:
+[the full cutover checklist](../jstorrent-cutover-checklist.md) remains open,
+including original private-key provisioning, Play signing/max versions, physical
+ARC, same-ID browser updates and the legacy API 26/27 disposition.
+
 Tactical [249](../tactical/249-jstorrent-brand-and-extension-refresh.md) completes
 bounded JSTorrent brand preparation and an extension popup/connection refresh:
 original icon provenance/notices, display names, web/unit/build checks, Android

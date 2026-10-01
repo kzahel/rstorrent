@@ -2,6 +2,24 @@
 
 Topic: `desktop-jstorrent-replacement`
 
+## Production Candidate Preparation, 2026-10-01
+
+Tactical [250](../tactical/250-jstorrent-production-identity-candidates.md)
+adds an explicit production overlay/build command for JSTorrent 0.3.0,
+`com.jstorrent.desktop`, the original updater public key/route, torrent file
+class and Windows hook paths. Ordinary debug/incubation builds retain their
+separate identity. Native update-channel discovery and requests now select the
+correct route by identity. Authenticated desktop control admits the production
+and beta extension origins exactly; hostile/lookalike origins remain rejected.
+The existing production-only legacy fencing/import bootstrap is reused.
+
+The [cutover checklist](../jstorrent-cutover-checklist.md) requires exact signed
+artifacts, normal installed updating, launch/helper continuity, import/recheck,
+recovery and platform evidence. No production app has been launched locally,
+private key transferred, service route changed or update published in this slice.
+The inherited magnet handler is retained; any old `jstorrent:` journey needs
+an explicit qualification/disposition before shipment.
+
 ## Branding Preparation, 2026-09-30
 
 Tactical [249](../tactical/249-jstorrent-brand-and-extension-refresh.md) restores
