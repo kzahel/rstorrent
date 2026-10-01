@@ -1,7 +1,7 @@
 # Tactical 252: Opt-In JSTorrent Installed Upgrade Rehearsal
 
-Status: **Bounded Linux/macOS HTTPS trial checkpoint complete, 2026-10-01.
-Windows, Linux ordinary GUI and extension follow-ups remain open.**
+Status: **Windows HTTPS updater follow-up active, 2026-10-01.
+Linux/macOS checkpoint complete; Linux ordinary GUI and extension gates remain open.**
 
 Owners: `desktop-jstorrent-replacement`, `product-surfaces-and-migration`,
 `beta-release-readiness`. Generic routing belongs to `simple-app-update-server`;
@@ -358,3 +358,26 @@ untouched. The staging HTTP server is stopped, controller-only candidate/legacy
 downloads and generated IDs/configuration are removed, and only sanitized
 checked-in evidence remains. Repository work is committed locally; only the
 explicitly approved update-server commit was pushed.
+
+### Authorized Windows Follow-Up
+
+The maintainer directs the Windows updater rehearsal once its exclusive claim
+becomes available. Reuse the complete authenticated CI candidate, generate a new
+private installation ID, preserve the ordinary feed, and exercise the released
+automatic and ordinary GUI paths plus wrong-signature and interrupted-download
+retry. Require exact installed bytes, the existing migration/source/payload
+oracles, joined ownership and file/registry/firewall restoration. Return the
+appliance to its initial powered-off state, remove the isolated trial and commit
+sanitized evidence. Production feed promotion and extension journeys stay outside
+this bounded follow-up.
+
+Windows automatic updating now passes: the unchanged released HTTPS updater
+downloads, authenticates and installs the exact NSIS candidate in the original
+installation directory, removes the old desktop executable and relaunches the
+successor. All four two-profile imports, supported settings, content checking,
+eight registered refusal routes, stable restart identities/single marker and
+source/payload preservation pass. Joined cleanup restores files and both HKCU
+registry views; the four test-generated firewall block rules are removed by exact
+application scope and the original rule-name set matches. The fresh one-ID trial
+passes eight HTTPS isolation comparisons. Ordinary GUI and negative retries are
+the next executable steps before trial disable and appliance power restoration.

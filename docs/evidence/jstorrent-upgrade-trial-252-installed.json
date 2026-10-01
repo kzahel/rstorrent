@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "qualification": "Original released HTTPS updater installs pinned signed successor; bounded Linux x64 and macOS arm64 installed evidence",
+  "qualification": "Original released HTTPS updater installs pinned signed successor; bounded Linux x64, Windows x64 and macOS arm64 installed evidence",
   "candidateSourceSha": "19eb3a88703088a2dfebb803342394938d305cb8",
   "candidateRunId": "36845370571",
   "candidateAttempt": 1,
@@ -161,6 +161,31 @@
       "negativeLegacyExecutableSha256": "f008e2d00e7e414e16096d1ea319d870807ddeddb25d459740b01a0727b019e7",
       "imported": 4,
       "status": "passed"
+    },
+    "auto-windows": {
+      "platform": "windows",
+      "legacyPackageSha256": "55ce6c119e3ada6b66da3f706e4659aa50f0550fea84d56757ba7180f51047c3",
+      "candidatePackageSha256": "af393292ff4c9cbabd7cc7030146d7a89a149d852b96d423c349347225023dde",
+      "checks": [
+        "pre-handshake-host-blocks-before-catalog",
+        "registration-failure-blocks-before-catalog",
+        "old-unmodified-HTTPS-check-offers-pinned-successor",
+        "old-updater-download-authenticates-and-installs-successor",
+        "four-record-import-and-paused-intent",
+        "valid-and-corrupt-reverification",
+        "missing-root-not-created",
+        "installed-refusal-routes",
+        "restart-identities-and-single-marker",
+        "source-and-payload-preserved"
+      ],
+      "legacyBinaries": [
+        "fb79545830c8aae032820100a0044c2a3ea29763aba2f1d35623025ae82af38c",
+        "6cd89eed30f417b97cb13d123280cdcf7138564d8630e29a1db14a8ed1346754"
+      ],
+      "refusalRoutes": 8,
+      "imported": 4,
+      "status": "passed",
+      "restoration": "passed"
     }
   },
   "windows": "Not exercised: exact appliance held by another active exclusive claim",
@@ -203,5 +228,33 @@
     "macos": "All four runs restore scopes and empty inherited backups; no owned product processes; four fixture roots/staging removed; initial suspended state restored; claim released",
     "windows": "Never claimed or operated; other session remains undisturbed",
     "server": "Trial drop-in/private manifest and owned assets removed; service restarted and active; original product descriptor retained"
+  },
+  "windowsFollowUp": {
+    "status": "automatic checkpoint passed; GUI and negative runs active",
+    "httpsIsolationChecks": 8,
+    "ordinaryResponsesByteIdentical": true,
+    "autoFirewallRestoration": {
+      "removedRules": [
+        {
+          "program": "jstorrent-io-daemon.exe",
+          "action": "Block"
+        },
+        {
+          "program": "jstorrent-io-daemon.exe",
+          "action": "Block"
+        },
+        {
+          "program": "rstorrent-desktop.exe",
+          "action": "Block"
+        },
+        {
+          "program": "rstorrent-desktop.exe",
+          "action": "Block"
+        }
+      ],
+      "restoration": "passed",
+      "unrelatedAddedRules": []
+    },
+    "initialPowerState": "off"
   }
 }
