@@ -1,7 +1,7 @@
 # Tactical 252: Opt-In JSTorrent Installed Upgrade Rehearsal
 
-Status: **Ready, validation plan accepted 2026-10-01;
-implementation and deployment not started.**
+Status: **Active, end-to-end implementation and owned installed validation
+authorized 2026-10-01; test-only routing and deployment remain bounded below.**
 
 Owners: `desktop-jstorrent-replacement`, `product-surfaces-and-migration`,
 `beta-release-readiness`. Generic routing belongs to `simple-app-update-server`;
@@ -46,7 +46,8 @@ release, or selecting candidates automatically from mutable GitHub Latest.
 - `simple-app-update-server/src/{server,channels,github}.ts`: current channel
   selection uses query parameters, the installation ID is currently analytics
   input only, Tauri responses use `no-store`, and release selection comes from
-  per-product/channel caches. Opt-in cohort routing is not implemented today.
+  per-product/channel caches. The opt-in route is now implemented and locally tested in server commit
+  `f45885c`; deployment/installed evidence remain separate below.
 - Successor `clients/desktop/src-tauri/src/{updater,update_channels}.rs`: legacy
   ID adoption is bounded, header emission follows metrics preference, and update
   responses must confirm a discovered client channel. An internal cohort must
@@ -119,3 +120,46 @@ authorize a rollout. The full checklist retains platform coverage, historical
 cohort dispositions, physical/store tests, interrupted installation and recovery,
 and final stop/rollback responsibilities. Restore normal test routing and remove
 owned guest files/services/claims when each run ends.
+
+## Execution Checkpoint
+
+The maintainer directs end-to-end execution and commits as each slice lands.
+Implement and test the server route first, retain exact complete CI candidate
+identity, then perform owned installed Linux/Windows/macOS and extension trials.
+Any test deployment keeps ordinary user selection and store/default-feed
+promotion outside scope. Target identity and consent remain explicit gates.
+
+### Server And Authenticated Candidate Preparation
+
+`simple-app-update-server` commit `f45885c` adds one private 64-KiB trial
+manifest with at most 32 canonical installation IDs and five pinned platform
+payloads. Exact product/channel/ID selection precedes ordinary cache lookup;
+missing/malformed/unknown IDs preserve ordinary selection, selected equal/newer
+versions and unsupported targets return 204. Invalid trial configuration leaves
+ordinary startup available. Discovery, downloads and other products are unchanged.
+
+Optional local assets use exact configured HTTPS hostname/path pairs, startup
+size/hash validation, 64-KiB streaming buffers and disconnect cancellation. There
+is no directory listing or upload route. Each asset is bounded to 512 MiB; the
+existing five-target limit bounds the total startup scan. Files remain immutable
+while enabled. Disabling the manifest and restarting removes selection/delivery.
+The installation ID is a selector, not an authentication credential.
+
+Validation: `npm run check` passes lint, TypeScript and all 86 tests, including
+ordinary-cache isolation, channel/product/discovery/installer continuity, malformed
+IDs/configuration, equal/newer versions, unsupported targets, exact delivery and
+HEAD, wrong-host/query/traversal refusal, changed/missing/symlinked assets.
+`npm run build` and `git diff --check` pass. No dependency is added.
+
+Complete run 36845370571's downloaded 23 asset receipts and all ten updater
+signatures independently pass. `scripts/prepare-jstorrent-upgrade-trial.mjs`
+checks the complete receipts again, verifies the five actual delivery payloads
+against the original root, and emits a private manifest plus
+[candidate receipts](../evidence/jstorrent-upgrade-trial-252-candidate.json).
+The generated test IDs stay outside the repository. URLs are prepared for owned
+HTTPS delivery; no trial is enabled on the live server at this checkpoint.
+
+Linux and Windows exact x64 test appliances are available through their Linux
+controller; the local macOS test appliance is separately claimed. Claim identity,
+credentials and concrete machine selectors remain private. Restore initially
+powered-off guests to off, and initially suspended macOS to suspended.
