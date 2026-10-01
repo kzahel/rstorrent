@@ -12,8 +12,11 @@ the original JSTorrent root. Original signing inputs blocked installed successor
 authentication. Controlled successor-server routing and the old macOS client's
 unchanged production-endpoint check pass without graduating installed updating.
 The maintainer-supplied original desktop key is now provisioned; a fresh CI nonce
-passes the retained JSTorrent root with the unchanged password. Package validation
-is in progress; Apple agreement and installed delivery remain unqualified.
+passes the retained JSTorrent root with the unchanged password. Windows/Linux
+package validation and independent checks of eight original-key signatures and
+16 hashes pass; Apple agreement and installed delivery remain unqualified.
+Proposed [252](../tactical/252-jstorrent-opt-in-upgrade-rehearsal.md) records the
+next opt-in HTTPS installed trial; no live routing feature/change is implemented.
 
 Tactical [250](../tactical/250-jstorrent-production-identity-candidates.md)
 prepares production package/store identities, original public trust roots,

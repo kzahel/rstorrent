@@ -37,15 +37,17 @@ started signed CI candidates using existing inputs. Its first CI signature prove
 those desktop inputs match the incubation key, **not** JSTorrent's retained root.
 The maintainer-supplied original key replaces that secret; fresh run
 [36831643488](https://github.com/kzahel/rstorrent/actions/runs/36831643488)
-passes original-key signing with the unchanged password. Package validation is
-in progress; this signing-input proof does not close a delivery row.
+passes original-key signing with the unchanged password. Windows/Linux package
+lanes complete; independent checks pass eight original-key payload signatures
+and all 16 receipt hashes. macOS still fails its Apple agreement gate; this
+partial matrix does not close a delivery row.
 The released macOS 0.2.1 app successfully checked its unchanged production
 endpoint in an owned guest, but no successor install is qualified. The prepared
 successor server descriptor passes controlled routing checks and is not active.
 Android's repaired CI candidate builds signed APK/AAB and passes JVM tests/lint,
 but final staging rejects its incubation certificate. Original GitHub APK signing,
 Play upload certificate and Play app-signing certificate are separate gates.
-The macOS arm64 CI app passes original-team Developer ID/notarization checks;
+The first macOS arm64 CI app passes original-team Developer ID/notarization checks;
 its updater signature fails the original root. A manual CI-bundle guest attempt
 stops at the live-old-host alert before import and does not close an installed row.
 Fresh macOS notarization then fails because Apple reports a missing/expired team
@@ -53,6 +55,9 @@ agreement; the account holder must resolve it before a new candidate can pass.
 Windows signed NSIS/MSI, installed publisher/helper signatures and activation
 checks pass, as do both Linux package lanes. Ordinary CI is fully green. These
 partial checkpoints leave authenticated installed updating and all rows open.
+Proposed [252](tactical/252-jstorrent-opt-in-upgrade-rehearsal.md) records an
+opt-in test cohort at the normal HTTPS endpoint, one pinned candidate and a
+real owned-guest installed migration. Routing is not implemented or deployed.
 
 ## Candidate Identity And Delivery
 

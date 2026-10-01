@@ -31,8 +31,17 @@ The maintainer supplies the original key; provisioning under the existing secret
 name and fresh CI nonce signing now pass with the unchanged password. Run
 [36831643488](https://github.com/kzahel/rstorrent/actions/runs/36831643488)
 verifies against root `415D3DF4B3D0CFB8` and refuses the incubation root.
-Fresh package qualification remains in progress; Apple agreement and installed
-updating remain open. No production feed is changed.
+The run completes with Windows and both Linux lanes passing. Independent checks
+verify all eight available payload signatures against the original root and all
+16 receipt hashes. Both macOS lanes still fail Apple's agreement gate; installed
+updating remains open. No production feed is changed.
+
+Proposed [252](../tactical/252-jstorrent-opt-in-upgrade-rehearsal.md) uses the
+released app's existing `X-CFU-Id` header for an explicitly opted-in test cohort
+on the normal HTTPS endpoint, with one pinned candidate and ordinary selection
+unchanged for everyone else. This server feature is not implemented/deployed.
+Start with an owned Linux AppImage update, generated old-writer data and actual
+install/relaunch/import oracles; qualify Windows, macOS and extension pairs next.
 
 ## Production Candidate Preparation, 2026-10-01
 

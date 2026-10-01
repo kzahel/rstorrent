@@ -2,8 +2,8 @@
 
 Status: **Bounded CI attempt complete, 2026-10-01; production delivery blocked.**
 
-Follow-up: **Original desktop key provisioned and CI nonce proof passes;
-fresh package candidate in progress.**
+Follow-up: **Original desktop key and eight Windows/Linux payload signatures
+pass; macOS agreement and authenticated installed updating remain blocked.**
 The maintainer supplies the original encoded key files and authorizes using them
 for the existing CI lane. Keep the existing password secret unchanged and verify
 it by signing an owned nonce; never expose or commit private signing material.
@@ -288,7 +288,8 @@ import is qualified by these attempts.
 ### Next Executable Checkpoint
 
 1. The original desktop key is now provisioned and the unchanged password passes
-   CI signing. Require exact original-root signatures from the fresh package run.
+   CI signing. Eight available Windows/Linux payload signatures now pass; require
+   complete platform/package and installed evidence before shipment.
    Provision original Android keystore/password/alias inputs under existing
    `ANDROID_UPLOAD_*` names and qualify Play upload/app-signing independently.
 2. The Apple account holder resolves the team agreement rejection. Rerun manual
@@ -321,7 +322,24 @@ owned-nonce CI proof passes: signer `415D3DF4B3D0CFB8`, JSTorrent verification
 true, incubation verification false. This proves the uploaded private key matches
 the retained trust root and the existing password unlocks it. It supersedes the
 earlier current-input mismatch as a desktop signing-input blocker, not the
-historical failed package evidence. Package jobs remain in progress; original-
-root final artifact validation and authenticated installed updating are still
-open. Apple agreement resolution, Android signing and guest desktop access
-remain independent prerequisites.
+historical failed package evidence. The run now finishes: Windows and both Linux
+package lanes pass; both macOS architectures fail notarization with the same
+missing/expired Apple agreement HTTP 403. The collector refuses incomplete legs.
+
+Independent verification of downloaded package bytes matches all 16 receipt
+hashes, and all eight available Windows/Linux payload signatures pass the
+original root and fail the incubation root. Preserve their exact identity in
+[original-key package receipts](../evidence/jstorrent-ci-candidate-251-original-key.json).
+These packages unlock an owned Windows/Linux installed updater trial; this is
+partial package authentication, not an installed-upgrade or complete-matrix pass.
+Apple agreement resolution, Android signing and guest desktop access remain
+independent prerequisites.
+
+Proposed [252](252-jstorrent-opt-in-upgrade-rehearsal.md) records the next bounded
+dry run: the exact old release already sends `X-CFU-Id`, allowing explicit test
+cohort selection on the ordinary HTTPS endpoint. The server currently uses that
+header only for analytics; local implementation/tests and a reviewable private
+deployment precede any externally authorized change. Ordinary users retain the
+old feed. Start a Linux AppImage trial, then Windows and notarized macOS, with
+ordinary writer fixtures, actual updater installation/relaunch and migration
+oracles. No live cohort/feed/server change is made in this survey.

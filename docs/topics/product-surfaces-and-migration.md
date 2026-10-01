@@ -19,9 +19,17 @@ lint before original-certificate refusal. Fresh macOS notarization also requires
 the account holder to resolve Apple's team agreement rejection. Ordinary CI
 passes all executed jobs; the controlled CI-bundle handoff stops before import.
 The maintainer-supplied original desktop key is now provisioned. Fresh CI nonce
-proof passes JSTorrent's root with the existing password unchanged; candidate
-package jobs are in progress. Android signing, the Apple team agreement and
+proof passes JSTorrent's root with the existing password unchanged. Windows/Linux
+package lanes and eight independently checked original-key signatures pass.
+Android signing, the Apple team agreement and
 authenticated installed updating remain open independently.
+
+Proposed [252](../tactical/252-jstorrent-opt-in-upgrade-rehearsal.md) records a
+test-only cohort on the existing HTTPS updater URL, using the old release's
+already-sent installation ID and a pinned candidate. Implementation and private
+deployment review precede any external change; ordinary production selection
+stays unchanged. It is a real update inside an owned guest, with actual legacy
+writers and source/settings/root/payload/restart assertions, not a feed check.
 
 ## Production Candidates, 2026-10-01
 

@@ -1,0 +1,115 @@
+# Tactical 252: Opt-In JSTorrent Installed Upgrade Rehearsal
+
+Status: **Proposed, 2026-10-01; implementation and deployment not started.**
+
+Owners: `desktop-jstorrent-replacement`, `product-surfaces-and-migration`,
+`beta-release-readiness`. Generic routing belongs to `simple-app-update-server`;
+private deployment configuration belongs to dotfiles.
+
+## Scope And Stopping Condition
+
+Propose one bounded end-to-end desktop checkpoint: an exact released JSTorrent
+0.2.1 installation receives a pinned, original-key-signed CI successor through
+its ordinary HTTPS updater, installs/relaunches and migrates generated legacy
+state. Start with Linux x64 AppImage, then independently qualify Windows NSIS
+and macOS after Apple notarization is available. One passing platform does not
+close the complete cutover checklist.
+
+Implement and locally test an opt-in server cohort before reviewing its live
+deployment. The existing release already sends `X-CFU-Id`; explicitly registered
+test installation IDs can select a pinned candidate response on the existing
+URL. Ordinary/missing/unknown IDs keep the existing production release selection.
+There is no required old-client rebuild, intermediate old-app update or new
+client-visible channel. This remains a proposal, not an accepted live change.
+
+Stop the first implementation slice with local cohort-routing negative tests,
+reviewable pinned artifacts/deployment/disable configuration, and the Linux
+installed happy path plus wrong-signature and interrupted-download/retry evidence,
+or exact prerequisites recorded. Complete work needed for review before seeking
+authority for an external deployment. Public default-feed promotion is separate.
+
+Non-goals: shipping two products, automatic rollback/downgrade, personal profiles,
+production extension/store updates, Android migration, public swarms, every old
+release, or selecting candidates automatically from mutable GitHub Latest.
+
+## Source Survey And Dependencies
+
+- JSTorrent `tauri-app-v0.2.1`, commit
+  `73427b7d3aef2eaf1c4ac1409922fbb52dff751d`: desktop
+  `tauri-app/src-tauri/tauri.conf.json` retains the ordinary production endpoint
+  and root; `src/lib.rs` sets `X-CFU-Id` for GUI checks and exposes
+  `--check-update` / `--auto-update`; `src/headless_updater.rs` sets the same
+  header and invokes actual download/install/restart; `desktop/common/src/lib.rs`
+  persists the generated ID in `jstorrent-native/cfu-id`.
+- `simple-app-update-server/src/{server,channels,github}.ts`: current channel
+  selection uses query parameters, the installation ID is currently analytics
+  input only, Tauri responses use `no-store`, and release selection comes from
+  per-product/channel caches. Opt-in cohort routing is not implemented today.
+- Successor `clients/desktop/src-tauri/src/{updater,update_channels}.rs`: legacy
+  ID adoption is bounded, header emission follows metrics preference, and update
+  responses must confirm a discovered client channel. An internal cohort must
+  preserve Stable/Latest semantics rather than invent a Beta channel. Disabling
+  statistics must not break normal updating; do not force identifier emission.
+- Tactical 251 supplies exact original-key Windows/Linux artifacts from CI
+  run 36831643488. All eight available payload signatures and 16 receipt hashes
+  independently pass. macOS notarization still fails Apple's agreement gate.
+- Reuse 242/243's independently checked released writers, multi-profile fixture
+  generation, closed catalog inspection, fencing and source/payload oracles.
+
+## Ownership, Bounds And Invariants
+
+The generic service owns a pure, explicit cohort selector and validated static
+candidate input, using existing request/server shutdown ownership. No new engine
+task, DTO, client beta toggle or dynamic release-publishing system is needed.
+Read the server's own repository instructions before implementation there.
+
+Keep test IDs in private deployment configuration and use generated guest IDs.
+The existing analytics ID is a cohort selector, not authentication or a secret.
+Bound the first cohort to 32 canonical UUIDs, five supported updater targets and
+a 64-KiB candidate manifest. Pin candidate source SHA, version, payload URLs,
+sizes/hashes and original-key signatures. Candidate assets need ordinary HTTPS
+URLs usable by the old updater; GitHub Actions downloads alone are not that
+delivery surface. A public GitHub release is not required for owned test assets.
+
+Validate exact-match selection, no ID/malformed/unknown ID, unsupported target,
+equal/newer installed version, unavailable candidate, failed configuration and
+cross-cohort requests at the same URL. Candidate requests must not populate
+ordinary caches. Keep responses uncached at the proxy too. Trial configuration
+defaults disabled; disabling it restores ordinary selection without downgrades.
+
+Use Machine Control's exact claimed guest and explicit desktop grant, with
+restoration of inherited state and joined cleanup. Back up/snapshot both product
+state and generated payload; an OS snapshot does not cover external folders.
+Do not weaken TLS/signature/OS-signing checks. Read-only checks are followed by a
+real install inside the guest; do not call a version-response check migration.
+
+## Installed Validation Sequence
+
+1. Install checksum-pinned old release, generate paused legacy records through
+   its ordinary writers across two profiles, and record settings/root bindings,
+   catalog/source and independent payload hashes. Start with 242/243's valid,
+   corrupt, pending-magnet and missing-root cohort; no public network activity.
+2. Opt in that guest ID. Run old `--check-update`, then actual `--auto-update`.
+   Verify offered version, signature refusal negatives, installed executable
+   bytes/OS identity, relaunch and exactly one successor owner. Repeat using the
+   old UI's ordinary Check for Updates / Install & Restart interaction.
+3. Inspect imported/already-present/skipped outcomes, supported settings, union
+   and simple duplicates, paused intent, ordinary full checking, actionable
+   unavailable storage, preserved source and unrelated payload. Restart and prove
+   one import marker and stable identities. Repair corruption only through normal
+   controlled transfer/recheck behavior with expected resulting hashes.
+4. Interrupt download, retry and reject a corrupted/wrongly signed payload
+   without replacing the old app or damaging state. Exercise running old hosts,
+   denied registration and restart around migration's existing transaction
+   checkpoints. Keep a recovery baseline with all torrent writers stopped.
+5. Add legacy/successor extension pairs and file/magnet/toolbar/tray journeys.
+   Qualify Windows and macOS independently; then address production Android/Play
+   signing, emulator/physical SAF and staggered ChromeOS stores separately.
+
+## Shipment Boundary
+
+This rehearsal increases confidence in actual delivered behavior; it does not
+authorize a rollout. The full checklist retains platform coverage, historical
+cohort dispositions, physical/store tests, interrupted installation and recovery,
+and final stop/rollback responsibilities. Restore normal test routing and remove
+owned guest files/services/claims when each run ends.

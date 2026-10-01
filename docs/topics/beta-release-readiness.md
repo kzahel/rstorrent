@@ -27,8 +27,12 @@ signatures, silent installation and activation checks. Mac failures correctly
 prevent complete collection; no production update or release is qualified.
 The maintainer-supplied original key subsequently replaces the existing desktop
 secret. Fresh nonce proof passes original-root verification with the unchanged
-password; run 36831643488 is building a new production candidate. Its final
-package/installed gates and Apple's agreement remain open.
+password. Run 36831643488 completes Windows/Linux package lanes and independent
+verification passes all eight available original-key payload signatures and
+16 receipt hashes. macOS still fails Apple's agreement gate; complete-matrix
+and installed gates remain open. Proposed
+[252](../tactical/252-jstorrent-opt-in-upgrade-rehearsal.md) records a pinned,
+opt-in installed trial; no candidate feed/server change is yet made.
 
 The October 1 monthly rebuild of the unchanged upstream AppImage output plugin
 invalidated its byte pins. Tactical 251 reviews the source/build provenance and

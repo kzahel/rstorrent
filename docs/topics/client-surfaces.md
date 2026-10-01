@@ -11,7 +11,9 @@ secret fails JSTorrent's original trust root; signed installed continuity remain
 open. An exact old macOS app checks its unchanged production route successfully.
 No product presentation, application DTO or engine behavior changes in this slice.
 The supplied original key is now provisioned and fresh CI nonce signing passes
-with the unchanged password; final package and installed update gates remain open.
+with the unchanged password. Eight available Windows/Linux package signatures
+now independently verify against the original root; complete-matrix and installed
+update gates remain open.
 
 Tactical [250](../tactical/250-jstorrent-production-identity-candidates.md)
 prepares production desktop/Android/extension identities and public trust
