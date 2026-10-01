@@ -119,3 +119,13 @@ updater trust, extension ID/origin and OS launch continuity before an installed
 signed upgrade rehearsal. The broader shared UI design pass can proceed
 independently; preserve familiar density, actions and user appearance settings.
 No production signing secret, user profile, installed app or release changed.
+
+## Native Catalog Follow-up, 2026-10-01
+
+Tactical 252 observes that the signed Windows successor still has RSTorrent tray
+copy. The original slice changed shared React and Android catalogs but omitted
+the separate Tauri native catalog. Its 17-key catalog now uses JSTorrent for
+tray actions/tooltips, notifications, power text and error dialogs; identifiers
+and placeholder semantics are unchanged. The focused Rust catalog test, all
+four platform localization checks and Rust formatting pass. The existing
+36845370571 candidate predates this source-only correction.

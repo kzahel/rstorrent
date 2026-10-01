@@ -9,6 +9,12 @@ by the original icon and their messages removed. All four platform catalog
 checks pass; supported locales and the separate iOS branding remain unchanged.
 
 
+The signed-candidate guest rehearsal in [252](../tactical/252-jstorrent-opt-in-upgrade-rehearsal.md) exposes stale RSTorrent copy in the native Tauri catalog.
+The follow-up changes tray labels/tooltips, notifications, power text and error
+dialogs to JSTorrent, preserving all 17 semantic keys and placeholders. All four
+catalog checks and the focused Rust catalog test pass. The previously signed CI
+candidate predates this correction; a fresh signed package remains required.
+
 Tactical `216` adds thirteen English messages for the local support preview,
 copy/download and public-report guidance. Machine-readable report keys remain
 verbatim diagnostics. All web, desktop, Android and iOS catalog checks pass;
