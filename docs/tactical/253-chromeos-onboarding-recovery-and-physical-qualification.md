@@ -280,3 +280,40 @@ fails common doctor and network preflight with LAN `No route to host`, without
 VPN interception. It has not been mutated; its product rows remain unrun.
 The attempted Crostini inventory reports a concierge/message-bus disconnect;
 do not infer Linux is disabled from that infrastructure failure.
+
+### Host Build Checkpoint
+
+`clients/android/build.sh` passes on this Linux host after installing the
+pinned NDK 28.2.13676358. Both native ABIs, generated Kotlin, debug APK/JVM tests
+and packaged notices pass (83 Maven/205 Rust packages, six native libraries).
+The debug-only `chromeosQualificationTestPackage` accepts exactly
+`org.rstorrent.qualification253`, rejects combining with the legacy production
+upgrade override, and leaves release identity unchanged. Its separate APK and
+instrumentation APK build/JVM tests pass; actual package metadata is checked.
+This permits controlled physical testing without replacing either inherited
+Android app. It cannot qualify Play or same-package installed migration.
+
+The host-side `scripts/build-crostini-baseline.sh` builds with native x86_64
+Ubuntu 22.04, Rust 1.97.0 and checksum-checked Node 22.22.0. Its source mount is
+read-only; build/cache state stays in the owned target directory. A private
+empty Docker configuration avoids relying on the host's missing desktop
+credential helper. Source refresh removes only the container's owned source
+copy; an exclusive build lock prevents competing output owners. The finished
+20-file/40,151,130-byte package passes allowlist validation, ELF/ldd inspection
+and both executable version smokes. Maximum GLIBC is 2.34; dependencies are
+libc, libm, libgcc_s and the standard ELF loader. Exact target dependency and
+launcher/storage evidence remain required. Native ARM64 retains the qualified
+release lane, with no local emulation claim.
+
+Exact artifact SHA-256 at this checkpoint:
+
+- Crostini x86_64: `95e6f05b35fcb22d4640f81175039759d78d1f2400f403b2e71626d7cccbd2a2`.
+- Production-identity extension 1.1.2: `95d604a8215e2606b72f2fca72e00424b656aa4f62175743e53ae64603dbcfdc`.
+- Beta extension 0.4.0: `54dc1562501e8c9eac2c9dc29fea6f1c1a027799fedb1bb6279308cbdd1c4e41`.
+- Isolated debug APK: `062def17bcf2993ae1cce935bc1ec5bbf315876e18e9a463a5c83c036a5e658e`.
+- Isolated instrumentation APK: `55cb94f130368f31b8b875958bcd8cc69e390498a2cc1d126cae419e2ab2c967`.
+
+All are local non-published artifacts. The Crostini candidate has no production
+release signature; runtime installation must be labeled controlled local
+candidate, independently from the retained authenticated public-bootstrap pass.
+No signed/store gate is closed by these builds.

@@ -626,6 +626,45 @@ derives that same unpacked identity and the desktop host permits only its exact
 origin beside the existing production JSTorrent origin. Upload new packages to
 that same draft item. Never commit the private key or store credentials.
 
+## ChromeOS Qualification Builds
+
+Build on the Linux controller; physical Chromebooks are runtime targets.
+Tactical 253 uses the native Ubuntu 22.04 Crostini baseline:
+
+```bash
+source ~/.profile
+scripts/build-crostini-baseline.sh
+```
+
+This Docker build isolates host libc and credentials, installs pinned Rust
+1.97.0/Node 22.22.0, runs the existing package validator, and reports ELF/ldd
+requirements plus executable version smokes. Finished packages are under
+`target/crostini-baseline/packages/`. The native ARM64 release lane remains
+`ubuntu-22.04-arm`; this local x86_64 script does not emulate that qualification.
+
+Preserve inherited physical Android apps with the debug-only test identity:
+
+```bash
+source ~/.profile
+ORG_GRADLE_PROJECT_chromeosQualificationTestPackage=org.rstorrent.qualification253 \
+  clients/android/build.sh
+```
+
+It cannot be combined with the production-identity legacy-upgrade override.
+Release identity/signing stay unchanged. Verify the APK's actual package before
+installation and remove only this owned test package afterward. This is a
+sideloaded controlled cohort, never a real Play installation/update pass.
+
+The packaged portable failure journeys use an owned test Chromium:
+
+```bash
+node scripts/verify-chromeos-onboarding.mjs target/extension/jstorrent-1.1.2.zip
+```
+
+Install Playwright Chromium if absent. The runner extracts the exact ZIP,
+retains its manifest-derived origin, drives six explicitly injected scenarios
+and removes its browser/profile/staging state. It does not contact a device.
+
 ## Packaging And Running The Linux Headless Service
 
 On native x86_64 Linux, build and validate the ordinary-user package with:
