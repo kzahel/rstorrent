@@ -1,7 +1,7 @@
 # Tactical 252: Opt-In JSTorrent Installed Upgrade Rehearsal
 
-Status: **Windows HTTPS updater follow-up active, 2026-10-01.
-Linux/macOS checkpoint complete; Linux ordinary GUI and extension gates remain open.**
+Status: **Bounded three-platform HTTPS updater checkpoint complete, 2026-10-01.
+Linux ordinary GUI, broader cohorts and extension cutover gates remain open.**
 
 Owners: `desktop-jstorrent-replacement`, `product-surfaces-and-migration`,
 `beta-release-readiness`. Generic routing belongs to `simple-app-update-server`;
@@ -400,3 +400,52 @@ product version 0.3.0, and JSTorrent uninstaller version 0.3.0 at the original
 path. All migration oracles, inactive-source bytes and full source bytes across
 successor restart pass. File/registry/firewall cleanup matches the inherited
 baseline. Python compilation and `git diff --check` pass.
+
+The first Windows interrupted-download attempt loses the cancellation race:
+the small NSIS payload completes before an external `taskkill` process executes,
+which reports that its old updater PID has exited. The attempt does not qualify
+interruption and restores files/registry. Tighten only the test observer to a
+bounded 10-ms progress poll and cancel the owned Windows process handle directly,
+before expensive installed-byte hashing or shell startup. Refuse a log that has
+already reached installation, then independently verify the exact old executable
+and joined owners after cancellation. Repeat from a fresh restored fixture; the
+signed released apps and delivery bytes stay unchanged.
+
+### Windows Follow-Up Disposition And Restart Checkpoint
+
+Four Windows x64 NSIS paths now pass from the unchanged released 0.2.1 app:
+automatic HTTPS updating; native tray Check for Updates / Install & Restart;
+wrong-signature refusal and valid retry; interrupted download and normal retry.
+The two negatives retain exact legacy executable hash
+`c4aeec22ae763d4402d54b38a142e78f5d2f13383813fbeba28d31cb35abf355`.
+Interruption observes real progress before installation and joins the owned
+process. Every successful path passes four imports across two source profiles,
+supported settings, paused intent, valid/corrupt checking, missing-root handling,
+eight registered protocol refusals, stable identities/single marker and preserved
+source/payload through successor restart. GUI additionally preserves inactive
+source bytes and every source byte after handoff. This is generated-fixture
+qualification of this exact candidate, not complete migration or rollout proof.
+
+All six Windows attempts, including the two unsuccessful harness attempts, pass
+file/registry/firewall restoration and leave empty inherited backups. Remove
+only test-generated firewall block rules; all 507 original rule names match.
+No product or owned installer process remains. Six fixture roots, guest and
+controller staging, six exact-hash updater downloads and twelve owned captures
+are removed. The VM returns to its initial powered-off state and its claim is
+released. Local controller candidates, IDs/configuration and logs are removed
+before completion; unrelated worktree changes are retained.
+
+The fresh private one-ID trial is disabled and its drop-in/manifest/assets are
+removed. Eight final HTTPS response comparisons include the former test ID and
+match the ordinary baseline; all five asset GET URLs return 404. The original
+product descriptor remains selected and the service is active. Two comparisons
+issued immediately after restarts fail before readiness, then pass unchanged;
+startup validates all local asset hashes before opening the listener. Wait for
+HTTPS readiness, rather than treating systemd's active state as readiness, before
+future feed assertions. No default feed, release, signing input or store changes.
+
+Python compilation and diff checks pass; actual Windows execution validates the
+portable source guard and direct-process interruption fixes. Resume with the
+Linux old-release GUI rendering gate, real extension/store pairs, controlled
+repair, historical/other-architecture lanes and a fresh signed candidate carrying
+the later native branding correction. The full cutover checklist stays open.

@@ -92,18 +92,28 @@ def check_and_apply(args, native, app, launch, wait_until, phase, installed, res
         phase("negative-updating")
         if args.trial_negative == "interrupted":
             log = args.root / "legacy.log"
-            def started():
-                return log.exists() and "download progress:" in log.read_text(errors="replace")
-            wait_until(started, seconds=120)
-            assert not installed(), "download completed before interruption"
+            # Small NSIS downloads can finish within the general 250-ms poll.
+            # Observe progress without hashing installed files or spawning a
+            # shell before cancellation. The Popen handle owns this exact
+            # Windows process; no installer child exists during download.
+            deadline = time.monotonic() + 120
+            while True:
+                progress = log.read_text(errors="replace") if log.exists() else ""
+                if "download progress:" in progress:
+                    assert "download complete, installing" not in progress, "download completed before interruption"
+                    break
+                assert negative.poll() is None, "updater exited before download progress"
+                assert time.monotonic() < deadline, "download progress timed out"
+                time.sleep(0.01)
             if os.name == "nt":
-                subprocess.run(["taskkill.exe", "/PID", str(negative.pid), "/T", "/F"], check=True, timeout=15)
+                negative.kill()
             elif sys.platform == "linux":
                 # The extract-and-run AppImage may have a launcher parent.
                 # Its driver-created process group owns the whole attempt.
                 os.killpg(negative.pid, signal.SIGTERM)
             else:
                 os.kill(negative.pid, signal.SIGTERM)
+            results["interruptedDownloadProgressObserved"] = True
         wait_until(lambda: negative.poll() is not None, seconds=180)
         if args.trial_negative == "wrong-signature":
             result = json.loads((native / "update-check-result.json").read_text())

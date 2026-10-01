@@ -82,7 +82,11 @@ arm64, and the normal macOS Check for Updates / Install & Restart path passes.
 Linux signature refusal and interrupted-download retries pass; macOS signature
 refusal and retry also pass, with the original executable hash preserved. See
 [installed evidence](evidence/jstorrent-upgrade-trial-252-installed.json).
-Windows is reserved by another active claim. The old Linux release renders
+Windows automatic and ordinary GUI updates, signature refusal/retry and
+interrupted-download/retry now pass the same migration/restart assertions.
+Installed publisher/uninstaller continuity and file/registry/firewall restoration
+pass; the isolated trial is disabled and normal routing reverified.
+The old Linux release renders
 blank in the selected VM under default, DMA-BUF-disabled and software/X11
 settings, leaving its GUI path open. Broader installed cohorts, controlled
 repair and real extension journeys remain open. Native catalog branding is corrected after
@@ -120,9 +124,9 @@ select representative historical sources and browsers. Keep each unrun lane open
   verifies the candidate, replaces itself, relaunches and retains its OS identity.
   NSIS replacement, AppImage path and macOS bundle path are exercised. Package
   manager lanes have their documented upgrade route. Bounded 252 evidence passes
-  original 0.2.1-to-0.3.0 HTTPS delivery on Linux x64 and macOS arm64, including
-  the ordinary macOS UI. Windows, other architectures and the Linux old-app UI
-  remain open; the complete row is not satisfied.
+  original 0.2.1-to-0.3.0 HTTPS automatic delivery on Linux x64, Windows x64
+  and macOS arm64, plus the ordinary Windows/macOS UI. Other architectures
+  and the Linux old-app UI remain open; the complete row is not satisfied.
 - [ ] **P-02 Legacy shutdown:** running desktop/old native hosts, open legacy
   extension pages and idle pre-handshake helpers cannot remain payload writers.
   Managed old registrations refuse the legacy protocol. Failure to fence or prove

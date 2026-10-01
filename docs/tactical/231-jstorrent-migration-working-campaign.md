@@ -329,3 +329,14 @@ production routing remain separately scoped.
   extension release order, Android-control restoration timing, compatibility
   baseline and rollback support duration. A legacy protocol bridge, older
   RSTorrent profile conversion and field-by-field merging are not required.
+
+Tactical [252](252-jstorrent-opt-in-upgrade-rehearsal.md) now qualifies bounded
+original-key 0.2.1-to-0.3.0 HTTPS automatic updating on Linux x64, Windows x64
+and macOS arm64, ordinary Windows/macOS GUI updating, signature refusals/retries
+and Linux/Windows download interruption/retries. Generated two-profile migration,
+settings, checking, registered refusal, source/payload and restart assertions
+pass. The isolated trial is disabled and ordinary selection reverified; all owned
+guests are restored and claims released. Broader package/source cohorts, Linux
+old-release GUI rendering, actual extension/store pairs, controlled repair and
+fresh signed branding qualification remain open. This does not close M-05 or
+claim migration-ready/rollout-ready shipment.

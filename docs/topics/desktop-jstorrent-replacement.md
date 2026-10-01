@@ -69,7 +69,9 @@ oracles and eight registry refusal routes, with file/registry/firewall restorati
 Windows ordinary Check for Updates / Install & Restart also passes; a portable
 source-snapshot path fix preserves the inactive-profile guard on Windows.
 Expected-publisher Authenticode and original-path uninstaller continuity pass.
-Windows negative retries are active. The old Linux release
+Windows signature refusal and interrupted-download retries also pass with the
+exact old executable preserved. The one-ID trial is disabled; final ordinary
+responses match, assets return 404 and the restored VM is off with claim released. The old Linux release
 renders blank in this VM under three tested configurations, leaving its ordinary
 UI path open. Controlled repair and real extension journeys remain open. Native catalog branding is corrected after
 the candidate source and needs a fresh signed build.

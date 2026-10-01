@@ -212,9 +212,64 @@
       "imported": 4,
       "status": "passed",
       "restoration": "passed"
+    },
+    "wrong-windows": {
+      "platform": "windows",
+      "legacyPackageSha256": "55ce6c119e3ada6b66da3f706e4659aa50f0550fea84d56757ba7180f51047c3",
+      "candidatePackageSha256": "af393292ff4c9cbabd7cc7030146d7a89a149d852b96d423c349347225023dde",
+      "checks": [
+        "pre-handshake-host-blocks-before-catalog",
+        "registration-failure-blocks-before-catalog",
+        "old-unmodified-HTTPS-check-offers-pinned-successor",
+        "wrong-signature-preserves-old-installation",
+        "old-updater-download-authenticates-and-installs-successor",
+        "four-record-import-and-paused-intent",
+        "valid-and-corrupt-reverification",
+        "missing-root-not-created",
+        "installed-refusal-routes",
+        "restart-identities-and-single-marker",
+        "source-and-payload-preserved"
+      ],
+      "legacyBinaries": [
+        "fb79545830c8aae032820100a0044c2a3ea29763aba2f1d35623025ae82af38c",
+        "6cd89eed30f417b97cb13d123280cdcf7138564d8630e29a1db14a8ed1346754"
+      ],
+      "negativeLegacyExecutableSha256": "c4aeec22ae763d4402d54b38a142e78f5d2f13383813fbeba28d31cb35abf355",
+      "refusalRoutes": 8,
+      "imported": 4,
+      "status": "passed",
+      "restoration": "passed"
+    },
+    "interrupted-windows": {
+      "platform": "windows",
+      "legacyPackageSha256": "55ce6c119e3ada6b66da3f706e4659aa50f0550fea84d56757ba7180f51047c3",
+      "candidatePackageSha256": "af393292ff4c9cbabd7cc7030146d7a89a149d852b96d423c349347225023dde",
+      "checks": [
+        "pre-handshake-host-blocks-before-catalog",
+        "registration-failure-blocks-before-catalog",
+        "old-unmodified-HTTPS-check-offers-pinned-successor",
+        "interrupted-preserves-old-installation",
+        "old-updater-download-authenticates-and-installs-successor",
+        "four-record-import-and-paused-intent",
+        "valid-and-corrupt-reverification",
+        "missing-root-not-created",
+        "installed-refusal-routes",
+        "restart-identities-and-single-marker",
+        "source-and-payload-preserved"
+      ],
+      "legacyBinaries": [
+        "fb79545830c8aae032820100a0044c2a3ea29763aba2f1d35623025ae82af38c",
+        "6cd89eed30f417b97cb13d123280cdcf7138564d8630e29a1db14a8ed1346754"
+      ],
+      "interruptedDownloadProgressObserved": true,
+      "negativeLegacyExecutableSha256": "c4aeec22ae763d4402d54b38a142e78f5d2f13383813fbeba28d31cb35abf355",
+      "refusalRoutes": 8,
+      "imported": 4,
+      "status": "passed",
+      "restoration": "passed"
     }
   },
-  "windows": "Original HTTPS automatic and ordinary GUI updating passed; negative retries active",
+  "windows": "Original HTTPS automatic/ordinary GUI, wrong-signature refusal/retry and interrupted-download/retry passed",
   "trialDisabled": true,
   "disableVerification": {
     "ordinaryResponsesByteIdentical": true,
@@ -246,10 +301,16 @@
       "observation": "Exact NSIS update/relaunch and catalog checks pass; Windows backslash snapshot keys incorrectly include the active profile in the inactive byte guard",
       "resolution": "Portable relative snapshot paths; fresh full GUI and successor restart pass",
       "restoration": "Files, registry and exact four firewall block rules restored"
+    },
+    {
+      "platform": "windows",
+      "path": "interrupted download",
+      "observation": "250-ms observer and external taskkill lose the small NSIS download race; no interruption qualified",
+      "resolution": "Bounded 10-ms observer, direct owned process-handle cancellation and refusal if installation has begun; fresh interruption/retry and all migration/restart checks pass",
+      "restoration": "Both attempts restore files/registry/firewall"
     }
   ],
   "remaining": [
-    "Windows wrong-signature refusal and interrupted-download retries",
     "Linux old-release GUI rendering and ordinary Install & Restart",
     "other architectures and historical cohorts",
     "real legacy/successor extension combinations and launch routes",
@@ -259,11 +320,11 @@
   "cleanup": {
     "linux": "All six runs restore file scopes and empty inherited backups; no owned product processes; six fixture roots/staging/three captures removed; initial off state restored; claim released",
     "macos": "All four runs restore scopes and empty inherited backups; no owned product processes; four fixture roots/staging removed; initial suspended state restored; claim released",
-    "windows": "Never claimed or operated; other session remains undisturbed",
-    "server": "Trial drop-in/private manifest and owned assets removed; service restarted and active; original product descriptor retained"
+    "windows": "All six attempts restore files/registry/firewall with empty inherited backups; no owned product or installer processes; six fixture roots, staging, six updater downloads and twelve captures removed; initial off state restored; claim released",
+    "server": "Both trials disabled; owned manifest/drop-in/assets removed; service active with original product descriptor; ordinary responses match baseline and all five trial asset GET routes return 404"
   },
   "windowsFollowUp": {
-    "status": "automatic and GUI passed; negative runs active",
+    "status": "complete bounded Windows checkpoint",
     "httpsIsolationChecks": 8,
     "ordinaryResponsesByteIdentical": true,
     "autoFirewallRestoration": {
@@ -320,6 +381,110 @@
       "uninstallerDisplayName": "JSTorrent",
       "uninstallerDisplayVersion": "0.3.0",
       "sameInstallationDirectory": true
-    }
+    },
+    "wrong-windowsFirewallRestoration": {
+      "removedRules": [
+        {
+          "program": "jstorrent-io-daemon.exe",
+          "action": "Block"
+        },
+        {
+          "program": "jstorrent-io-daemon.exe",
+          "action": "Block"
+        },
+        {
+          "program": "rstorrent-desktop.exe",
+          "action": "Block"
+        },
+        {
+          "program": "rstorrent-desktop.exe",
+          "action": "Block"
+        }
+      ],
+      "restoration": "passed",
+      "unrelatedAddedRules": []
+    },
+    "interrupted-windowsFirewallRestoration": {
+      "removedRules": [
+        {
+          "program": "jstorrent-io-daemon.exe",
+          "action": "Block"
+        },
+        {
+          "program": "jstorrent-io-daemon.exe",
+          "action": "Block"
+        },
+        {
+          "program": "rstorrent-desktop.exe",
+          "action": "Block"
+        },
+        {
+          "program": "rstorrent-desktop.exe",
+          "action": "Block"
+        }
+      ],
+      "restoration": "passed",
+      "unrelatedAddedRules": []
+    },
+    "trialDisabled": true,
+    "disableVerification": {
+      "responseChecks": 8,
+      "ordinaryResponsesByteIdentical": true,
+      "candidateAssetRoutesDisabled": 5
+    },
+    "cleanup": {
+      "stageRemoved": true,
+      "fixtureRootsRemoved": 6,
+      "ownedProcesses": 0,
+      "removedCaptureFiles": 12,
+      "removedUpdaterDirectories": 6,
+      "attempts": [
+        {
+          "attempt": "auto",
+          "status": "passed",
+          "restoration": "passed",
+          "firewall": "passed",
+          "inheritedEmpty": true
+        },
+        {
+          "attempt": "gui",
+          "status": "failed",
+          "restoration": "passed",
+          "firewall": "passed",
+          "inheritedEmpty": true
+        },
+        {
+          "attempt": "gui2",
+          "status": "passed",
+          "restoration": "passed",
+          "firewall": "passed",
+          "inheritedEmpty": true
+        },
+        {
+          "attempt": "wrong",
+          "status": "passed",
+          "restoration": "passed",
+          "firewall": "passed",
+          "inheritedEmpty": true
+        },
+        {
+          "attempt": "interrupted",
+          "status": "failed",
+          "restoration": "passed",
+          "firewall": "passed",
+          "inheritedEmpty": true
+        },
+        {
+          "attempt": "interrupted2",
+          "status": "passed",
+          "restoration": "passed",
+          "firewall": "passed",
+          "inheritedEmpty": true
+        }
+      ]
+    },
+    "finalPowerState": "off",
+    "claimReleased": true,
+    "restartObservation": "Two immediate post-restart ordinary comparisons failed before readiness; subsequent comparisons passed byte-identical. Asset hashing precedes listener startup; wait for HTTPS readiness."
   }
 }
