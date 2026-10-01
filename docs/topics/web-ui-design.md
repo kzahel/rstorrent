@@ -2,6 +2,16 @@
 
 Topic: `web-ui-design`
 
+Accepted 2026-10-01, not yet qualified: Tactical
+[253](../tactical/253-chromeos-onboarding-recovery-and-physical-qualification.md)
+prioritizes ChromeOS troubleshooting from the pre-connection extension screen
+as well as the connected product. Show the known failed stage, one next action
+and manual Retry/Cancel. Unreachable Android is not proof Play is disabled or
+the app absent. Offer an explicit Linux setup route when Android installation
+or connection is unavailable, explain its separate library, and give an honest
+unsupported outcome when neither backend is available. Both physical devices
+must qualify these journeys; existing popup rendering tests do not suffice.
+
 Tactical [249](../tactical/249-jstorrent-brand-and-extension-refresh.md) restores
 JSTorrent display names and the original blue-box icon in the shared header,
 authentication gates, browser favicons and packaged connection screen. The

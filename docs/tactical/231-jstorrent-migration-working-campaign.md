@@ -91,6 +91,12 @@ remain an explicit installed qualification slice before shipment.
 
 ## Work Tracker
 
+Maintainer direction on 2026-10-01 prioritizes ChromeOS onboarding/recovery
+qualification on both physical Chromebooks, including pre-Play setup,
+installation failures and explicit Linux fallback. Tactical
+[253](253-chromeos-onboarding-recovery-and-physical-qualification.md) owns that
+bounded next slice. The desktop rollout remains independently sequenced.
+
 | ID | Work | State | Exit evidence / next action |
 | --- | --- | --- | --- |
 | M-01 | Desktop extension control | Linux/Windows/macOS installed checkpoint complete in [`232`](232-desktop-extension-control.md); full rehearsal partial | Protected bootstrap, native picker, controlled bytes, shared library, singleton and Quit pass. Bounded intent/tray/browser lifecycle passes in [234](234-desktop-user-intent-and-background-lifecycle.md), including 64 reload/worker-stop cycles per guest and prompt view cleanup. Linux Quit/launch overlap is repaired in [235](235-linux-quit-launch-handoff.md). Broader endurance remains separate. |
@@ -100,6 +106,7 @@ remain an explicit installed qualification slice before shipment.
 | M-05 | Installed desktop replacement rehearsal | Depends on M-01/03/04 | Old installed JSTorrent -> exact candidate -> restart/repair/rollback on macOS, Windows and Linux |
 | M-06 | Extension update coordination | [236](236-desktop-compatibility-refusal-and-recovery.md)/[237](237-macos-windows-package-recovery.md): selected three-platform beta matrix passes | Terminal refusal, attach-only recovery, open-page replacement, credential rotation, repair and same-schema rollback pass. [238](238-signed-desktop-channel-recovery.md) passes three-platform signed updating of an older published cohort. [240](240-signed-desktop-control-qualification.md) adds signed current-source 801 publication, native updates and installed control/helper qualification. Original legacy pairs and ChromeOS shipment gates remain open. |
 | M-07 | JSTorrent replacement cohort and graduation | Branding in [249](249-jstorrent-brand-and-extension-refresh.md), production candidates in [250](250-jstorrent-production-identity-candidates.md); publication not scheduled | [Full cutover checklist](../jstorrent-cutover-checklist.md): original-key provisioning, exact signed/store artifacts, installed updating/import/recovery, source baseline, observation window and stop thresholds; no synchronized delivery requirement |
+| M-08 | ChromeOS onboarding, troubleshooting and Linux fallback | Priority Ready: [253](253-chromeos-onboarding-recovery-and-physical-qualification.md) | Both physical devices; pre-Play/installation-failure journeys; explicit Linux choice with separate-library guidance; repeated verified downloads and recovery. No new hardware pass claimed. |
 
 No entry above implies feature completion from source presence alone. Keep
 unrelated release and engine campaigns running under their own ownership.

@@ -1264,6 +1264,16 @@ hosted repeats.
 
 ### Ready
 
+- **Priority ChromeOS qualification: Tactical `253`** covers pre-Play setup,
+  Android installation/connection failures, in-product troubleshooting and
+  explicit Crostini fallback on both available physical Chromebooks. Its
+  install-to-verified-download, recovery and bounded repetition matrix gates
+  ChromeOS rollout; existing emulator/one-device evidence is insufficient.
+  See [the acceptance plan](../tactical/253-chromeos-onboarding-recovery-and-physical-qualification.md).
+  Retain physical passes from 167/168/169/178/194/198/200; new work targets
+  pre-Play/installation failures, the second device, current-candidate
+  regression and unrun lifecycle/endurance states. New execution has not started.
+
 - Explicitly select the future first supported version and freeze only its
   fresh persistence/API baseline after the prepared candidate inventory and
   compatibility matrix pass. Tactical `216` supplies local diagnostics and

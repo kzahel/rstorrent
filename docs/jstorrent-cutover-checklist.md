@@ -176,6 +176,21 @@ rows independently; those tests use disposable signing and owned emulators.
 - [ ] **A-05 Historical cohorts:** qualify selected Play versions, companion remote
   KV and browser-local fallback/older routing explicitly. Crostini automatic
   migration stays out of scope and its library remains separate.
+- [ ] **A-06 ChromeOS onboarding:** on both physical Chromebooks, qualify Play
+  not enabled/setup unfinished, real app installation, unavailable/failed
+  installation and mixed-version recovery. Record actual versus injected
+  states, exact artifacts and every unrun condition; sideload/emulator evidence
+  cannot close the Play journey.
+- [ ] **A-07 Troubleshooting and Linux fallback:** before backend connection,
+  explain the observed failed stage and manual next action; offer explicit
+  Crostini setup where permitted. Qualify Linux-not-enabled, package absent,
+  stopped VM and unshared folder. Explain separate libraries, preserve Android
+  state and show an unsupported outcome if neither backend is available.
+- [ ] **A-08 Physical repetition:** Tactical
+  [253](tactical/253-chromeos-onboarding-recovery-and-physical-qualification.md)'s
+  bounded cold-launch, verified transfer, view detach, interrupted connection,
+  storage repair, restart and lifecycle cohort passes on both devices. Every
+  unqualified route remains explicit before ChromeOS rollout.
 
 ## Product, Recovery And Release Decision
 

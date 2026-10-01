@@ -637,6 +637,25 @@ gaps rather than reproducing QuickJS or unsupported feature policy.
 
 ### ChromeOS choice and status
 
+Maintainer direction on 2026-10-01 prioritizes full user-journey qualification
+on both available physical Chromebooks, including Google Play not yet enabled,
+failed/unavailable Android installation and an explicit Crostini route.
+Tactical [253](../tactical/253-chromeos-onboarding-recovery-and-physical-qualification.md)
+owns the bounded onboarding, in-product troubleshooting and physical matrix.
+Existing engine/emulator/one-device evidence does not close this gate.
+Troubleshooting must be reachable before backend connection and distinguish
+observed failure stages from unknown Play/app/policy state. Android setup and
+connection failures offer an explicit Linux choice where supported; switching
+backends retains the separate-library contract below. Neither available means
+honest unsupported guidance, not an installation/retry loop. This is a ChromeOS
+rollout priority and does not reinstate synchronized desktop/Android delivery.
+The same direction selects host-built artifacts from an x86_64 Linux
+development machine; physical Chromebooks need only installed runtime packages,
+not Rust/build toolchains. Portable recovery presentation and deterministic
+tests can proceed on the current workstation, and physical Android-only cases
+do not depend on enabling Crostini. Exact Linux runtime compatibility remains
+a package/device gate under Tactical 253.
+
 The first-run UX should emphasize two backend choices:
 
 - **Use the Android app**, with optional extension remote control after the

@@ -2,6 +2,14 @@
 
 Topic: `client-surfaces`
 
+Priority accepted 2026-10-01: qualify ChromeOS onboarding and recovery on both
+available physical Chromebooks, starting with Play not enabled or Android
+installation failing. Tactical
+[253](../tactical/253-chromeos-onboarding-recovery-and-physical-qualification.md)
+owns pre-connection troubleshooting, explicit Linux fallback and bounded
+end-to-end hardware repetitions. Existing implemented Android/Crostini paths
+are foundations, not evidence that these customer journeys pass.
+
 Tactical [251](../tactical/251-jstorrent-ci-candidates-and-installed-update.md)
 completes a bounded production-identity CI attempt without publication. Windows
 and both Linux package lanes pass; Android passes building/tests/lint then fails
