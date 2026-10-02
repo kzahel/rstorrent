@@ -92,7 +92,7 @@ linuxButton.addEventListener("click", async () => {
       throw new Error(response?.error?.message || "Chrome could not open the Linux preview.");
     }
     linuxStatus.textContent =
-      "Opened. If Chrome shows that the page is unavailable, launch RSTorrent for ChromeOS Linux from the Chromebook Launcher.";
+      "Page requested; Linux connection is not confirmed. Use its connection check and troubleshooting if Linux is stopped or unavailable.";
   } catch (error) {
     linuxStatus.textContent =
       error instanceof Error

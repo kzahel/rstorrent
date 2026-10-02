@@ -69,9 +69,15 @@ The extension detects and opens the locally installed RSTorrent desktop
 application and performs the ChromeOS Linux tab handoff. Its regular
 permissions are `nativeMessaging` and `storage`; the user may grant only the
 optional `http://100.115.92.2/*` ARC host permission from the explicit Android
-connect action. It has no content scripts, collects no user data or analytics,
+connect action, or `http://penguin.linux.test/*` from the offline Linux
+connection page's explicit Retry. Neither is granted automatically. It has no content scripts,
 and does not fetch executable code from either backend. Its CSP admits only the
-five fixed RSTorrent Android HTTP/WebSocket ports. External messaging remains
+five fixed RSTorrent Android HTTP/WebSocket ports, reviewed legacy discovery
+ports, desktop loopback control and exact Linux port 3030. The Linux page checks
+bounded product/protocol health before opening the separate Linux library and
+keeps offline troubleshooting available on failure. Ordinary explicit connection
+fetches a fresh HTML document to avoid old cached package asset references;
+warm handoff focuses an existing connected tab without reloading it. External messaging remains
 manifest-limited to `http://penguin.linux.test/*`, while the worker separately
 requires the exact Crostini port, path, message keys, protocol version, and
 sender tab.

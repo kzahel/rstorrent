@@ -26,6 +26,8 @@ export const packagedFiles = Object.freeze([
   "popup/platform.js",
   "crostini/setup.html",
   "crostini/setup.css",
+  "crostini/connect.html",
+  "crostini/connect.js",
   "src/service-worker.js",
   "src/product-metrics.js",
   ...companionPackagedFiles,
@@ -87,9 +89,9 @@ export function validateSource(production = false) {
   }
   if (
     JSON.stringify(manifest.optional_host_permissions) !==
-    JSON.stringify(["http://100.115.92.2/*"])
+    JSON.stringify(["http://100.115.92.2/*", "http://penguin.linux.test/*"])
   ) {
-    fail("optional host permission must contain only the exact ARC host");
+    fail("optional host permission must contain only the exact ARC and Crostini hosts");
   }
   if (JSON.stringify(manifest.host_permissions) !== JSON.stringify(["http://127.0.0.1/*"])) {
     fail("desktop control requires only the exact loopback host permission");
@@ -123,7 +125,7 @@ export function validateSource(production = false) {
         ),
       )
       .join(" ") + " " + [7800, 7805, 7814, 7827, 7844]
-        .map((port) => `http://100.115.92.2:${port}`).join(" ") + " ws://127.0.0.1:*";
+        .map((port) => `http://100.115.92.2:${port}`).join(" ") + " ws://127.0.0.1:* http://penguin.linux.test:3030";
   if (manifest.content_security_policy?.extension_pages !== expectedCsp) {
     fail("extension-page CSP must contain only local scripts and the five exact ARC endpoints");
   }
@@ -144,6 +146,7 @@ export function validateSource(production = false) {
         (url) =>
           url !== "http://penguin.linux.test:3030" &&
           url !== "http://100.115.92.2/*" &&
+          url !== "http://penguin.linux.test/*" &&
           url !== "https://jstorrent.com/privacy.html" &&
           url !== "https://jstorrent.com/uninstall.html",
       )
@@ -171,6 +174,11 @@ export function validateSource(production = false) {
   const setup = readFileSync(path.join(extensionRoot, "crostini/setup.html"), "utf8");
   if (/<script/iu.test(setup) || /\son[a-z]+\s*=/iu.test(setup)) {
     fail("Crostini setup must remain a static offline document");
+  }
+  const connection = readFileSync(path.join(extensionRoot, "crostini/connect.html"), "utf8");
+  if (/<script(?![^>]*\bsrc=)/iu.test(connection) || /\son[a-z]+\s*=/iu.test(connection) ||
+      !connection.includes('<script type="module" src="connect.js"></script>')) {
+    fail("Linux connection must use only its local external module");
   }
   return manifest;
 }

@@ -194,7 +194,7 @@ test("exact external Crostini handoff reuses its sender tab", async () => {
     ok: true,
     result: { kind: "crostini_ui", status: "opened" },
   });
-  assert.equal(tabs.get(41).url, "http://penguin.linux.test:3030/");
+  assert.match(tabs.get(41).url, /^http:\/\/penguin\.linux\.test:3030\/\?connect=[a-f0-9-]{36}$/u);
   assert.equal(stored.crostiniUiTabId, 41);
   assert.deepEqual(focusedWindow, { windowId: 7, update: { focused: true } });
 });
@@ -216,16 +216,27 @@ test("repeated handoff focuses one remembered tab and closes the disposable tab"
     },
   );
   assert.equal(response.result.status, "focused");
+  assert.equal(tabs.get(41).url, "http://penguin.linux.test:3030/");
   assert.equal(tabs.get(41).active, true);
   assert.equal(tabs.has(42), false);
   assert.deepEqual(focusedWindow, { windowId: 7, update: { focused: true } });
 });
 
-test("warm popup action creates the fixed UI tab without probing the backend", async () => {
+test("popup requests an offline Linux connection tab without probing the backend", async () => {
   const response = await sendInternal({ type: "crostiniBootstrap", op: "open" });
-  assert.equal(response.result.status, "opened");
-  assert.equal(tabs.get(100).url, "http://penguin.linux.test:3030/");
+  assert.equal(response.result.status, "requested");
+  assert.equal(tabs.get(100).url, chrome.runtime.getURL("crostini/connect.html"));
   assert.equal(stored.crostiniUiTabId, 100);
+});
+
+test("real Linux handoff replaces a remembered recovery page and removes its disposable tab", async () => {
+  stored.crostiniUiTabId = 41;
+  tabs.set(41, { id: 41, windowId: 7, url: chrome.runtime.getURL("crostini/connect.html") });
+  tabs.set(42, { id: 42, windowId: 8, url: "http://penguin.linux.test:3030/launch-chromeos" });
+  await sendExternal({ type: "openCrostiniUi", protocolVersion: 1 },
+    { url: "http://penguin.linux.test:3030/launch-chromeos", tab: { id: 42 } });
+  assert.match(tabs.get(41).url, /^http:\/\/penguin\.linux\.test:3030\/\?connect=[a-f0-9-]{36}$/u);
+  assert.equal(tabs.has(42), false);
 });
 
 test("Android action attempts the fixed launch and opens one packaged React tab", async () => {

@@ -19,6 +19,15 @@ expiry, terminal cancellation, foreground unavailable-service recovery and the
 explicit Linux guide link on cohort A. Full physical/store journeys remain
 open; see the tactical for artifact and per-device limits.
 
+The Linux follow-up adds a packaged offline connection page with a ten-second,
+4-KiB exact-host health bound, explicit optional browser access and joined manual
+Retry/Cancel. A failed fetch does not diagnose DNS or Linux/package/policy state.
+Help explains normal Terminal startup and preservation-safe Linux shutdown.
+Successful compatibility checks request fresh HTML to avoid an older installed
+build's cached asset references. Existing connected warm handoff stays focused
+without reload. Extension tests and injected packaged-browser/cache cases pass;
+current isolated ChromeOS Linux browser file-picker bytes verify independently.
+
 Accepted 2026-10-01, not yet qualified: Tactical
 [253](../tactical/253-chromeos-onboarding-recovery-and-physical-qualification.md)
 prioritizes ChromeOS troubleshooting from the pre-connection extension screen

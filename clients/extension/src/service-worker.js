@@ -5,6 +5,7 @@ const PROTOCOL_VERSION = 1;
 const CROSTINI_ORIGIN = "http://penguin.linux.test:3030";
 const CROSTINI_ROOT = `${CROSTINI_ORIGIN}/`;
 const CROSTINI_LAUNCH_URL = `${CROSTINI_ORIGIN}/launch-chromeos`;
+const CROSTINI_CONNECTION_PAGE = "crostini/connect.html";
 const CROSTINI_TAB_KEY = "crostiniUiTabId";
 const ANDROID_LAUNCH_URL = "rstorrent://chromeos-companion";
 const ANDROID_PAGE = "companion/companion.html";
@@ -228,6 +229,15 @@ async function focusOrOpenCrostiniTab(handoffTabId = null) {
   if (remembered !== null) {
     try {
       await activateTab(remembered);
+      if (handoffTabId !== null) {
+        // A real backend handoff can recover a remembered offline connection tab.
+        const contexts = await chrome.runtime.getContexts({
+          contextTypes: ["TAB"], documentUrls: [chrome.runtime.getURL(CROSTINI_CONNECTION_PAGE)],
+        });
+        if (contexts.some(context => context.tabId === remembered)) {
+          await chrome.tabs.update(remembered, { url: freshCrostiniRoot() });
+        }
+      }
       if (handoffTabId !== null && handoffTabId !== remembered) {
         await chrome.tabs.remove(handoffTabId);
       }
@@ -240,7 +250,7 @@ async function focusOrOpenCrostiniTab(handoffTabId = null) {
   if (handoffTabId !== null) {
     try {
       const tab = await chrome.tabs.update(handoffTabId, {
-        url: CROSTINI_ROOT,
+        url: freshCrostiniRoot(),
         active: true,
       });
       if (Number.isInteger(tab.windowId)) {
@@ -253,7 +263,7 @@ async function focusOrOpenCrostiniTab(handoffTabId = null) {
     }
   }
 
-  const tab = await chrome.tabs.create({ url: CROSTINI_ROOT, active: true });
+  const tab = await chrome.tabs.create({ url: chrome.runtime.getURL(CROSTINI_CONNECTION_PAGE), active: true });
   if (!Number.isInteger(tab.id)) {
     return {
       ok: false,
@@ -264,5 +274,9 @@ async function focusOrOpenCrostiniTab(handoffTabId = null) {
     };
   }
   await rememberCrostiniTab(tab.id);
-  return { ok: true, result: { kind: "crostini_ui", status: "opened" } };
+  return { ok: true, result: { kind: "crostini_ui", status: "requested" } };
+}
+
+function freshCrostiniRoot() {
+  return `${CROSTINI_ROOT}?connect=${crypto.randomUUID()}`;
 }

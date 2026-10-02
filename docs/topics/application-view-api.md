@@ -8,8 +8,12 @@ keeps the native companion wire/API unchanged. The page owns bounded discovery
 and a validated 1..120-second approval window; Cancel joins its transport/view
 owner and explains the separately owned Android request. Real cohort-A
 approval/rejection/declared-window expiry, disconnect/manual retry and
-shared-library recovery are bounded candidate-page passes; Linux API runtime
-evidence remains distinct from its failing normal browser handoff.
+shared-library recovery are bounded candidate-page passes. The Linux page uses
+the unchanged product/build/protocol health endpoint before handing off to the
+existing product UI. Normal Terminal startup restores missing Linux registration,
+and an isolated current browser now connects and verifies file-picker intake.
+Runtime-only hour/repetition evidence retains its original limit; store and
+signed installed handoff remain open.
 
 Tactical [244](../tactical/244-unavailable-storage-presentation.md) corrects
 shared React adaptation of `awaiting_storage`: blocked progress becomes Needs

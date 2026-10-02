@@ -662,8 +662,11 @@ node scripts/verify-chromeos-onboarding.mjs target/extension/jstorrent-1.1.2.zip
 ```
 
 Install Playwright Chromium if absent. The runner extracts the exact ZIP,
-retains its manifest-derived origin, drives six explicitly injected scenarios
-and removes its browser/profile/staging state. It does not contact a device.
+retains its manifest-derived origin, drives six Android and ten Linux explicitly
+injected scenarios, plus a real-HTTP-cache package-replacement fixture,
+and removes its browser/profile/staging state. The cache fixture binds owned
+loopback port 3030 and maps only the test browser's Linux hostname to it; leave
+that port free and run archive checks sequentially. It does not contact a device.
 
 ## Packaging And Running The Linux Headless Service
 

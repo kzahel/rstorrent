@@ -10,9 +10,13 @@ pairing/manual recovery and extension file-input evidence. Both backends finish
 controlled 60-minute byte-verified observations on cohort A; native actual
 Remove/keep and detached-view completion pass bounded checks. Final approval
 expiry/cancellation and foreground unavailable-service guidance pass without
-inferring Play, app presence or policy. Owned test state is restored. Normal
-Crostini launcher/browser registration fails; runtime success does not close
-fallback. Full physical/store acceptance remains open. Cohort A retains
+inferring Play, app presence or policy. The follow-up proves normal Terminal
+startup restores missing Linux hostname/container registration. The current
+isolated Linux browser connects and verifies real file-picker intake. Its offline
+connection page offers exact-host optional access, bounded checks and manual
+recovery; fresh document navigation avoids retained old HTML cache. Current
+signed installation/registered candidate Launcher and full physical/store
+acceptance remain open. Cohort A retains
 legacy/debug apps; cohort B is presently unreachable from this controller.
 Neither injected presentation nor appliance health qualifies Play installation.
 

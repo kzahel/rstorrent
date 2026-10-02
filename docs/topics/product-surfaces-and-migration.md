@@ -10,7 +10,9 @@ switch. Exact host-built candidates pass bounded cohort-A Android and Linux
 runtime evidence, including three recovery repetitions per backend and both
 controlled 60-minute byte-verified observations. Owned test state is restored.
 Full physical acceptance remains open: normal Linux launcher/browser
-registration fails, real Play/store journeys are unrun and cohort B is
+registration failed in the administrative LXC session but normal Terminal
+startup restores it. The isolated current Linux browser connects and verifies
+file-picker intake; real Play/store journeys are unrun and cohort B is
 unreachable at its private inventory address. Cutover A-06/07/08 remain
 unchecked.
 
@@ -666,8 +668,15 @@ development machine; physical Chromebooks need only installed runtime packages,
 not Rust/build toolchains. Portable recovery presentation and deterministic
 tests can proceed on the current workstation, and physical Android-only cases
 do not depend on enabling Crostini. The exact Ubuntu 22.04 x86_64 package now resolves dependencies and runs in
-cohort A's Debian 12 container. Its normal launcher/browser registration still
-fails; runtime/API byte checks cannot qualify the user fallback journey.
+cohort A's Debian 12 container. The administrative-start registration failure
+is bounded to that path: ordinary Terminal startup registers the container and
+hostname again. An offline connection page requests only optional access to
+that exact hostname, validates bounded product/protocol health, retains manual
+Retry/Cancel/help on failure and opens a fresh Linux document on success.
+An older cached HTML shell must not retain obsolete package asset references;
+an already connected warm tab is focused without reloading it. Isolated current
+browser file-picker intake now passes, while current signed installation and
+registered candidate Launcher delivery remain separate gates.
 Cohort-A isolated Android approval/retry, shared-library recovery and controlled
 file intake pass bounded slices. Both routes finish controlled 60-minute
 observations and three independently verified recovery repetitions; Linux is

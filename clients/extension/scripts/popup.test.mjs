@@ -88,7 +88,8 @@ async function runPopup({ os = "mac", popupView = false, granted = true, launchR
     },
   });
   await new Promise(resolve => setImmediate(resolve));
-  return { requests, launch: () => element("#launch").click(), android: () => element("#connect-android").click(), androidStatus: () => element("#android-status").textContent };
+  return { requests, launch: () => element("#launch").click(), android: () => element("#connect-android").click(), androidStatus: () => element("#android-status").textContent,
+    linux: () => element("#launch-linux").click(), linuxStatus: () => element("#linux-status").textContent };
 }
 
 for (const os of ["mac", "win", "linux"]) {
@@ -123,4 +124,12 @@ test("rejected OS launch remains unknown app and Play state", async () => {
   await popup.android();
   assert.match(popup.androidStatus(), /did not accept the launch request/u);
   assert.match(popup.androidStatus(), /installation and Play availability are unknown/u);
+});
+
+test("Linux tab request is not presented as a connected application", async () => {
+  const popup = await runPopup({ os: "cros" });
+  await popup.linux();
+  assert.equal(popup.requests.some(request => request.type === "crostiniBootstrap"), true);
+  assert.match(popup.linuxStatus(), /connection is not confirmed/u);
+  assert.doesNotMatch(popup.linuxStatus(), /^Opened/u);
 });

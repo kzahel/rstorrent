@@ -607,3 +607,44 @@ states and retain artifact limits. Generic OS diagnosis/control belongs in
 Machine Control. Restore initial VM/window state and remove only owned fixtures.
 Stop when bounded portable recovery and proportional current physical behavior
 are recorded, with inaccessible scenarios still open in the existing gap matrix.
+
+### Linux Portable Recovery Checkpoint
+
+The extension now opens packaged `crostini/connect.html` instead of a bare
+possibly unavailable Linux URL. Popup copy says connection is unconfirmed.
+The page checks existing optional access, requests only the exact Linux host
+through explicit Retry, and validates the unchanged health product/build/launch
+protocol before navigating. Its request deadline is ten seconds and its body
+bound is 4 KiB, including responses without Content-Length. Redirects fail closed;
+oversized, malformed and failed HTTP responses cancel their body. Retry is manual,
+Cancel joins transport work, and departure/bfcache restoration cannot resurrect
+an attempt. No broad permission or alternate endpoint is admitted. Static help
+explains ordinary Terminal startup, the confirmed Chrome hostname error and
+preservation-safe shutdown without deleting Linux or its library.
+
+Initial real browser navigation exposed an older HTML shell referencing an
+absent old asset; the candidate on disk and its no-store HTTP response instead
+reference the current asset. Fetching current HTML renders the connected React
+library. Fresh explicit connection/backend handoff now uses a non-authoritative
+random document query to bypass retained old cache entries without clearing
+personal browser caches. A real HTTP-cache fixture independently proves ordinary
+navigation still retrieves the old shell, while the new connection retrieves the
+current document. Existing warm connected-tab handoff does not reload that tab.
+
+`npm test --prefix clients/extension` passes 54 tests and source validation.
+Both beta and production packages pass CSP/inventory validation and
+`node scripts/verify-chromeos-onboarding.mjs <archive>`: six injected Android,
+ten injected Linux and one HTTP-cache replacement case per archive. All four
+localization catalogs pass; the shared React/Rust/application contract is
+unchanged. Source/fixture checks do not qualify a store installation or real DNS
+diagnosis. Native APK/Crostini package hashes retain their previous limits.
+
+Physical preliminary results: normal Terminal startup restores hostname and
+ordinary container-targeted vsh, including a stopped-VM repetition. A separate
+unpacked test identity with exact candidate page assets permits real optional
+permission denial/grant without changing either inherited extension. The current
+package serves connected React through the normal hostname and a real ChromeOS
+file picker feeds the controlled 64-KiB torrent; independently checked bytes hash
+to `9d18c16c51954b29cf228754f795ccdd5fd1aecf`. Stopped Linux returns to offline
+unknown-state guidance and manual Retry. Durable-profile VM recovery and final
+restoration are recorded at the follow-up completion checkpoint below.
