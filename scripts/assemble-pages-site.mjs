@@ -51,7 +51,7 @@ for (const path of await filesBelow(targetRoot)) {
   }
   if (
     relativePath.startsWith("assets/") &&
-    !/[.-][A-Za-z0-9_-]{8,}\.(?:css|js|wasm)$/.test(relativePath)
+    !/[.-][A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/.test(relativePath)
   ) {
     throw new Error(`remote asset is not content-hashed: ${relativePath}`);
   }

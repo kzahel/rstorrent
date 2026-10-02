@@ -6,6 +6,14 @@ import { candidateInputs, validateCandidate } from "./validate-jstorrent-candida
 test("production candidate retains the exact existing identities and public trust", () => {
   assert.doesNotThrow(() => validateCandidate(candidateInputs()));
 });
+test("debug isolation permits the guarded qualification and upgrade overrides across formatting", () => {
+  const data = candidateInputs();
+  data.gradle = data.gradle.replace(
+    'qualificationPackage ?: upgradePackage ?: "org.rstorrent.bootstrap"',
+    'qualificationPackage\n            ?: upgradePackage\n            ?: "org.rstorrent.bootstrap"',
+  );
+  assert.doesNotThrow(() => validateCandidate(data));
+});
 for (const [name, mutate] of [
   ["beta desktop identity", (d) => { d.desktop.identifier = "com.jstorrent.rstorrent"; }],
   ["beta updater route", (d) => { d.desktop.plugins.updater.endpoints = ["https://updates.graehlarts.com/rstorrent/tauri/{{target}}/{{arch}}/{{current_version}}"]; }],
@@ -17,6 +25,7 @@ for (const [name, mutate] of [
   ["non-upgrading Android versionCode", (d) => { d.gradle = d.gradle.replace(/^\s*versionCode = \d+$/mu, "        versionCode = 24"); }],
   ["wrong Android package", (d) => { d.gradle = d.gradle.replace('applicationId = "com.jstorrent.app"', 'applicationId = "com.jstorrent.rstorrent"'); }],
   ["lost debug isolation", (d) => { d.gradle = d.gradle.replace('upgradePackage ?: "org.rstorrent.bootstrap"', 'upgradePackage ?: "com.jstorrent.app"'); }],
+  ["production default before test overrides", (d) => { d.gradle = d.gradle.replace('qualificationPackage ?: upgradePackage', '"com.jstorrent.app" ?: upgradePackage'); }],
 ]) test(`rejects ${name}`, () => {
   const data = candidateInputs(); mutate(data);
   assert.throws(() => validateCandidate(data));

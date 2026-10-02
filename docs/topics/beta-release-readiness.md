@@ -2,6 +2,14 @@
 
 Topic: `beta-release-readiness`
 
+Tactical [254](../tactical/254-ci-candidate-and-pages-validation.md) repairs
+the latest CI candidate-identity check for the isolated ChromeOS qualification
+override and Pages assembly for the hashed JSTorrent PNG. All 63 affected
+release/assembly tests, actual remote/website builds and local assembly pass
+under Node 22.23.3. Debug isolation, production trust and immutable-asset guards
+remain enforced. Hosted runs `36941113343`/`36941112964` remain failed until
+new changes are pushed and rerun; no deployment or release gate is closed.
+
 Tactical
 [253](../tactical/253-chromeos-onboarding-recovery-and-physical-qualification.md)
 adds host-built isolated Android/extension artifacts and a native x86_64 Ubuntu

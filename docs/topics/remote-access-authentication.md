@@ -2,6 +2,13 @@
 
 Topic: `remote-access-authentication`
 
+Tactical [254](../tactical/254-ci-candidate-and-pages-validation.md) restores
+Pages assembly of the remote client's hashed JSTorrent PNG. Hashed images/fonts
+are accepted alongside code/Wasm; unhashed assets and service workers remain
+rejected. CLI regressions and an actual remote/website build with independent
+manifest digest checks pass locally. No remote authentication/runtime behavior
+or deployed artifact changes; hosted/deployed evidence remains separate.
+
 Status: Direction and investigation background accepted from maintainer
 discussion on 2026-08-04. Controlled foundation Tactical
 [`190`](../tactical/190-opaque-wasm-relay-foundation.md) and local

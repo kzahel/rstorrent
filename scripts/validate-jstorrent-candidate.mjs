@@ -49,7 +49,11 @@ export function validateCandidate({ trust, desktop, extension, certificate, grad
   assert(gradle.includes(`applicationId = "${trust.android.package}"`));
   const code = Number(gradle.match(/^\s*versionCode = (\d+)$/mu)?.[1]);
   assert(Number.isInteger(code) && code > trust.android.baselineVersionCode && code <= 2100000000, "Android versionCode does not replace the legacy baseline");
-  assert(gradle.includes('variant.applicationId.set(upgradePackage ?: "org.rstorrent.bootstrap")'), "normal debug identity must stay isolated");
+  assert.match(
+    gradle,
+    /\bvariant\.applicationId\.set\(\s*qualificationPackage\s*\?:\s*upgradePackage\s*\?:\s*"org\.rstorrent\.bootstrap"\s*\)/u,
+    "normal debug identity must stay isolated",
+  );
   return { desktop: desktop.version, androidVersionCode: code, extension: extension.version };
 }
 
