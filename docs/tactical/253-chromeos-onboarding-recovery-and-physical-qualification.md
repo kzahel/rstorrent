@@ -2,6 +2,8 @@
 
 Status: **Active, 2026-10-02.** Work started from clean, current main `223d5126`.
 Portable implementation and bounded cohort-A physical slices have landed.
+The Linux follow-up restores ordinary registration and adds offline connection
+recovery plus current browser/file-picker and source-offline VM recovery evidence.
 Full two-device/store/fallback acceptance remains open.
 
 ## Motivation And Outcome
@@ -422,12 +424,14 @@ attempt was not treated as completed removal. The hour observation includes
 these two explicit native owner restarts and their recovery, rather than claiming
 an uninterrupted session.
 
-Normal Crostini browser navigation returns `net::ERR_NAME_NOT_RESOLVED` for the
-registered `penguin.linux.test` authority. Normal container-targeted vsh still
-reports missing container despite healthy candidate runtime through LXC. Existing
-guest agents are observed, not repaired. This is a current infrastructure failure
-blocking the supported launcher/browser journey; no alternate proxy or policy
-bypass turns the runtime pass into fallback acceptance. Reboot remains unrun
+At this administrative-runtime checkpoint, Crostini browser navigation returned
+`net::ERR_NAME_NOT_RESOLVED` for the expected `penguin.linux.test` authority.
+Normal container-targeted vsh reported a missing container despite healthy candidate
+runtime through LXC. Existing guest agents were observed, not repaired. This
+blocked the browser journey at that checkpoint; the Linux follow-up below proves
+ordinary Terminal startup restores registration and records current browser
+acceptance separately. No alternate proxy or policy bypass turns the earlier
+runtime pass into fallback acceptance. Reboot remains unrun
 without a declared post-boot login source; sleep/wake is unrun under the inherited
 always-awake appliance policy. Neither prerequisite is silently changed.
 
@@ -474,17 +478,17 @@ its explicit target is unreachable; appliance history does not close any row.
 | Installed Android stopped / pairing recovery | Isolated current APK cold launches and real candidate-page approval/rejection, disconnect/manual retry pass; inherited production/debug apps unchanged. Optional permission denial is injected only. | Unrun: SSH/network unavailable. |
 | Old/new app and extension combinations | Retain 248's emulator four-pair contract. Current isolated APK/candidate page assets pass a bounded physical slice; inherited popup/worker and production store pair are not replaced. Other physical combinations remain unrun. | Unrun: SSH/network unavailable. |
 | Linux not enabled / package absent | Preserve inherited VM/container/package. Exact unsigned candidate runtime passes in isolated temporary profile; new OS setup and signed current installation unrun. Retain bounded 167/169 signed historical installation. | Unrun: SSH/network unavailable. |
-| Linux stopped / browser restart | VM starts, existing LXC container runs; normal vsh/Cicerone registration and browser DNS fail. Three owned gateway restart repetitions pass runtime only. Supported launcher/browser recovery remains failed/open. | Unrun: SSH/network unavailable. |
+| Linux stopped / browser restart | Administrative LXC startup failed normal registration; follow-up normal Terminal startup restores hostname and vsh. Current isolated connection page, stopped-VM manual Retry and durable-profile completed-row/byte retention pass. Current installed candidate Launcher remains unrun. Three earlier gateway repetitions remain runtime only. | Unrun: SSH/network unavailable. |
 | Android grant / Linux share absent or revoked | Current owned SAF picker commits a root and transfers verified bytes. Retain bounded 178/194 repair/share passes; current revoked/share-repair repetitions are unrun. | Unrun: SSH/network unavailable. |
-| Both backends / separate libraries | Independent native and Linux-runtime profiles independently verify the 64-KiB fixture; guide/header explain explicit backend/library choice. Supported Linux GUI switch is blocked by registration/DNS failure. | Unrun: SSH/network unavailable. |
-| Magnet / local torrent / detached view | Native magnet and actual extension file input pass. 1-MiB payload absent before view detach later verifies SHA-1 `27b016b8f330f063a2776225cd2242821cbb8b40`. Native OS file picker is unrun. Linux magnet/byte-upload runtime passes, browser journey fails. | Unrun: SSH/network unavailable. |
-| Interrupted transfer / remove / source offline | Controlled ten-second seed pause is injected source interruption, not real device network loss. Native actual Remove/keep then owner restart retains bytes/removes row; interrupted pre-ack Remove retains row/bytes. Linux runtime remove/keep/restart passes. | Unrun: SSH/network unavailable. |
+| Both backends / separate libraries | Independent native and Linux profiles verify controlled bytes; guide/header explain explicit backend/library choice. Follow-up normal-hostname Linux browser connects to its separate owned library. Full current worker/store-pair switching remains unrun. | Unrun: SSH/network unavailable. |
+| Magnet / local torrent / detached view | Native magnet and actual extension file input pass. 1-MiB payload absent before view detach later verifies SHA-1 `27b016b8f330f063a2776225cd2242821cbb8b40`. Native OS file picker is unrun. Linux magnet/byte-upload runtime passes; follow-up real ChromeOS file picker and connected Linux browser independently verify 64 KiB. | Unrun: SSH/network unavailable. |
+| Interrupted transfer / remove / source offline | Controlled ten-second seed pause is injected source interruption, not real device network loss. Native actual Remove/keep then owner restart retains bytes/removes row; interrupted pre-ack Remove retains row/bytes. Linux runtime remove/keep/restart passes. Follow-up Linux browser manual recovery after VM stop/start retains its completed row and exact bytes with the source offline. | Unrun: SSH/network unavailable. |
 | Sleep/wake / real network loss / reboot | Unrun: preserve always-awake availability policy and remote transport; no declared post-reboot unlock source. No destructive Play/policy changes or generic OS repair. | Unrun: SSH/network unavailable. |
 | Three repetitions / 60-minute observation | Three independent native repetitions and three Linux-runtime repetitions pass; both controlled 60-minute observations finish with independently verified bytes. One route is not the other route's GUI acceptance. | Unrun: SSH/network unavailable. |
 
 Next cohort prerequisites: reachable cohort B with captured initial state;
 app-absent disposable Play setup for real installation; original-certificate
-store candidate; supported Linux container/launcher registration; declared
+store candidate; current signed Linux installation/registered Launcher; declared
 post-reboot unlock path and an applicable sleep/network-loss policy. No signed
 branding candidate, desktop GUI/store-pair, controlled-repair or broader-cohort
 gate is closed by this ChromeOS work.
@@ -571,7 +575,7 @@ Cohort B's final read-only network preflight still reports No route to host;
 it is never mutated. No push, tag, store upload or production update is made.
 
 Next executable work is the gap matrix, starting with reachable cohort B and
-initial-state/ownership capture. A supported Linux registration/launcher cohort,
+initial-state/ownership capture. A current installed Linux Launcher cohort,
 a disposable app-absent real Play cohort and declared reboot unlock/lifecycle
 prerequisites are needed for their respective rows. Tactical 253 remains active,
 M-08 remains partial and cutover A-06/A-07/A-08 stay unchecked. Tactical 252's
@@ -648,3 +652,76 @@ file picker feeds the controlled 64-KiB torrent; independently checked bytes has
 to `9d18c16c51954b29cf228754f795ccdd5fd1aecf`. Stopped Linux returns to offline
 unknown-state guidance and manual Retry. Durable-profile VM recovery and final
 restoration are recorded at the follow-up completion checkpoint below.
+
+### Linux Follow-Up Completion And Restoration, 2026-10-02
+
+Ordinary Terminal startup, selecting **penguin** and waiting for the command
+prompt, restores `penguin.linux.test` in the host's registered hostname map and
+ordinary container-targeted vsh. Stopping the VM removes that hostname; repeated
+normal startup restores it. The earlier administrative VM/LXC session did not
+complete that registration. Its observed browser DNS failure remains a bounded
+failed administrative-path result; it is not evidence that ordinary Linux
+startup generally fails. Waiting for actual registration matters: vsh immediately
+after the start gesture can still report an unavailable VM.
+
+For reference provenance, ChromiumOS platform2 revision
+`4e7c7027ff788542bb225c09733c3a83d4760f72`,
+[`vm_tools/cicerone/service.cc`](https://chromium.googlesource.com/chromiumos/platform2/+/4e7c7027ff788542bb225c09733c3a83d4760f72/vm_tools/cicerone/service.cc),
+has `Service::ContainerStartupCompleted` register the container and primary
+owner's Linux hostname before reporting startup. `ContainerShutdown` unregisters
+it; `RegisterHostname` calls crosdns and `OnCrosDnsNameOwnerChanged` restores the
+known map when that service returns. This supports the registration explanation;
+it does not prove that exact revision is installed or diagnose every fetch error.
+No generic OS repair or Machine Control code change was needed.
+
+The final artifacts supersede the earlier extension hashes for this follow-up:
+
+- Beta 0.4.0 SHA-256: `91bd1f361147eec19197c1d5843f0db231e15af564136f6348681d9afaa4850a`.
+- Production identity 1.1.2 SHA-256: `15f5bca8430885141b388f187a7d7e98ceae182966b250b2bf70952ff4f9fd9b`.
+- Unchanged Ubuntu 22.04 x86_64 package SHA-256: `95e6f05b35fcb22d4640f81175039759d78d1f2400f403b2e71626d7cccbd2a2`.
+
+All four physical connection/help assets independently match the final beta
+archive. The separate unpacked qualification identity omits the production
+worker, action, external admission and Android permissions. It qualifies these
+exact page assets and real optional Linux permission denial/grant, not installation
+of either complete extension/store pair. Neither inherited extension is changed.
+Both full archives pass their 17 portable cases; the health failures there are
+injected, while the retained-old-document replacement uses a real HTTP cache.
+
+On cohort A, the final page connects through the normal hostname to the unchanged
+package and its React library. The real ChromeOS file picker supplies the owned
+local `.torrent`, the Linux root chooser commits Linux Downloads, and the controlled
+private transfer independently verifies 65,536 bytes with SHA-1
+`9d18c16c51954b29cf228754f795ccdd5fd1aecf`. Stopped Linux produces the offline
+unreachable result with setup/package/policy unknown. Normal Terminal startup,
+relaunching the owned runtime and manual **Retry** return to connected React.
+The actual torrent row remains 100% complete and the independently hashed payload
+is unchanged, with the source offline during the recovery check.
+
+Fixture calibration is separate from acceptance: a first profile under container
+`/tmp` disappeared during normal VM startup and cannot qualify catalog retention.
+The corrected recovery uses an owned durable user-data directory; it confirms
+the row and bytes after VM stop/start. Its second intake reuses the controlled
+download and is not a second independent transfer. A delivered file-picker typing
+command did not enter text, so observed CDP input supplied the owned filename;
+delivered input alone is not recorded as an OS-input pass. Extension removal also
+required the actual Chrome confirmation and was checked against the resulting
+extension inventory. No inherited ADB approval was granted.
+
+The owned gateway is terminated and joined after checking its UID, executable and
+profile. Its durable profile/package, owned downloaded payload, unpacked extension
+and staged files are removed. Original beta/production extensions remain present;
+all owned browser/Terminal tabs are closed, restoring the initial absence of page
+tabs. The VM is stopped and its disk retained. Host fixture sources terminate and
+their owned firewall rule and listeners are removed; the unrelated installed host
+service remains intact. Local temporary logs/fixtures are removed after this
+record. Common claims are unsupported on this adapter, so the exclusive target
+marker acquired before mutations is released. Final doctor passes all ten checks;
+inherited idle/lid availability policy is unchanged. Capture was not exercised.
+
+This closes the bounded reachability/UX follow-up. Tactical 253 and M-08 remain
+active/partial: current signed installation and candidate Launcher, full worker
+and actual store pairs, real fresh Play installation, storage revocation/repair,
+sleep/reboot/device network loss and the unreachable second cohort remain open.
+Earlier hour observations and three-per-backend repetitions keep their original
+Android/Linux-runtime limits. No production update, push or store publication occurs.

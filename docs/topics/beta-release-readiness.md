@@ -18,7 +18,10 @@ passes controlled runtime byte/restart checks in cohort A's Debian 12
 container. Android candidate-page pairing/recovery and byte-checked file intake
 pass bounded slices. Both backends finish controlled 60-minute byte-verified
 observations and three recovery repetitions; owned test state is restored.
-Normal Linux launcher/browser registration fails; real Play, store pairs,
+Normal Terminal startup restores Linux registration; the final offline connection
+page and isolated current-package browser pass real file-picker intake and
+source-offline completed-row/byte retention after VM restart. Current signed
+installation/candidate Launcher, real fresh Play installation, store pairs,
 cohort B and full lifecycle acceptance remain open. Native ARM64 retains its
 separate release build lane. Nothing is published and no desktop cutover gate
 is closed.

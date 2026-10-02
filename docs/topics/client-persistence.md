@@ -7,8 +7,12 @@ Tactical
 adds bounded current-candidate source-offline byte retention on cohort A,
 including actual extension Remove/keep followed by native restart with the row
 absent, and separate Linux-runtime remove/keep/restart. An interrupted pre-ack
-native removal retains row/bytes and is recorded separately. Isolated profiles
-and APK delivery do not qualify production installed-library migration, store
+native removal retains row/bytes and is recorded separately. The follow-up adds
+actual Linux browser completed-row and independent payload retention after normal
+VM stop/start and manual Retry with the source offline, using an owned durable
+profile. A preliminary container `/tmp` profile was cleared during startup and
+does not qualify retention; the normal product profile already uses durable data.
+Isolated profiles and APK delivery do not qualify production installed-library migration, store
 succession or cohort B.
 
 Tactical [248](../tactical/248-chromeos-staggered-upgrade.md) confirms that the

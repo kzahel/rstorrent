@@ -4,15 +4,17 @@ Topic: `product-surfaces-and-migration`
 
 Tactical 253 is active. Portable pre-connection troubleshooting, manual
 Retry/Cancel, explicit Linux choice and private-context preview pass focused
-ownership tests and six injected packaged-browser journeys. Android/Crostini
+ownership tests, six injected Android and ten injected Linux packaged-browser
+journeys, plus real HTTP-cache replacement. Android/Crostini
 libraries remain separate, with no inferred store/policy diagnosis or automatic
 switch. Exact host-built candidates pass bounded cohort-A Android and Linux
 runtime evidence, including three recovery repetitions per backend and both
 controlled 60-minute byte-verified observations. Owned test state is restored.
-Full physical acceptance remains open: normal Linux launcher/browser
-registration failed in the administrative LXC session but normal Terminal
-startup restores it. The isolated current Linux browser connects and verifies
-file-picker intake; real Play/store journeys are unrun and cohort B is
+Normal Terminal startup restores Linux registration after the earlier failed
+administrative LXC session. The isolated current Linux browser connects, verifies
+real file-picker intake and retains the completed row/bytes after VM restart
+with the source offline. Full physical acceptance remains open: current signed
+installation/candidate Launcher and real Play/store journeys are unrun; cohort B is
 unreachable at its private inventory address. Cutover A-06/07/08 remain
 unchecked.
 

@@ -12,7 +12,8 @@ Remove/keep and detached-view completion pass bounded checks. Final approval
 expiry/cancellation and foreground unavailable-service guidance pass without
 inferring Play, app presence or policy. The follow-up proves normal Terminal
 startup restores missing Linux hostname/container registration. The current
-isolated Linux browser connects and verifies real file-picker intake. Its offline
+isolated Linux browser connects, verifies real file-picker intake and retains
+the completed row/bytes after VM restart with the source offline. Its offline
 connection page offers exact-host optional access, bounded checks and manual
 recovery; fresh document navigation avoids retained old HTML cache. Current
 signed installation/registered candidate Launcher and full physical/store

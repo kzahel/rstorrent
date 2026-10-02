@@ -189,8 +189,11 @@ rows independently; those tests use disposable signing and owned emulators.
   Crostini setup where permitted. Qualify Linux-not-enabled, package absent,
   stopped VM and unshared folder. Explain separate libraries, preserve Android
   state and show an unsupported outcome if neither backend is available.
-  Cohort-A offline help and exact Linux package runtime pass; normal Linux
-  launcher/browser registration fails, so fallback acceptance remains open.
+  Cohort-A offline recovery and exact Linux package runtime pass. Normal Terminal
+  startup restores registration; current isolated browser file-picker intake,
+  stopped-VM manual Retry and durable-profile row/byte retention pass. Current
+  signed installation/candidate Launcher and the remaining setup/share/store
+  cohorts keep full fallback acceptance open.
 - [ ] **A-08 Physical repetition:** Tactical
   [253](tactical/253-chromeos-onboarding-recovery-and-physical-qualification.md)'s
   bounded cold-launch, verified transfer, view detach, interrupted connection,
@@ -198,8 +201,10 @@ rows independently; those tests use disposable signing and owned emulators.
   unqualified route remains explicit before ChromeOS rollout. Cohort A passes
   three independent byte-verified recovery repetitions per backend and both
   controlled 60-minute observations. Android detached completion and actual
-  Remove/keep/restart pass. Linux evidence is runtime only; current storage
-  repair, sleep/reboot/device network loss and all cohort-B rows remain unrun.
+  Remove/keep/restart pass. Linux hour observations and three repetitions remain
+  runtime only; the follow-up adds bounded real browser/file-picker and
+  source-offline VM recovery evidence. Current storage repair,
+  sleep/reboot/device network loss and all cohort-B rows remain unrun.
   Owned test state, pairing storage and the stopped VM baseline are restored.
 
 ## Product, Recovery And Release Decision

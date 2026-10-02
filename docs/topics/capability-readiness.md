@@ -1227,8 +1227,11 @@ hosted repeats.
   pairing/manual recovery and byte-checked file intake. Both candidate backends
   finish controlled 60-minute observations with independent final byte checks;
   native detached completion and actual Remove/keep recovery pass. Owned state
-  is restored. Normal Linux browser
-  registration fails; cohort B and real store installation remain unrun.
+  is restored. The follow-up restores normal Linux registration through Terminal
+  and adds offline Retry/Cancel, current-document cache recovery, real Linux
+  browser/file-picker intake and completed-row/byte retention after VM restart.
+  Current signed installation/candidate Launcher, full store pairs, lifecycle
+  gaps, cohort B and real fresh Play installation remain unrun.
 
 - Selected three-platform beta package matrices pass in **236/237**, signed
   published-cohort updates in **238**, and bounded browser/transfer recovery in
