@@ -578,3 +578,32 @@ M-08 remains partial and cutover A-06/A-07/A-08 stay unchecked. Tactical 252's
 signed desktop updater passes are retained; Linux legacy GUI rendering, actual
 extension/store pairs, controlled repair, broader cohorts and a fresh signed
 branding candidate remain independent open desktop gates.
+
+### Linux Reachability And Recovery Follow-Up Scope, 2026-10-02
+
+Maintainer direction: investigate when Crostini DNS/browser access fails,
+understand the actual behavior and user experience, and address the failure.
+Compare stopped Linux, ordinary Terminal startup, registered-container startup,
+runtime-ready/browser-unreachable and manually retried recovery before treating
+the last administrative runtime session as a general DNS regression.
+
+This slice owns an offline extension recovery surface, truthful requested versus
+connected outcomes, bounded exact-authority health checks and manual Retry/Cancel.
+If browser access requires an optional host grant, request only the existing
+`penguin.linux.test` authority through explicit user intent; do not add broad
+network permissions, alternate IP routing, a proxy or automatic backend switching.
+Failed browser fetches do not prove DNS, package absence, Linux availability or
+policy. Native health validates the existing product/build/launch-protocol facts.
+No engine, wire/API, root migration, production installer or store release changes.
+
+The page owns at most one bounded health request and joins cancellation before
+Retry. Successful reachability may navigate to the existing Linux product UI;
+failure retains packaged offline help. The worker owns singleton handoff/tab
+selection and must not call tab creation proof of a connected application.
+Validate unavailable/denied/timeout/cancel/retry, wrong identity/protocol,
+malformed/oversized responses and successful exact-authority handoff. Use real
+ChromeOS normal-start and DNS observations where accessible, label injected
+states and retain artifact limits. Generic OS diagnosis/control belongs in
+Machine Control. Restore initial VM/window state and remove only owned fixtures.
+Stop when bounded portable recovery and proportional current physical behavior
+are recorded, with inaccessible scenarios still open in the existing gap matrix.
