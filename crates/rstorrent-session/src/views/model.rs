@@ -270,6 +270,18 @@ pub(crate) fn operational_state(
     if snapshot.desired_running && snapshot.state == TorrentState::Checking {
         return TorrentOperationalState::Checking;
     }
+    // Completion/admission can be published while the old content task still
+    // owns its cleanup. That task flag must not relabel an admitted seed.
+    if snapshot.desired_running && snapshot.state == TorrentState::Complete {
+        return match inputs.seed_admission {
+            SeedAdmissionView::Active | SeedAdmissionView::InactiveExempt => {
+                TorrentOperationalState::Seeding
+            }
+            SeedAdmissionView::Queued | SeedAdmissionView::Ineligible => {
+                TorrentOperationalState::Queued
+            }
+        };
+    }
     if snapshot.desired_running && inputs.task_active {
         return match snapshot.state {
             TorrentState::AwaitingMetadata | TorrentState::AwaitingStorage => {
@@ -294,16 +306,6 @@ pub(crate) fn operational_state(
     }
     if !snapshot.desired_running {
         return TorrentOperationalState::Paused;
-    }
-    if snapshot.state == TorrentState::Complete {
-        return match inputs.seed_admission {
-            SeedAdmissionView::Active | SeedAdmissionView::InactiveExempt => {
-                TorrentOperationalState::Seeding
-            }
-            SeedAdmissionView::Queued | SeedAdmissionView::Ineligible => {
-                TorrentOperationalState::Queued
-            }
-        };
     }
     if snapshot.download_queue_position.is_some() {
         return TorrentOperationalState::Queued;

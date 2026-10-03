@@ -175,6 +175,48 @@ async fn preparation_projection_is_compact_generation_fenced_and_separate_from_s
 }
 
 #[test]
+fn completed_seed_projection_survives_content_task_cleanup() {
+    for (admission, expected) in [
+        (
+            crate::SeedAdmissionView::Active,
+            crate::TorrentOperationalState::Seeding,
+        ),
+        (
+            crate::SeedAdmissionView::InactiveExempt,
+            crate::TorrentOperationalState::Seeding,
+        ),
+        (
+            crate::SeedAdmissionView::Queued,
+            crate::TorrentOperationalState::Queued,
+        ),
+    ] {
+        let mut current = snapshot(0, 1);
+        let hub = ViewHub::new(&current).expect("hub");
+        hub.set_progress_inputs(
+            TORRENT_ID,
+            ProgressInputs {
+                task_active: true,
+                ..ProgressInputs::default()
+            },
+        )
+        .expect("content task");
+        current.revision = "1".to_owned();
+        current.torrents[0].state = TorrentState::Complete;
+        current.torrents[0].download_queue_position = None;
+        let mut durable = eta_durable(None, 1, 1);
+        durable.get_mut(TORRENT_ID).unwrap().seeding.admission = admission;
+        hub.replace_durable(&current, &durable)
+            .expect("completed admission");
+        assert_eq!(current_torrent(&hub).operational_state, expected);
+        hub.set_progress_inputs(TORRENT_ID, ProgressInputs::default())
+            .expect("old content task cleanup");
+        let view = current_torrent(&hub);
+        assert_eq!(view.seeding.admission, admission);
+        assert_eq!(view.operational_state, expected);
+    }
+}
+
+#[test]
 fn operational_state_and_queue_position_are_authoritative() {
     let mut queued = snapshot(0, 1);
     queued.torrents[0].download_queue_position = Some(3);
@@ -227,14 +269,10 @@ fn operational_state_and_queue_position_are_authoritative() {
         current_torrent(&hub).operational_state,
         crate::TorrentOperationalState::Queued
     );
-    hub.set_progress_inputs(
-        TORRENT_ID,
-        ProgressInputs {
-            seed_admission: crate::SeedAdmissionView::Active,
-            ..ProgressInputs::default()
-        },
-    )
-    .expect("admit complete seed");
+    let mut durable = eta_durable(None, 1, 1);
+    durable.get_mut(TORRENT_ID).unwrap().seeding.admission = crate::SeedAdmissionView::Active;
+    hub.replace_durable(&complete, &durable)
+        .expect("admit complete seed");
     assert_eq!(
         current_torrent(&hub).operational_state,
         crate::TorrentOperationalState::Seeding

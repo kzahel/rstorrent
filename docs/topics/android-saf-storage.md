@@ -11,6 +11,17 @@ bounded recovery. Inherited apps/grants are preserved. Current revoked-root
 repair, real Play installation and cohort B remain open; retain 194's original
 bounded repair pass.
 
+Second-cohort Tactical 253 now adds three independent controlled download and
+source-offline restart repetitions through the real SAF picker. The Android
+service starts its existing four provider responders before native network
+convergence and presentation subscription, so those calls cannot prevent
+responses to restored-torrent maintenance. Worker bounds and cancellation/join
+ownership are unchanged. The rebuilt candidate recovers a completed 121-file
+fixture and saved browser pairing with the seed offline. That recovery still
+takes roughly 45 seconds and temporarily presents the root as unavailable;
+this remains a startup UX gap, not a clean recovery pass or revoked-grant test.
+Both Android ABIs build and all 113 JVM tests pass.
+
 Tactical [248](../tactical/248-chromeos-staggered-upgrade.md) extends controlled
 API 28/35 upgrade evidence to the released extension engine/session writer:
 explicit per-torrent roots A/B, two real SAF grants, independent completed and

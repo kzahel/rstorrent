@@ -500,6 +500,13 @@ class ProductEngineService : Service() {
         }
         client = openedClient
         clientOpen = true
+        // Restored-torrent maintenance may hold the native service lock while
+        // awaiting provider work. Start its responders before subscriptions or
+        // network convergence can wait for that same lock during startup.
+        safStorageJobs =
+            List(SAF_PROVIDER_CONCURRENCY) {
+                scope.launch(Dispatchers.IO) { driveSafStorageRequests() }
+            }
         mutableState.update { it.copy(productSummary = productSummary) }
         networkConvergenceJob =
             scope.launch {
@@ -555,10 +562,6 @@ class ProductEngineService : Service() {
             )
         presentationRepository.start(client)
         if (!presentationReady.isCompleted) presentationReady.complete(Unit)
-        safStorageJobs =
-            List(SAF_PROVIDER_CONCURRENCY) {
-                scope.launch(Dispatchers.IO) { driveSafStorageRequests() }
-            }
         reconcileSafRootRegistry()
         val storageRootHealthy = client.probeSafStorageRoots()
         Log.i(TAG, "saf_root_health source=startup available=$storageRootHealthy")

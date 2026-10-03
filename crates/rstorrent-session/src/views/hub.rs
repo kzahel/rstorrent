@@ -1220,6 +1220,12 @@ impl ViewHub {
             return Ok(());
         };
         let previous = model.view.clone();
+        // The application admission owner supplies this fact through durable
+        // replacement. Content-task cleanup must not reset it to Ineligible.
+        let inputs = ProgressInputs {
+            seed_admission: model.view.seeding.admission,
+            ..inputs
+        };
         model.progress_inputs = inputs;
         model.view.progress = assess_progress(&model.snapshot, inputs);
         model.view.operational_state = operational_state(&model.snapshot, inputs);

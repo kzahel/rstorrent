@@ -2,6 +2,17 @@
 
 Topic: `oracle-driven-engine-campaign`
 
+Tactical [253](../tactical/253-chromeos-onboarding-recovery-and-physical-qualification.md)
+has a bounded completion-projection checkpoint: the pinned admission oracle was
+re-inspected, the regression first failed on Downloading versus Seeding, and the
+fix preserves admission through content-task cleanup without changing policy,
+protocol or wire types. Workspace formatting, warning-denying clippy, 1,572 Rust
+tests (18 ignored), web typecheck and 462 web tests (two skipped) pass. Both
+Android ABIs and 113 JVM tests pass; a physical browser-controlled download
+remains connected at completion with an independent payload hash. Continue 253's
+physical endurance/report matrix; retain the slow completed-library startup and
+second-cohort Linux hostname failure as open gaps.
+
 Tactical [247](../tactical/247-android-ordinary-writer-upgrade.md) completes
 ordinary released Android writers and controlled installed upgrades on API 28/35:
 two SAF roots, supported settings, paused/partial torrents, running replacement,

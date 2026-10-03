@@ -15,6 +15,15 @@ and an isolated current browser now connects and verifies file-picker intake.
 Runtime-only hour/repetition evidence retains its original limit; store and
 signed installed handoff remain open.
 
+Second-cohort Tactical 253 evidence exposed a completion/cleanup ordering bug:
+active seed admission could coexist with a downloading operational state.
+Completed admission now precedes the old content-task flag, and task-progress
+cleanup preserves the admission owner's fact. The strict browser contract is
+unchanged. A three-admission regression covers active, inactive-exempt and queued
+seeds through cleanup; the rebuilt physical Android candidate stays connected
+at completion with independently verified bytes. Store delivery and the Linux
+browser journey retain their separate qualification limits.
+
 Tactical [244](../tactical/244-unavailable-storage-presentation.md) corrects
 shared React adaptation of `awaiting_storage`: blocked progress becomes Needs
 attention with a Storage unavailable table label; active storage preparation

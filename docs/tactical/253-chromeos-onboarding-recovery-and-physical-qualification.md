@@ -784,3 +784,69 @@ README also acknowledges the existing public preview. Extension tests pass
 SHA-256 `34d523024c45bc954a22ad60c80d4e85ad551ab6b8ce558fcca3a6542456027a`.
 Physical pairing, registered launch and browser review continue below; this
 checkpoint does not close their gates.
+
+### Completion Projection Repair Scope, 2026-10-03
+
+Two browser-controlled Android downloads verify their payloads but disconnect
+the React client at completion. A minimized physical WebSocket trace shows a
+row changing from downloading to complete with active seed admission, without
+changing its downloading operational state. The strict client rejects this
+contradiction. Reload eventually observes the coherent completed seed.
+
+Bounded repair: make the existing application view report completed admission
+before an older content task's cleanup flag, and preserve the admission owner's
+fact when the task owner clears its progress inputs. No protocol, admission
+policy, new task, storage semantics, wire schema or validator relaxation is
+authorized by this repair. The ViewHub mutex remains the projection owner;
+application task cancellation/join and seed reconciliation retain their owners.
+Resource limits and dependency direction remain unchanged.
+
+The pinned libtorrent `7d7fc38fac61177fa5e02148f791b2f65250b09d` oracle is
+re-inspected at `src/session_impl.cpp::recalculate_auto_managed_torrents` and
+`simulation/test_auto_manage.cpp`'s seed-limit transition/assertion cases.
+It separates completed seeds from download admission; no reference source is
+copied. The existing application-view contract and Tactical 201 own our view
+semantics, not a libtorrent DTO. Required evidence is a failing deterministic
+completion/cleanup projection regression, focused Rust and web checks, rebuilt
+Android boundary, and the repeated physical completion flow. The repair stops
+when the strict browser accepts coherent completion and task cleanup while
+retaining the independently verified payload.
+
+Completed-library cold startup also reproduces a separate wait: the native
+maintenance owner may hold the application mutex while asking SAF for retained
+file observations, while `AndroidPresentationRepository.start` subscribes via
+that mutex before the Kotlin provider workers have started. Both retained
+payload hashes remain correct; the visible Repair picker accepts its grant but
+cannot unblock that initialization order. Start the same four provider workers
+immediately after assigning the opened client, before native convergence or
+presentation calls. Existing broker cancellation and joined service shutdown
+remain unchanged; no worker count, timeout, wire type or grant policy changes.
+Require a rebuilt JVM-tested APK and actual completed-library cold restart,
+with browser reconnection and independent retained-byte checks.
+
+### Completion Repair Validation Checkpoint, 2026-10-03
+
+The active/inactive-exempt/queued completion regression first fails with
+Downloading versus Seeding; it passes after the projection repair, including
+content-task cleanup. All 22 projection tests pass. Workspace formatting,
+warning-denying clippy and 1,572 Rust tests pass (18 ignored), as do web typecheck
+and 462 web tests (two skipped). Both Android ABIs, generated Kotlin and all
+113 JVM tests build/pass. No application DTO regeneration is required by the
+unchanged contract.
+
+The isolated APK containing both projection and responder-order fixes has
+SHA-256 `68bff07a17d0f6c0e0c18b6f2f8cefd802401122603cdaa1b764646f77f88192`.
+The actual extension-controlled 512 KiB fixture completes with a connected,
+100%-Complete browser row and SHA-1
+`ad2d0afead4a97989b13253076ba99e020acf3df`. With its seed paused, force-stop and
+cold launch eventually restore the completed library and saved browser pairing.
+A temporary unavailable-root/Repair presentation persists during roughly
+45 seconds of startup for the 121-file fixture. The ordering change does not
+establish prompt startup; retain that UX/performance gap explicitly. The fixture
+contains 120 long-name empty files in addition to its payload, and retained-byte
+validity is distinct from recovery latency.
+
+Actual approval retries also require waiting for the fresh Android dialog and
+bringing the native window forward; an expired request is not a fresh approval.
+The final fresh request and explicit Approve succeed. No stored credential or
+permission bypass is used.
