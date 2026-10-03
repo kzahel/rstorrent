@@ -49,7 +49,9 @@ class RemoteAdb:
 
 
 def finish_first_use(adb):
-    deadline = time.monotonic()+20
+    # A cold ARC launch plus several fresh UIAutomator snapshots can exceed
+    # twenty seconds even when each observed transition succeeds.
+    deadline = time.monotonic()+45
     ready_snapshots = 0
     while time.monotonic() < deadline:
         nodes = list(product.dump_ui(adb).iter())
@@ -229,6 +231,8 @@ def main():
                     time.sleep(max(0, min(30, args.observe_seconds-(time.monotonic()-beginning))))
                 if len(samples) < 2 or samples[-1] <= samples[0]:
                     raise RuntimeError("observation did not show controlled payload movement")
+                session.apply_settings({"upload_rate_limit": 0})
+                report["completion_seed_limit"] = "released_after_observation"
                 verified = False
                 deadline = time.monotonic()+300
                 while time.monotonic() < deadline:

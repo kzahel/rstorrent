@@ -866,3 +866,17 @@ horizontal overflow. Final beta ZIP SHA-256:
 `4c2485965a1bb33517db6cb9932b8e0b1857421fbd3c52df380f2623d509063c`.
 Keep the active browser lease until its sustained observation completes, then
 reload this package and record the physical connected header.
+
+### Observation Harness Completion Bound, 2026-10-03
+
+Cold ARC first-use setup plus real UI snapshots exceeded the runner's former
+20-second dialog budget. Its existing bounded readiness loop now allows
+45 seconds; seven portable safety/onboarding tests still pass.
+
+Both physical observation runners now release the artificial libtorrent upload
+throttle only after the complete requested observation window. Independent
+hash verification retains its five-minute bound, followed by source-offline
+restart and keep-data removal checks. The report records that throttle release.
+This avoids measuring protocol overhead against an accidentally too-short
+completion tail and does not shorten the hour or weaken byte verification.
+The earlier interrupted Linux observation is not counted as an hour pass.

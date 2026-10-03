@@ -145,6 +145,11 @@ print(json.dumps({"owned_payload_names_absent":True}))
                         print(json.dumps({"stage":"observation", "seconds":round(time.monotonic()-beginning), "seed_payload_upload":samples[-1]}), flush=True)
                         time.sleep(max(0,min(30,args.observe_seconds-(time.monotonic()-beginning))))
                     if len(samples)<2 or samples[-1]<=samples[0]: raise RuntimeError("no controlled payload movement")
+                    # The bounded observation is complete. Release the test
+                    # throttle so verification measures completion, not whether
+                    # protocol overhead happened to fit a five-minute tail.
+                    session.apply_settings({"upload_rate_limit": 0})
+                    report["completion_seed_limit"] = "released_after_observation"
                 deadline = time.monotonic()+300
                 while runtime.hash_payload(name) != fixture.payload_hash:
                     if time.monotonic()>deadline: raise RuntimeError("independent payload verification timed out")
