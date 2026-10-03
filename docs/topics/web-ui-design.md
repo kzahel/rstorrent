@@ -19,6 +19,14 @@ expiry, terminal cancellation, foreground unavailable-service recovery and the
 explicit Linux guide link on cohort A. Full physical/store journeys remain
 open; see the tactical for artifact and per-device limits.
 
+Second-cohort physical Light/Spacious review found the connected Android
+identity touching its troubleshooting link because anonymous whitespace is
+collapsed between flex items. The existing companion header now has an explicit
+0.75-rem gap. Its height and connection behavior are unchanged; 320/390/1200-pixel
+headless layout checks preserve the 40-pixel header without horizontal overflow.
+The full web typecheck, 462-test suite (two skipped) and packaged CSP checks pass.
+Physical verification uses the final candidate after the ongoing observation.
+
 The Linux follow-up adds a packaged offline connection page with a ten-second,
 4-KiB exact-host health bound, explicit optional browser access and joined manual
 Retry/Cancel. A failed fetch does not diagnose DNS or Linux/package/policy state.

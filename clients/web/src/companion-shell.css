@@ -40,6 +40,7 @@ body:has(#companion-bootstrap) {
   height: 40px;
   align-items: center;
   justify-content: flex-end;
+  gap: 0.75rem;
   padding: 0 0.8rem;
   border-bottom: 1px solid var(--border-soft);
   background: var(--surface-primary);

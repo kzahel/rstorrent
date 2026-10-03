@@ -850,3 +850,19 @@ Actual approval retries also require waiting for the fresh Android dialog and
 bringing the native window forward; an expired request is not a fresh approval.
 The final fresh request and explicit Approve succeed. No stored credential or
 permission bypass is used.
+
+### Connected Header Spacing Repair, 2026-10-03
+
+Physical Light/Spacious review shows the connected Android identity touching its
+troubleshooting link. The shell is a flex row, so its inserted whitespace does
+not separate flex items. Add a small explicit gap to the existing header; keep
+its height, connection ownership and product layout unchanged. Verify the real
+packaged style and physical connected screen after the sustained observation.
+
+The spacing-only change passes web typecheck, all 462 web tests (two skipped),
+packaging and the 15-bundle CSP check. A bundled headless Chromium check at
+320/390/1200 pixels measures the intended 12-pixel gap, 40-pixel header and no
+horizontal overflow. Final beta ZIP SHA-256:
+`4c2485965a1bb33517db6cb9932b8e0b1857421fbd3c52df380f2623d509063c`.
+Keep the active browser lease until its sustained observation completes, then
+reload this package and record the physical connected header.
