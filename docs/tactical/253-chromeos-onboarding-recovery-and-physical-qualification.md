@@ -725,3 +725,31 @@ and actual store pairs, real fresh Play installation, storage revocation/repair,
 sleep/reboot/device network loss and the unreachable second cohort remain open.
 Earlier hour observations and three-per-backend repetitions keep their original
 Android/Linux-runtime limits. No production update, push or store publication occurs.
+
+### Second Physical Cohort UX Review, 2026-10-03
+
+The maintainer authorizes the now-reachable second cohort's Android/Play,
+extension and Crostini validation, bounded bug fixes, incremental commits and a
+local HTML review report with actual screenshots. Continue this tactical's
+matrix and stopping conditions rather than infer product coverage from doctor.
+Keep the requested report and selected captures as private local deliverables;
+commit only machine-neutral evidence and reusable product changes.
+
+Initial common doctor passes all ten checks on x86_64 ChromeOS 150
+`16700.65.0`. Target-native EGL capture is exercised successfully. The common
+claim interface remains unsupported; an exclusive target-side ownership marker
+is acquired before interaction and must be released during cleanup. Initial ARC
+ADB connection reports offline, so Android product readiness is still unknown.
+
+Work order: record actual store/app/Linux state, exercise the ordinary available
+store baseline, then isolated current candidates, explicit pairing/backend
+choice, folder acquisition, controlled verified intake, view detachment and
+recovery. Preserve inherited packages, libraries and grants. Existing host-built
+artifacts may be reused only after source/version/hash reconciliation. No public
+swarm, publication, account removal or destructive OS setup is implied.
+
+Each report row records delivery route, observed result, screenshot where useful,
+and remaining limits. Product fixes need focused regression checks and a repeat
+of the affected physical flow. Inaccessible store/signing/lifecycle states stay
+explicitly open. Cleanup joins owned processes, removes test state and retains
+the requested review artifact; final doctor verifies appliance availability.
