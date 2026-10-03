@@ -1233,8 +1233,11 @@ hosted repeats.
   Cohort B now adds an inherited Play baseline, isolated Android/extension
   flows, corrected completion, fresh Linux setup and signed public installation.
   Its launcher starts a healthy service but browser access remains blocked by
-  ChromeOS hostname registration after normal VM recovery. Android completed
-  startup remains slow with temporary unavailable-root presentation. Current
+  ChromeOS Baguette empty-address hostname registration after normal VM
+  recovery; matching release source explains the device logs. Android startup
+  now overlaps four structural observations and keeps Library in an explicit
+  checking state until the initial probe completes. Measured cold-start and
+  saved-pairing browser recovery pass the bounded follow-up. Current
   signed successor delivery, full store pairs, lifecycle gaps and real fresh
   Play installation remain open. Both second-cohort full-hour observations
   verify bytes; Android also keeps a stable connected completed browser row.

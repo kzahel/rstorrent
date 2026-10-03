@@ -2,6 +2,12 @@
 
 Topic: `direct-filesystem-storage`
 
+Tactical 253 bounds completed-seed structural observations to four
+caller-owned futures. Files remain ordered, exact kind/length and verified
+piece authority are unchanged, and no descriptors are opened by these checks.
+Missing/failed/skipped/padding cases and cancellation pass deterministic tests;
+Android SAF physical startup evidence and limits belong to 253.
+
 Completed local Tactical [241](../tactical/241-atomic-legacy-desktop-import.md)
 uses this existing model for desktop legacy state conversion. It never copies
 or deletes payload, imports no foreign have evidence, and commits authenticated

@@ -722,6 +722,8 @@ class ProductStateReducerTest {
                         ),
                 ),
             )
+        assertTrue(initial.ready)
+        assertTrue(initial.checkingStorage)
         val converged =
             ProductStateReducer.reduce(
                 initial,

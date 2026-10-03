@@ -1,5 +1,7 @@
 package org.rstorrent.bootstrap.ui
 
+import org.rstorrent.bootstrap.checkingStorage
+
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.rememberScrollState
@@ -131,7 +133,7 @@ internal fun LibraryScreen(
                                     modifier = Modifier.size(8.dp),
                                     shape = CircleShape,
                                     color =
-                                        if (state.ready) {
+                                        if (state.ready && !state.checkingStorage) {
                                             Color(0xFF2E7D32)
                                         } else {
                                             MaterialTheme.colorScheme.outline
@@ -140,7 +142,7 @@ internal fun LibraryScreen(
                                 Spacer(Modifier.size(6.dp))
                                 Text(
                                     stringResource(
-                                        if (state.ready) R.string.status_live else R.string.status_connecting,
+                                        if (state.ready && !state.checkingStorage) R.string.status_live else R.string.status_connecting,
                                     ),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -298,7 +300,17 @@ internal fun LibraryScreen(
                         )
                     }
                 }
-                if (!state.storageRootReady) {
+                if (state.checkingStorage) {
+                    item("checking-storage") {
+                        Card(modifier = Modifier.fillMaxWidth().widthIn(max = 720.dp)) {
+                            Column(Modifier.padding(16.dp)) {
+                                Text(stringResource(R.string.storage_checking_folders))
+                                Spacer(Modifier.height(8.dp))
+                                LinearProgressIndicator(Modifier.fillMaxWidth())
+                            }
+                        }
+                    }
+                } else if (!state.storageRootReady) {
                     item("storage") {
                         SetupCard(
                             title = stringResource(R.string.storage_choose_folder),
@@ -331,10 +343,10 @@ internal fun LibraryScreen(
                         }
                     }
                 }
-                if (torrents.isEmpty()) {
+                if (torrents.isEmpty() && !state.checkingStorage) {
                     item("empty") { EmptyLibrary(filter) }
                 }
-                items(torrents, key = TorrentView::torrentId) { torrent ->
+                items(if (state.checkingStorage) emptyList() else torrents, key = TorrentView::torrentId) { torrent ->
                     TorrentCard(
                         torrent = torrent,
                         selected = torrent.torrentId in selection,

@@ -108,6 +108,7 @@
     <string name="library_waiting_unmetered_detail">Transfers will resume automatically when an unmetered network is usable.</string>
     <string name="library_notifications_title">%1$s notifications</string>
     <string name="library_background_unavailable">JSTorrent works while Android is visible. Leaving Android stops background work.</string>
+    <string name="storage_checking_folders">Checking download folders…</string>
     <string name="storage_choose_folder">Choose a download folder</string>
     <string name="storage_select_before_download">Select a folder before adding or resuming downloads.</string>
 

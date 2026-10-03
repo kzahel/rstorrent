@@ -138,6 +138,7 @@ data class ProductState(
     val ready: Boolean = false,
     val error: ProductError? = null,
     val storageRootReady: Boolean = false,
+    val storageRootChecking: Boolean = true,
     val storageRootLabel: String? = null,
     val externalIntake: ExternalIntakePresentation? = null,
     val externalIntakeDepth: Int = 0,
@@ -908,3 +909,9 @@ internal object ProductStateReducer {
             }
         }
 }
+
+/** Startup has not established folder health; do not offer repair yet. */
+val ProductState.checkingStorage: Boolean
+    get() = storageRootChecking && (error == null ||
+        error == ProductError.Code.SELECT_DOWNLOAD_FOLDER ||
+        error == ProductError.Code.STORAGE_UNAVAILABLE)

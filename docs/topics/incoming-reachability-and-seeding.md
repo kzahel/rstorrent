@@ -2,6 +2,13 @@
 
 Topic: `incoming-reachability-and-seeding`
 
+Tactical 253's startup follow-up overlaps four read-only file observations
+before constructing completed-seed availability. No early seed is admitted;
+file order, exact lengths/kinds, padding/selection and verified-piece authority
+remain unchanged. Reversed replies, failure filtering and cancellation pass
+with four pending requests and zero opened descriptors. Physical Android
+startup and saved browser pairing are recorded in the tactical.
+
 September 12 hosted run `34682523287` passes Tactical 212's four application
 lifecycle cases and three topology/three checkpoint-crash cohorts with exact
 repair and joined cleanup. Tactical 211 also repairs a Windows-exposed test

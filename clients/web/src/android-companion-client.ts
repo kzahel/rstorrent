@@ -354,7 +354,7 @@ async function openApplication(
   }
 }
 
-class AndroidPlatformClient implements ApplicationWebSocketPlatformClient {
+export class AndroidPlatformClient implements ApplicationWebSocketPlatformClient {
   public constructor(
     private readonly endpoint: string,
     private readonly installationId: string,
@@ -379,7 +379,12 @@ class AndroidPlatformClient implements ApplicationWebSocketPlatformClient {
         body: JSON.stringify(request),
         ...(signal === undefined ? {} : { signal }),
       },
-    );
+    ).catch((error: unknown) => {
+      if (error instanceof CompanionHttpError && error.status === 408) {
+        throw new Error(localizedMessage("android.companion.folder-selection-timeout"));
+      }
+      throw error;
+    });
     return decodeChooseDownloadRootResponse(source).root;
   }
 
@@ -494,6 +499,12 @@ async function companionJson(
   return JSON.parse(source) as unknown;
 }
 
+class CompanionHttpError extends Error {
+  public constructor(public readonly status: number) {
+    super(`Android companion request failed (${status})`);
+  }
+}
+
 async function companionText(url: URL, init: RequestInit): Promise<string> {
   const response = await fetch(
     url,
@@ -520,7 +531,7 @@ async function companionText(url: URL, init: RequestInit): Promise<string> {
     reader.releaseLock();
   }
   if (!response.ok) {
-    throw new Error(`Android companion request failed (${response.status})`);
+    throw new CompanionHttpError(response.status);
   }
   return source;
 }

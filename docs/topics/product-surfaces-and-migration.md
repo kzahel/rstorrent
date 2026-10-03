@@ -694,12 +694,17 @@ public-preview bootstrap also pass. Actual toolbar/OS launch, permission
 denial/retry, Android pairing rejection and approval, shared-library file
 intake/cancellation and keep-data removal also pass. Physical completion exposed
 a strict-view contradiction, repaired
-and repeated on a rebuilt APK. Completed-library cold restoration retains bytes
-and pairing but still shows a temporary unavailable root for roughly 45 seconds.
+and repeated on a rebuilt APK. The initial completed-library cold restoration
+showed temporary unavailability; the follow-up measures serial SAF observations,
+bounds their overlap to four, and separates startup checking from view readiness.
+Completed bytes and saved browser pairing recover within the existing timeout.
 The registered public-preview and installed candidate launch their healthy
 service; Chrome reports a DNS failure, and ChromeOS logs reject an empty IPv4
 hostname registration. Normal Linux shutdown/Terminal restart does not repair
-this cohort, so its Linux browser path remains blocked. Exact artifact hashes
+this cohort. Matching ChromeOS 150 release source and containerless/Baguette
+logs now explain the empty-address registration path; an OS fix and renewed
+browser qualification remain external. Setup guidance records this limitation.
+Exact artifact hashes
 and sustained outcomes belong to the tactical and private review report. Both
 full 3,600-second observations verify bytes, including stable connected Android
 completion; the Linux pass remains runtime-only. Test-only state is removed,

@@ -29,6 +29,12 @@
       "value": "The connection attempt failed. Open setup and troubleshooting for the failed stage, then retry manually."
     }
   ],
+  "android.companion.folder-selection-timeout": [
+    {
+      "type": 0,
+      "value": "Folder selection timed out. Close the Android folder picker, then try selecting the folder again."
+    }
+  ],
   "android.companion.help": [
     {
       "type": 0,

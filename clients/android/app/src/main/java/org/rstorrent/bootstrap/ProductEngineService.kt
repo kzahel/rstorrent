@@ -402,6 +402,7 @@ class ProductEngineService : Service() {
                 mutableState.update {
                     it.copy(
                         ready = false,
+                        storageRootChecking = false,
                         error = ProductError.Technical(error.message ?: error.toString()),
                     )
                 }
@@ -469,6 +470,11 @@ class ProductEngineService : Service() {
         startCompanion: Boolean,
     ) {
         check(!clientOpen) { "Android application client is already open" }
+        val startupStarted = SystemClock.elapsedRealtime()
+        fun startupCheckpoint(stage: String) {
+            Log.i(TAG, "product_startup stage=$stage elapsed_ms=${SystemClock.elapsedRealtime() - startupStarted}")
+        }
+        startupCheckpoint("opening")
         val profile = File(filesDir, ProductPrivateProfileReset.PROFILE_DIRECTORY)
         check(profile.mkdirs() || profile.isDirectory)
         val openedClient =
@@ -491,7 +497,9 @@ class ProductEngineService : Service() {
                     ),
                 )
             }
+        startupCheckpoint("native_open")
         val productSummary = openedClient.productSummary()
+        startupCheckpoint("product_summary")
         if (
             desiredNetworkPrerequisite(defaultNetworkObserver.snapshot()) ==
                 AndroidApplicationNetworkPrerequisite.WAITING_FOR_UNMETERED_NETWORK
@@ -507,6 +515,7 @@ class ProductEngineService : Service() {
             List(SAF_PROVIDER_CONCURRENCY) {
                 scope.launch(Dispatchers.IO) { driveSafStorageRequests() }
             }
+        startupCheckpoint("provider_responders")
         mutableState.update { it.copy(productSummary = productSummary) }
         networkConvergenceJob =
             scope.launch {
@@ -561,12 +570,16 @@ class ProductEngineService : Service() {
                 onError = ::reportError,
             )
         presentationRepository.start(client)
+        startupCheckpoint("presentation")
         if (!presentationReady.isCompleted) presentationReady.complete(Unit)
         reconcileSafRootRegistry()
+        startupCheckpoint("root_registry")
         val storageRootHealthy = client.probeSafStorageRoots()
+        startupCheckpoint("root_probe")
         Log.i(TAG, "saf_root_health source=startup available=$storageRootHealthy")
         refreshSafRootState()
-        mutableState.update { it.copy(ready = true) }
+        startupCheckpoint("root_presentation")
+        mutableState.update { it.copy(ready = true, storageRootChecking = false) }
         if (!clientReady.isCompleted) clientReady.complete(Unit)
         if (
             startCompanion &&
@@ -577,6 +590,7 @@ class ProductEngineService : Service() {
         ) {
             startChromeOsCompanionOwners()
         }
+        startupCheckpoint("ready")
     }
 
     fun acknowledgeProductDisclosure(statisticsEnabled: Boolean) {
@@ -4239,6 +4253,8 @@ class ProductEngineService : Service() {
     private suspend fun driveSafStorageRequests() {
         while (!stopped.get()) {
             val request = client.nextSafStorageRequest() ?: return
+            val startupRequest = BuildConfig.DEBUG && !clientReady.isCompleted
+            val requestStarted = SystemClock.elapsedRealtime()
             val cancellation = CancellationSignal()
             try {
                 withTimeout(request.timeoutMillis.toLong()) {
@@ -4309,6 +4325,9 @@ class ProductEngineService : Service() {
                 )
             } finally {
                 cancellation.cancel()
+                if (startupRequest) {
+                    Log.i(TAG, "saf_startup_request operation=${request.operation} elapsed_ms=${SystemClock.elapsedRealtime() - requestStarted}")
+                }
             }
         }
     }

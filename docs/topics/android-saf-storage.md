@@ -11,20 +11,19 @@ bounded recovery. Inherited apps/grants are preserved. Current revoked-root
 repair and real Play installation remain open; retain 194's original
 bounded repair pass.
 
-Second-cohort Tactical 253 now adds three independent controlled download and
-source-offline restart repetitions through the real SAF picker. The Android
-service starts its existing four provider responders before native network
-convergence and presentation subscription, so those calls cannot prevent
-responses to restored-torrent maintenance. Worker bounds and cancellation/join
-ownership are unchanged. The rebuilt candidate recovers a completed 121-file
-fixture and saved browser pairing with the seed offline. That recovery still
-takes roughly 45 seconds and temporarily presents the root as unavailable;
-this remains a startup UX gap, not a clean recovery pass or revoked-grant test.
-Both Android ABIs build and all 113 JVM tests pass. The final browser-controlled
-40 MiB fixture completes a full 3,600-second observation, independently hashes,
-recovers with its source offline and retains bytes after actual keep-data
-removal. Cold startup repeats the temporary unavailable-root state and can
-outlast the browser's first 20-second Retry; later saved-pairing recovery passes.
+Second-cohort Tactical 253 adds independently hashed download/restart and
+full-hour observation evidence. Its startup follow-up isolates the 121-file
+restoration cost to 126 serial SAF observations. A four-future window now
+uses the existing provider workers while preserving exact file validation,
+request bounds and cancellation. The native Library has a service-owned
+checking state independent of view-stream readiness, avoiding false repair,
+empty-library and torrent-error presentations before the initial probe finishes.
+Saved pairing and a completed browser row recover within the existing discovery
+budget. Both Android ABIs, generated Kotlin and 116 JVM tests pass. Exact
+before/after startup cohorts and screenshots belong to 253's follow-up review.
+The earlier rough 45-second observation remains historical, not a measured
+native-open timing or a revoked-grant test. Fresh Play delivery, real revoked
+root repair and full-device lifecycle gates remain open.
 
 Tactical [248](../tactical/248-chromeos-staggered-upgrade.md) extends controlled
 API 28/35 upgrade evidence to the released extension engine/session writer:

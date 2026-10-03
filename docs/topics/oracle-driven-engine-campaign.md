@@ -12,9 +12,17 @@ Android ABIs and 113 JVM tests pass; a physical browser-controlled download
 remains connected at completion with an independent payload hash. Both final
 second-cohort 3,600-second observations now pass: Android browser completion and
 Linux runtime bytes, with their distinct limits recorded in 253's private HTML
-review and matrix. Next work is the remaining acceptance matrix, including slow
-completed-library startup, second-cohort Linux hostname registration, store
-delivery and full-device lifecycle gates; the bounded projection repair is done.
+review and matrix.
+
+The startup follow-up now uses four caller-owned structural-observation
+futures, preserves file order and verification authority, and proves failure
+filtering/cancellation with four pending requests and zero descriptor opens.
+Workspace formatting/clippy and 1,574 tests (18 ignored), both Android ABIs
+and 116 JVM tests pass. Physical repeated startup and saved-pairing recovery
+are recorded in 253. The Linux blocker is narrowed to the ChromeOS 150
+Baguette empty-address registration path. Next work is the remaining store,
+full-device lifecycle and OS-fixed Linux browser acceptance matrix; the
+bounded projection/startup repairs are complete.
 
 Tactical [247](../tactical/247-android-ordinary-writer-upgrade.md) completes
 ordinary released Android writers and controlled installed upgrades on API 28/35:

@@ -963,3 +963,181 @@ structured evidence and selected original captures are review artifacts;
 temporary logs, APK copies and controlled seed payloads are removed. No private
 machine inventory or capture is committed. Tactical 253 remains Active because
 the remaining acceptance gates above are not closed by these bounded passes.
+
+### Authorized Recovery Follow-Up, 2026-10-03
+
+Measure and repair the reproduced Android cold-start delay and false
+unavailable-root presentation, improve the folder-picker timeout action, and
+diagnose the second cohort's Linux hostname registration failure. Preserve the
+previous review as historical evidence and append new measurements/captures.
+
+First record native-open, presentation, root-probe and companion-ready timing
+for empty, one-file and many-file completed libraries. Count provider work
+without recording paths, grants or tokens. Finalize the storage repair only
+after identifying the blocking stage; do not substitute a larger discovery
+timeout for readiness. Keep committed verification evidence, grant checks,
+root identity, provider/descriptor limits, cancellation and joined shutdown
+intact. Checking storage must not imply lost permission or verified seeding.
+The service remains the sole native/profile owner; the existing provider
+responders own platform calls, and the existing presentation/companion owners
+retain their cancellation paths. No new daemon, cache authority, dependency,
+protocol feature, store publication or global OS repair is implied.
+
+Inspect the pinned libtorrent resume/checking implementation and tests and the
+JSTorrent provider/startup history before settling a runtime/storage change.
+Use deterministic delayed-provider and error-state checks, the applicable
+Rust/web/Android gates, and repeated physical cold starts with source-offline
+hashes and browser recovery. Investigate Linux through Machine Control with
+read-only host/container address and registration comparisons first; no hosts
+override may qualify the normal browser route. Full reboot still requires a
+usable post-reboot unlock path. Stop when the bounded repairs and measured
+flows pass, or the remaining external platform dependency is precisely
+identified. Reconcile owning topics, local HTML review and cleanup before
+committing each completed slice.
+
+### Measured startup repair contract
+
+Two cold starts per case isolate startup: empty 409/413 ms, one payload
+714/685 ms, and 121 files 15,667/15,858 ms. The latter performs 126 SAF
+observations totaling 15,014/15,221 ms inside root probing and seed restoration.
+Root availability is not a failed permission; restoration is still running.
+
+Bound the existing seed-file structural observations to four concurrent
+futures, preserving file order, exact lengths/kinds, skipped/padding behavior,
+and verified-piece authority. Use the existing futures-util dependency; no
+new tasks, provider caches, descriptor opens, retries, or deadline extension.
+The caller owns and drops every future; the storage request's pending guard
+and oneshot receiver cancel on drop. Existing broker limits and four Android
+responders remain the outer bound. Publish no seed until all checks finish.
+The Android library should show checking while startup is incomplete, and only
+offer folder selection/repair once startup has established its result.
+
+Oracle inspection uses pinned libtorrent
+`7d7fc38fac61177fa5e02148f791b2f65250b09d`: `src/torrent.cpp`
+`checking_resume_data`/`on_resume_data_checked`, and `test/test_checking.cpp`
+`test_checking` (zero-length, incomplete, corrupt, read-only, force-recheck)
+and `discrete_checking` (priority changes). Adopt asynchronous bounded work
+without weakening checking authority; the four-observation window is our
+provider-specific choice, not a copied libtorrent scheduling policy.
+JSTorrent `android/io-core/src/main/java/com/jstorrent/io/file/FileManagerImpl.kt`
+`getCachedFile`, and `docs/archive/bugs/saf-fd-pooling-plan.md`, reinforce
+avoiding stale namespace caching and simultaneous descriptor-open churn.
+This change only overlaps read-only metadata queries, never descriptor opens.
+
+Required evidence: an initially failing forced-overlap test, out-of-order
+responses with missing/wrong-kind/wrong-length/provider-failed files and
+skipped/padding/unverified cases, bounded high water and joined cancellation;
+Rust baseline, Android both ABIs/JVM, and repeat physical profiles with exact
+payload hashes. No protocol behavior or persistence format changes.
+
+### Linux root cause narrowed to ChromeOS Baguette
+
+Read-only comparison finds both physical cohorts on ChromeOS 150.0.7871.255 /
+16700.65.0. The first cohort's traditional container startup logs include a
+real IPv4 address. The second cohort's freshly created Debian 13.5 environment
+reports KVM and containerless/Baguette startup; its successful startup message
+contains no IPv4 address, followed by crosdns rejecting an empty address.
+Ordinary shutdown/Terminal startup already reproduced this failure.
+
+The matching `release-R150-16700.B` source, resolved to platform2 commit
+`2b0804f9eae0957fc18cb50197b134a6c2dbb2b3`, explains that observation:
+[`vm_tools/cicerone/service.cc::ContainerStartupCompleted`](https://chromium.googlesource.com/chromiumos/platform2/+/2b0804f9eae0957fc18cb50197b134a6c2dbb2b3/vm_tools/cicerone/service.cc)
+only obtains the container address for non-containerless VMs, but its later
+hostname-registration condition still accepts an empty string.
+`vm_tools/cicerone/virtual_machine.cc::IsContainerless` identifies all VM types
+other than TERMINA as containerless. This is a source/log-supported platform
+root cause, not a verified binary-to-source build mapping or an upstream fix.
+The normal browser route remains blocked. No hosts override, global service
+patch, destructive Linux recreation, or further reboot is attempted. Setup
+now explains the observed ChromeOS 150 failure and offers Android while
+preserving Linux data. A ChromeOS fix/requalification remains external work.
+
+The startup repair preserves BEP 3 piece-hash authority and BEP 52 file-tree /
+piece-layer semantics (pinned `reference/bittorrent.org/beps/bep_0003.rst` and
+`bep_0052.rst`). Overlapping structural metadata checks creates no verification
+truth and changes no wire or resume format.
+
+
+### Recovery follow-up implementation evidence
+
+The forced-overlap negative times out waiting for its second outstanding file
+observation. The repaired engine passes all ten seed-content tests, including
+four pending observations, reversed provider replies, unavailable files,
+skipped/padding/unverified pieces and cancellation returning to zero pending
+requests without opening descriptors. `cargo fmt --all -- --check`,
+`cargo clippy --workspace -- -D warnings`, and `cargo test --workspace` pass:
+1,574 Rust tests, 18 ignored. No Rust application boundary type changed.
+
+Web typecheck and 465 tests pass (two skipped). Three new picker recovery cases
+prove actionable HTTP 408 handling, explicit retry only, and unchanged caller
+cancellation/401 errors; the 408 test first fails against the old generic error.
+The extension's 54 tests, archive validation, companion packaging/CSP and all
+localization catalogs pass. Both Android ABIs and generated Kotlin build with
+116 JVM tests and packaged notice validation. The profiler has two parser tests
+and owns only its isolated package/profile, controlled seed and SAF folder.
+
+Physical inspection catches an additional presentation detail: the reducer's
+first view update marks `ready`, before the service's initial root probe ends.
+An explicit service-owned `storageRootChecking` flag now survives all view
+updates and clears after root probing/presentation or initialization failure.
+While checking, Library shows a connecting indicator and folder progress;
+it defers stale torrent rows and the empty-library claim. Tests cover initial
+view readiness, completed healthy/unavailable/no-root results and fatal errors.
+Saved-pairing browser recovery on the corrected APK completes with its existing
+20-second discovery budget: 15,091 ms including host control overhead, a
+connected 100% Complete row, and no new Android approval. No timeout is enlarged.
+
+### Final follow-up physical cohort
+
+Elapsed milliseconds from application opening to the ready checkpoint; OS
+process launch and transport overhead are excluded. The instrumented baseline
+runs twice per case; the final APK runs three times per case.
+
+| Metainfo files | Baseline (ms) | Final (ms) |
+| --- | --- | --- |
+| 0 | 409, 413 | 496, 454, 488 |
+| 1 | 714, 685 | 756, 738, 747 |
+| 121 | 15667, 15858 | 11469, 11331, 11010 |
+
+Each many-file start still observes 126 provider objects. Every completed
+restart independently matches the 256 KiB payload SHA-1 with its seed paused.
+An intermediate candidate measured 8.6–8.8 seconds; the final repeated cohort
+is slower, so retain its final measurements rather than reporting the best
+run as typical. These small cohorts do not establish scaling across libraries.
+
+The final capture shows Connecting / Checking download folders without Repair,
+stale error rows or an empty-library claim. All nine final starts and cleanup
+pass. A preceding final-APK attempt stopped at picker input after the empty
+case; its cleanup passed and it is excluded from the completed cohort. The
+rerun reserved the device UI for the runner and passed.
+
+Actual picker expiration produces the new HTTP 408 guidance. Returning actual
+ChromeOS window focus is necessary to settle its visible result; CDP tab
+activation alone was insufficient. A new explicit request is accepted, with
+unchanged retained root and payload hash. Completion/cancellation of that second
+request is not separately qualified; cleanup removes its isolated profile.
+The final local HTML review embeds six device captures and the measured cohorts.
+The original 43-screen review remains intact.
+
+
+Final APK SHA-256:
+`4c490dc9af72c6de2949f8335861c093f319276d617d26532e359f49f30b61c2`.
+Beta extension archive SHA-256:
+`3090b6dc336f65943989e14df8f2dfb5fcd9bacafbf743ede13691f7cd098d90`.
+The final presentation rebuild uses the already qualified two native ABIs;
+all 116 JVM tests pass again. Final report rendering passes desktop/mobile
+width checks, embedded-image loading and zero browser errors using isolated
+headless Playwright Chromium, which is closed after inspection.
+
+
+Follow-up cleanup removes the owned APK/profile, SAF fixture root, beta
+extension/staging, task tabs and exclusive marker. The controlled source
+listener is closed, the build-host checkout is restored clean, and temporary
+transport/build logs are removed after retaining curated evidence. The inherited
+Play package still reports 1.0.23. Linux setup and idle/lid availability policy
+remain unchanged. Final common doctor passes all ten checks. No push, release,
+store publication, full reboot or OS hostname override occurs.
+
+This bounded repair/diagnosis follow-up is complete. Tactical 253 remains
+active/partial for production delivery, full store combinations, fresh Play,
+ARM hardware, full-device lifecycle and the OS-blocked Linux browser route.

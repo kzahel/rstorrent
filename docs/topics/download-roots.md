@@ -2,6 +2,15 @@
 
 Topic: `download-roots`
 
+Tactical 253's second-cohort follow-up keeps the native Library in a checking
+state until the startup probe completes, instead of offering premature folder
+repair. Android browser HTTP 408 now explains picker expiration and an explicit
+new selection, preserving cancellation and authorization errors. The physical
+picker expires with that message and accepts another explicit request; retained
+root/payload bytes are unchanged. No automatic retry or permission change is
+introduced. The second cohort's Linux hostname failure is now traced to the
+ChromeOS 150 Baguette path; ordinary restart is not a repair for that defect.
+
 Tactical
 [253](../tactical/253-chromeos-onboarding-recovery-and-physical-qualification.md)
 independently verifies a controlled file in separate Android SAF and

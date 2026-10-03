@@ -1,4 +1,5 @@
 {
+  "android.companion.folder-selection-timeout": {"defaultMessage": "Folder selection timed out. Close the Android folder picker, then try selecting the folder again.", "description": "Recovery after the Android folder-selection request expires; a new request requires a user action."},
   "android.companion.pairing-canceled": {"defaultMessage": "Pairing canceled. The Android approval request may remain pending for up to two minutes. Wait for it to expire before selecting Retry.", "description": "Local cancellation does not cancel the bounded Android approval request."},
   "android.companion.pairing-rejected": {"defaultMessage": "Pairing was rejected in the Android app. Select Retry to request approval again, or use the Android app directly.", "description": "Observed ChromeOS pairing failure with manual recovery."},
   "android.companion.pairing-expired": {"defaultMessage": "The pairing request expired. Open the Android app, then select Retry and approve the new request.", "description": "Observed ChromeOS pairing failure with manual recovery."},
