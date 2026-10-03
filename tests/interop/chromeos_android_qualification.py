@@ -50,18 +50,25 @@ class RemoteAdb:
 
 def finish_first_use(adb):
     deadline = time.monotonic()+20
+    ready_snapshots = 0
     while time.monotonic() < deadline:
         nodes = list(product.dump_ui(adb).iter())
         save = product.click_labeled(nodes, {"Save and continue"})
         if save is not None:
+            ready_snapshots = 0
             enabled = next((node for node in nodes if node.get("checkable") == "true" and node.get("checked") == "true"), None)
             if enabled is not None:
                 product.tap_bounds(adb, enabled.get("bounds"))
-            product.tap_bounds(adb, save.get("bounds"))
-            time.sleep(0.5)
-            return
-        if any(node.get("content-desc") == "Settings" for node in nodes):
-            return
+                # Compose may reflow the dialog after changing consent. A tap
+                # must use the next snapshot's button, not the old geometry.
+            else:
+                product.tap_bounds(adb, save.get("bounds"))
+        elif product.click_labeled(nodes, product.STORAGE_SELECTION_LABELS) is not None:
+            ready_snapshots += 1
+            if ready_snapshots >= 2:
+                return
+        else:
+            ready_snapshots = 0
         time.sleep(0.5)
     raise RuntimeError("first-use disclosure did not resolve within its stage budget")
 
@@ -99,6 +106,7 @@ def main():
     parser.add_argument("--seed-address", required=True, help="explicit controller LAN address")
     parser.add_argument("--seed-port", type=int, default=0, help="explicit permitted TCP port, or 0 for a preflighted dynamic port")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--screenshots", type=Path, help="retain actual ChromeOS captures at product checkpoints")
     parser.add_argument("--observe-seconds", type=int, default=3600)
     args = parser.parse_args()
     if not 0 <= args.seed_port <= 65535:
@@ -124,6 +132,20 @@ def main():
     report = {"schema": "chromeos-android-qualification/v1", "cohort": args.target,
               "delivery": "isolated_debug_sideload", "play_installation": "unrun",
               "repetitions": records, "result": "fail", "cleanup": "pending"}
+    if args.screenshots:
+        args.screenshots.mkdir(parents=True, exist_ok=False)
+        report["screenshots"] = []
+
+    def capture(name):
+        if args.screenshots is None:
+            return
+        destination = (args.screenshots / f"{name}.png").resolve()
+        subprocess.run([*command, "testbed", "--", "screenshot", str(destination)],
+                       check=True, capture_output=True, text=True, timeout=45)
+        if not destination.is_file() or destination.stat().st_size == 0:
+            raise RuntimeError("product screenshot did not produce an artifact")
+        report["screenshots"].append(destination.name)
+
     session = create_session()
     session.apply_settings({"listen_interfaces": f"{args.seed_address}:{args.seed_port}", "upload_rate_limit": 8 * 1024, "ignore_limits_on_local_network": False})
     handles = []
@@ -132,7 +154,9 @@ def main():
         adb.shell("pm", "grant", PACKAGE, "android.permission.POST_NOTIFICATIONS")
         adb.shell("am", "start", "-W", "-n", ACTIVITY)
         finish_first_use(adb)
+        capture("01-first-use-complete")
         select_owned_tree(adb)
+        capture("02-download-folder-selected")
         print(json.dumps({"stage": "owned_saf_ready"}), flush=True)
         with tempfile.TemporaryDirectory(prefix="rstorrent-253-seeds-") as temporary:
             directory = Path(temporary)
@@ -158,12 +182,14 @@ def main():
                     if actual == expected: break
                     time.sleep(2)
                 else: raise RuntimeError(f"repetition {ordinal} byte verification timed out")
+                capture(f"03-{ordinal}-verified-download")
                 # Source-offline restart must retain the verified bytes and grant.
                 handle.pause()
                 adb.shell("am", "force-stop", PACKAGE)
                 adb.shell("am", "start", "-W", "-n", ACTIVITY)
                 actual = adb.shell("sha1sum", destination).stdout.split(" ", 1)[0].strip()
                 if actual != expected: raise RuntimeError("restart changed downloaded bytes")
+                capture(f"04-{ordinal}-source-offline-restart")
                 records.append({"ordinal": ordinal, "elapsed_seconds": round(time.monotonic()-start, 2), "bytes": 256*1024, "sha1": actual, "source_offline_restart": "pass"})
                 print(json.dumps({"stage": "cold_launch_verified", **records[-1]}), flush=True)
                 # Different deterministic torrents use the same exact single-file
@@ -195,6 +221,8 @@ def main():
                 while time.monotonic()-beginning < args.observe_seconds:
                     transferred = int(handle.status().total_payload_upload)
                     samples.append(transferred)
+                    if len(samples) == 3:
+                        capture("05-controlled-observation")
                     if len(samples) >= 5 and samples[-1] <= samples[-5]:
                         raise RuntimeError("controlled observation stopped moving for two minutes")
                     print(json.dumps({"stage": "observation", "seconds": round(time.monotonic()-beginning), "seed_payload_upload": transferred}), flush=True)
@@ -210,10 +238,16 @@ def main():
                         break
                     time.sleep(2)
                 report["observation"] = {"status": "pass" if args.observe_seconds == 3600 and verified else "bounded_short_run", "seconds": args.observe_seconds, "seed_payload_upload": samples[-1], "completion": "pass" if verified else "unrun", "sha1": actual if verified else None}
+                if verified:
+                    capture("06-observation-verified")
                 if args.observe_seconds == 3600 and not verified:
                     raise RuntimeError("observation completion did not verify within the recovery budget")
     except BaseException:
         report["result"] = "fail"
+        try:
+            capture("failure")
+        except Exception as error:
+            report["screenshot_failure"] = type(error).__name__
         raise
     finally:
         cleaned = True

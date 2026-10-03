@@ -753,3 +753,34 @@ and remaining limits. Product fixes need focused regression checks and a repeat
 of the affected physical flow. Inaccessible store/signing/lifecycle states stay
 explicitly open. Cleanup joins owned processes, removes test state and retains
 the requested review artifact; final doctor verifies appliance availability.
+
+### Second-Cohort Native Checkpoint, 2026-10-03
+
+The second x86_64 cohort runs ChromeOS `16700.65.0`, Chrome 150 and Android
+13/API 33. Its inherited Play-installed `com.jstorrent.app` is 1.0.23/code 23;
+the actual listing offers Open/Uninstall, with no update offered. It opens the
+legacy companion. The beta extension correctly reaches update-required help.
+This is an installed-store baseline, not fresh installation or successor update.
+
+The exact isolated APK recorded above passes three 256 KiB controlled downloads
+with independent SHA-1 checks and source-offline restarts. Each repetition uses
+the actual SAF picker and external magnet confirmation. Its owned data is
+cleaned after the run. The 60-minute second-cohort observation remains open.
+
+Calibration exposed stale first-use dialog coordinates and a readiness check
+for a Settings control absent from this layout. The runner now refreshes after
+consent changes and observes two folder-selection snapshots after dismissal.
+Seven portable checks pass, including delayed first-use presentation/reflow.
+Optional checkpoint/failure screenshots retain actual physical presentation;
+the initial failed calibration runs are not product passes.
+
+Ordinary ChromeOS Settings successfully provisions a fresh Debian 13.5 Linux
+environment. The unchanged authenticated website bootstrap verifies the signed
+public preview and installs it as the ordinary user. The setup guide previously
+asked for `./install.sh` after that bootstrap had already installed the app; it
+now separates the website path from a local authenticated archive. The crate
+README also acknowledges the existing public preview. Extension tests pass
+(54 tests plus source validation), and the corrected beta ZIP packages with
+SHA-256 `34d523024c45bc954a22ad60c80d4e85ad551ab6b8ce558fcca3a6542456027a`.
+Physical pairing, registered launch and browser review continue below; this
+checkpoint does not close their gates.

@@ -683,7 +683,13 @@ Cohort-A isolated Android approval/retry, shared-library recovery and controlled
 file intake pass bounded slices. Both routes finish controlled 60-minute
 observations and three independently verified recovery repetitions; Linux is
 runtime evidence only. Test state is restored. Real Play installation, store
-pairs, cohort B and full lifecycle acceptance remain open under Tactical 253.
+pairs and full lifecycle acceptance remain open under Tactical 253. On
+2026-10-03 cohort B becomes available: its inherited Play app is the legacy
+1.0.23 companion, the extension correctly requests an app update, and the
+isolated current Android package passes three controlled byte-verified
+download/source-offline restart repetitions. Fresh Linux setup and the signed
+public-preview bootstrap also pass. Browser pairing, registered launch and
+second-cohort endurance remain separate pending checks in the tactical.
 
 The first-run UX should emphasize two backend choices:
 

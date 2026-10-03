@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
-from chromeos_android_qualification import RemoteAdb, confirm_intake
+from chromeos_android_qualification import RemoteAdb, confirm_intake, finish_first_use
 
 
 class QualificationSafety(unittest.TestCase):
@@ -63,6 +63,22 @@ class QualificationSafety(unittest.TestCase):
         result, taps = self.confirm('<hierarchy><node text="Download" clickable="true" enabled="true" bounds="[1,1][2,2]"/></hierarchy>')
         self.assertTrue(result)
         self.assertEqual(len(taps), 1)
+
+    def test_first_use_refreshes_geometry_and_observes_dismissal(self):
+        snapshots = iter([
+            '<hierarchy><node text="Select folder" clickable="true" bounds="[7,7][8,8]"/></hierarchy>',
+            '<hierarchy><node checkable="true" checked="true" bounds="[1,1][2,2]"/>'
+            '<node text="Save and continue" clickable="true" bounds="[3,3][4,4]"/></hierarchy>',
+            '<hierarchy><node checkable="true" checked="false"/>'
+            '<node text="Save and continue" clickable="true" bounds="[5,5][6,6]"/></hierarchy>',
+            '<hierarchy><node text="Select folder" clickable="true" bounds="[7,7][8,8]"/></hierarchy>',
+            '<hierarchy><node text="Select folder" clickable="true" bounds="[7,7][8,8]"/></hierarchy>',
+        ])
+        taps = []
+        with patch("chromeos_android_qualification.product.dump_ui", side_effect=lambda _: ET.fromstring(next(snapshots))), patch("chromeos_android_qualification.product.tap_bounds", side_effect=lambda _, bounds: taps.append(bounds)), patch("chromeos_android_qualification.time.sleep"):
+            finish_first_use(object())
+        self.assertEqual(taps, ["[1,1][2,2]", "[5,5][6,6]"])
+        self.assertEqual(list(snapshots), [])
 
 
 REAL_RUN = subprocess.run

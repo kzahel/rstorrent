@@ -25,5 +25,5 @@ profile.
 
 The release-ready website bootstrap and two-architecture signed-manifest
 contract are documented in [`docs/crostini-release.md`](../../docs/crostini-release.md).
-There is no public Crostini release yet, so the one-command path is not a
-current availability claim.
+The public signed `crostini-v0.1.0` preview is available through that bootstrap.
+Local candidate packages remain separate from the published release.

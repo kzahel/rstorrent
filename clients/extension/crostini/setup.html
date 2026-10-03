@@ -38,13 +38,13 @@
         <h2>Install the preview</h2>
         <ol>
           <li>Enable <strong>Linux development environment</strong> in ChromeOS Settings only where offered and permitted.</li>
-          <li>Use the <a href="https://rstorrent.com/install-crostini.sh" target="_blank" rel="noopener noreferrer">official authenticated installer</a> from Terminal with <code>curl -fsSL https://rstorrent.com/install-crostini.sh | bash</code>. It verifies the signed release manifest and package hash before installation. A current development candidate is not automatically a published release. For an already authenticated local package, extract it in Linux files.</li>
-          <li>Open Terminal in that folder and run <code>./install.sh</code>.</li>
+          <li>Run the <a href="https://rstorrent.com/install-crostini.sh" target="_blank" rel="noopener noreferrer">official authenticated installer</a> in Terminal with <code>curl -fsSL https://rstorrent.com/install-crostini.sh | bash</code>. It verifies the signed release manifest and package hash, then installs the app automatically.</li>
           <li>
             Open <strong>RSTorrent for ChromeOS Linux</strong> from the Chromebook
             Launcher. It wakes Linux, starts RSTorrent, and returns to Chrome.
           </li>
         </ol>
+        <p>For an already authenticated local package, extract it in Linux files, open Terminal in the extracted folder, and run <code>./install.sh</code> instead of the website command. A development candidate is not automatically a published release.</p>
       </section>
 
       <section>
