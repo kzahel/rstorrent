@@ -1,4 +1,6 @@
 .panel {
+  overflow: auto;
+  height: 100%;
   min-height: 100%;
   padding: 22px 24px 28px;
   color: var(--text-primary);

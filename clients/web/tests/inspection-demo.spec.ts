@@ -1442,6 +1442,22 @@ test("global disk pipeline shows pressure and responsive piece work", async ({
   await capture(page, "rstorrent-disk-phone.png");
 });
 
+test("speed controls remain wheel-scrollable in a short desktop viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 631 });
+  await openScenario(page, "speed-bursty", 42_000);
+  await page.getByRole("tab", { name: "Speed" }).click();
+  const panel = page.getByLabel("Session speed history");
+  const box = await panel.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.y + box!.height).toBeLessThanOrEqual(631);
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height - 20);
+  await page.mouse.wheel(0, 900);
+  await expect.poll(() => panel.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await expect(panel.getByRole("button", { name: "DHT in" })).toBeInViewport();
+  await panel.getByRole("button", { name: "DHT in" }).click();
+  await expect(panel.getByText("4 of 8")).toBeVisible();
+});
+
 test("speed history stays exact, selectable, and accessible", async ({
   page,
 }) => {

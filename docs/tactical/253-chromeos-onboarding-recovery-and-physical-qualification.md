@@ -880,3 +880,23 @@ restart and keep-data removal checks. The report records that throttle release.
 This avoids measuring protocol overhead against an accidentally too-short
 completion tail and does not shorten the hour or weaken byte verification.
 The earlier interrupted Linux observation is not counted as an hour pass.
+
+### Speed Panel Scroll Repair Scope, 2026-10-03
+
+The actual 1200-by-631 browser viewport clips the Speed panel beneath the
+application's hidden overflow. Unlike the adjacent Disk/DHT panels, Speed has
+only a minimum height and no scrolling owner. Its lower chart controls cannot
+be reached with ordinary scrolling. Bound the existing panel to its parent's
+height and give it overflow scrolling; do not change speed data, canvas or
+subscription ownership. First reproduce with a real wheel-input browser check
+at that viewport, then rerun it and the existing Speed accessibility/selection
+journey. Repeat the physical wheel flow after the active hour finishes.
+
+The new regression first fails because the panel bottom is at 1,237.6 pixels
+inside a 631-pixel viewport. After the bounded height/overflow fix, ordinary
+wheel input reaches the DHT-series control and selection updates correctly.
+Both this regression and the existing Speed accessibility/selection journey pass
+using bundled headless Chromium. Web typecheck, 462 tests (two skipped), beta
+packaging and the 15-bundle CSP gate pass again. Final package including both
+header and Speed fixes has SHA-256 `7eb404e165090f0b08206433255ccec23f16688de3ff37f8a20684f54c35aa92`. Physical reload remains sequenced
+after the active hour; it is not counted from this local check.
