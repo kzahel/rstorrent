@@ -8,7 +8,7 @@ adds current isolated physical APK evidence on cohort A: the real picker
 commits its owned binary retained-root registry, controlled magnet/file-input
 bytes verify independently, and native restart retains the binding/library in
 bounded recovery. Inherited apps/grants are preserved. Current revoked-root
-repair, real Play installation and cohort B remain open; retain 194's original
+repair and real Play installation remain open; retain 194's original
 bounded repair pass.
 
 Second-cohort Tactical 253 now adds three independent controlled download and
@@ -20,7 +20,11 @@ ownership are unchanged. The rebuilt candidate recovers a completed 121-file
 fixture and saved browser pairing with the seed offline. That recovery still
 takes roughly 45 seconds and temporarily presents the root as unavailable;
 this remains a startup UX gap, not a clean recovery pass or revoked-grant test.
-Both Android ABIs build and all 113 JVM tests pass.
+Both Android ABIs build and all 113 JVM tests pass. The final browser-controlled
+40 MiB fixture completes a full 3,600-second observation, independently hashes,
+recovers with its source offline and retains bytes after actual keep-data
+removal. Cold startup repeats the temporary unavailable-root state and can
+outlast the browser's first 20-second Retry; later saved-pairing recovery passes.
 
 Tactical [248](../tactical/248-chromeos-staggered-upgrade.md) extends controlled
 API 28/35 upgrade evidence to the released extension engine/session writer:

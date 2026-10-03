@@ -9,9 +9,12 @@ fix preserves admission through content-task cleanup without changing policy,
 protocol or wire types. Workspace formatting, warning-denying clippy, 1,572 Rust
 tests (18 ignored), web typecheck and 462 web tests (two skipped) pass. Both
 Android ABIs and 113 JVM tests pass; a physical browser-controlled download
-remains connected at completion with an independent payload hash. Continue 253's
-physical endurance/report matrix; retain the slow completed-library startup and
-second-cohort Linux hostname failure as open gaps.
+remains connected at completion with an independent payload hash. Both final
+second-cohort 3,600-second observations now pass: Android browser completion and
+Linux runtime bytes, with their distinct limits recorded in 253's private HTML
+review and matrix. Next work is the remaining acceptance matrix, including slow
+completed-library startup, second-cohort Linux hostname registration, store
+delivery and full-device lifecycle gates; the bounded projection repair is done.
 
 Tactical [247](../tactical/247-android-ordinary-writer-upgrade.md) completes
 ordinary released Android writers and controlled installed upgrades on API 28/35:

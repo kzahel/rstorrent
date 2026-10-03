@@ -18,7 +18,15 @@ connection page offers exact-host optional access, bounded checks and manual
 recovery; fresh document navigation avoids retained old HTML cache. Current
 signed installation/registered candidate Launcher and full physical/store
 acceptance remain open. Cohort A retains
-legacy/debug apps; cohort B is presently unreachable from this controller.
+legacy/debug apps. Cohort B is now reachable: its inherited Play app is legacy,
+while isolated Android/extension pairing, real folder/file picker cancellation,
+keep-data removal and corrected browser completion pass. Completed-library
+startup remains slow with temporary unavailable-root presentation. Fresh Linux
+setup and signed public installation work, but the registered launcher's browser
+handoff remains blocked by ChromeOS hostname registration, even after ordinary
+VM recovery. Both full-hour controlled observations verify their bytes; Linux
+retains its runtime-only limit. The local screenshot/HTML review retains exact
+candidate limits and the remaining startup/store/lifecycle gaps.
 Neither injected presentation nor appliance health qualifies Play installation.
 
 Priority accepted 2026-10-01: qualify ChromeOS onboarding and recovery on both

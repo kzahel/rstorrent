@@ -1230,8 +1230,15 @@ hosted repeats.
   is restored. The follow-up restores normal Linux registration through Terminal
   and adds offline Retry/Cancel, current-document cache recovery, real Linux
   browser/file-picker intake and completed-row/byte retention after VM restart.
-  Current signed installation/candidate Launcher, full store pairs, lifecycle
-  gaps, cohort B and real fresh Play installation remain unrun.
+  Cohort B now adds an inherited Play baseline, isolated Android/extension
+  flows, corrected completion, fresh Linux setup and signed public installation.
+  Its launcher starts a healthy service but browser access remains blocked by
+  ChromeOS hostname registration after normal VM recovery. Android completed
+  startup remains slow with temporary unavailable-root presentation. Current
+  signed successor delivery, full store pairs, lifecycle gaps and real fresh
+  Play installation remain open. Both second-cohort full-hour observations
+  verify bytes; Android also keeps a stable connected completed browser row.
+  Linux retains its runtime-only limit; exact outcomes belong to 253.
 
 - Selected three-platform beta package matrices pass in **236/237**, signed
   published-cohort updates in **238**, and bounded browser/transfer recovery in

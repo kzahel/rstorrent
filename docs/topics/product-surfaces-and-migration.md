@@ -13,10 +13,12 @@ controlled 60-minute byte-verified observations. Owned test state is restored.
 Normal Terminal startup restores Linux registration after the earlier failed
 administrative LXC session. The isolated current Linux browser connects, verifies
 real file-picker intake and retains the completed row/bytes after VM restart
-with the source offline. Full physical acceptance remains open: current signed
-installation/candidate Launcher and real Play/store journeys are unrun; cohort B is
-unreachable at its private inventory address. Cutover A-06/07/08 remain
-unchecked.
+with the source offline. Full physical acceptance remains open. Cohort B is now
+reachable and adds an inherited Play baseline, isolated Android/extension flows
+and a fresh Linux setup with the signed public preview. Its registered launcher starts a healthy
+service, but normal VM restart does not resolve the Linux hostname-registration
+failure. Current signed candidate delivery, real fresh Play/store pairs and
+full lifecycle gates remain open. Cutover A-06/07/08 remain unchecked.
 
 Tactical [251](../tactical/251-jstorrent-ci-candidates-and-installed-update.md)
 completes bounded production-identity CI attempts using existing signing inputs,
@@ -688,8 +690,20 @@ pairs and full lifecycle acceptance remain open under Tactical 253. On
 1.0.23 companion, the extension correctly requests an app update, and the
 isolated current Android package passes three controlled byte-verified
 download/source-offline restart repetitions. Fresh Linux setup and the signed
-public-preview bootstrap also pass. Browser pairing, registered launch and
-second-cohort endurance remain separate pending checks in the tactical.
+public-preview bootstrap also pass. Actual toolbar/OS launch, permission
+denial/retry, Android pairing rejection and approval, shared-library file
+intake/cancellation and keep-data removal also pass. Physical completion exposed
+a strict-view contradiction, repaired
+and repeated on a rebuilt APK. Completed-library cold restoration retains bytes
+and pairing but still shows a temporary unavailable root for roughly 45 seconds.
+The registered public-preview and installed candidate launch their healthy
+service; Chrome reports a DNS failure, and ChromeOS logs reject an empty IPv4
+hostname registration. Normal Linux shutdown/Terminal restart does not repair
+this cohort, so its Linux browser path remains blocked. Exact artifact hashes
+and sustained outcomes belong to the tactical and private review report. Both
+full 3,600-second observations verify bytes, including stable connected Android
+completion; the Linux pass remains runtime-only. Test-only state is removed,
+the inherited Play app is preserved, and final device doctor passes ten checks.
 
 The first-run UX should emphasize two backend choices:
 

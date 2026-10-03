@@ -21,8 +21,9 @@ Completed admission now precedes the old content-task flag, and task-progress
 cleanup preserves the admission owner's fact. The strict browser contract is
 unchanged. A three-admission regression covers active, inactive-exempt and queued
 seeds through cleanup; the rebuilt physical Android candidate stays connected
-at completion with independently verified bytes. Store delivery and the Linux
-browser journey retain their separate qualification limits.
+at completion with independently verified bytes, including a full 3,600-second
+controlled observation and stable 40 MiB completed view. Store delivery and the
+Linux browser journey retain their separate qualification limits.
 
 Tactical [244](../tactical/244-unavailable-storage-presentation.md) corrects
 shared React adaptation of `awaiting_storage`: blocked progress becomes Needs

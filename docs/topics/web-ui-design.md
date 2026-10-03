@@ -25,14 +25,17 @@ collapsed between flex items. The existing companion header now has an explicit
 0.75-rem gap. Its height and connection behavior are unchanged; 320/390/1200-pixel
 headless layout checks preserve the 40-pixel header without horizontal overflow.
 The full web typecheck, 462-test suite (two skipped) and packaged CSP checks pass.
-Physical verification uses the final candidate after the ongoing observation.
+After the full observation, the final packaged candidate also verifies the
+12-pixel gap and 40-pixel header on the physical second Chromebook.
 
 The same physical review exposed an unscrollable Speed panel in a short desktop
 viewport. Its content extended beneath the application's clipped boundary.
 Speed now owns scrolling within the existing detail-pane height, matching the
 adjacent session panels. A 1200-by-631 wheel-input regression fails before the
 fix and passes afterward, alongside the existing Speed selection/accessibility
-journey. Data, series selection and subscription behavior are unchanged.
+journey. Physical wheel input also reaches the lower series controls while the
+panel stays within the 631-pixel viewport. Data, series selection and
+subscription behavior are unchanged.
 
 The Linux follow-up adds a packaged offline connection page with a ten-second,
 4-KiB exact-host health bound, explicit optional browser access and joined manual
