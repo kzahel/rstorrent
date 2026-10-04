@@ -37,6 +37,13 @@ Latest Android delivery record:
 — original-key 1.0.25 replacement available on JSTorrent's Play internal track;
 production and installed migration qualification remain separate.
 
+Latest release qualification work:
+
+- [`256-swarm-touch-ci-stabilization.md`](256-swarm-touch-ci-stabilization.md):
+  repair the current browser CI timing failure without weakening touch oracles.
+- [`257-play-upgrade-and-fresh-signed-candidates.md`](257-play-upgrade-and-fresh-signed-candidates.md):
+  qualify actual Play delivery and current-source non-publishing signed builds.
+
 ## Work Selection And Concurrency
 
 Multiple independent tacticals may be **Active** concurrently. **Active**,

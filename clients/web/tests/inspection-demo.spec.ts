@@ -2038,24 +2038,14 @@ async function swipeTableLeft(page: Page, table: Locator) {
   );
   const session = await page.context().newCDPSession(page);
   try {
-    await session.send("Input.dispatchTouchEvent", {
-      type: "touchStart",
-      touchPoints: [{ x: startX, y }],
-    });
-    for (let step = 1; step <= 6; step += 1) {
-      await session.send("Input.dispatchTouchEvent", {
-        type: "touchMove",
-        touchPoints: [
-          {
-            x: Math.round(startX + ((endX - startX) * step) / 6),
-            y,
-          },
-        ],
-      });
-    }
-    await session.send("Input.dispatchTouchEvent", {
-      type: "touchEnd",
-      touchPoints: [],
+    // Complete a native touch drag without a fling carrying into the next
+    // viewport's explicit scroll-position checks.
+    await session.send("Input.synthesizeScrollGesture", {
+      x: startX,
+      y,
+      xDistance: endX - startX,
+      gestureSourceType: "touch",
+      preventFling: true,
     });
   } finally {
     await session.detach();

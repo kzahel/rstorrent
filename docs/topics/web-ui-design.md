@@ -206,7 +206,12 @@ sorting, persistent table columns and widths, and a 4,096-row named scenario.
 Completed Tactical
 [`173`](../tactical/173-mobile-web-table-horizontal-scrolling.md) makes those
 configured columns authoritative at every viewport width and restores trusted
-touch horizontal scrolling across every shared table.
+touch horizontal scrolling across every shared table. Tactical
+[`256`](../tactical/256-swarm-touch-ci-stabilization.md) stabilizes the swarm
+layout CI journey by completing a native touch gesture with fling suppressed
+before position and resize assertions. It retains every scrolling,
+column-bounds and accessibility oracle; six CPU-throttled repeats and the
+complete deterministic browser suite pass locally. Product behavior is unchanged.
 Tactical `043` adds the responsive live Trackers table, local deadline
 countdowns, and a permanent tracker-recovery scenario. Tacticals `044`--`045`
 add the global Disk pipeline and selected-torrent bounded Canvas Pieces
