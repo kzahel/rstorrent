@@ -2,6 +2,14 @@
 
 Topic: `client-surfaces`
 
+Tactical 253's interruption follow-up preserves saved Android pairing after
+transport, connection-close and resource-limit handshake failures. Only an
+explicit `authentication_failed` response for a saved credential starts fresh
+approval; a rejected newly approved credential does not create another approval
+loop. Five focused cases, the 470-test web suite and extension packaging pass.
+Physical process/storage recovery and the Linux alternate-route discussion
+remain distinct evidence gates.
+
 Tactical 253's portable recovery checkpoint passes bounded Android discovery,
 manual recovery, detached-view cleanup, offline troubleshooting and explicit
 Linux guidance in the packaged extension. Host-built isolated candidates add
@@ -21,7 +29,9 @@ acceptance remain open. Cohort A retains
 legacy/debug apps. Cohort B is now reachable: its inherited Play app is legacy,
 while isolated Android/extension pairing, real folder/file picker cancellation,
 keep-data removal and corrected browser completion pass. Completed-library
-startup remains slow with temporary unavailable-root presentation. Fresh Linux
+startup was slow with temporary unavailable-root presentation; the subsequent
+four-observation/checking-state repair reduces the 121-file case to 11–11.5
+seconds and removes that false presentation. Fresh Linux
 setup and signed public installation work, but the registered launcher's browser
 handoff remains blocked by ChromeOS hostname registration, even after ordinary
 VM recovery. Both full-hour controlled observations verify their bytes; Linux

@@ -16,6 +16,7 @@ import type {
   ApplicationUpdateStream,
   ApplicationViewClient,
 } from "./api/client";
+import { ApplicationViewError } from "./api/client";
 import { decodeChooseDownloadRootResponse } from "./validation";
 import {
   WebSocketApplicationViewClient,
@@ -151,6 +152,10 @@ export async function connectAndroidCompanion(
     );
   } catch (error) {
     if (signal?.aborted) throw error;
+    // Lost transport, busy services and invalid frames do not establish that
+    // saved authority was rejected. Keep them retryable without a new prompt.
+    if (stored?.credential === undefined || !(error instanceof ApplicationViewError) ||
+        error.code !== "authentication_failed") throw error;
     status(localizedMessage("android.companion.client.the.saved.pairing.is.no.longer.accepted"));
     credential = await pair(endpoint, installationId, status, signal);
     connected = await openApplication(endpoint, installationId, credential, signal);

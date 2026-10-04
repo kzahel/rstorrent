@@ -1141,3 +1141,51 @@ store publication, full reboot or OS hostname override occurs.
 This bounded repair/diagnosis follow-up is complete. Tactical 253 remains
 active/partial for production delivery, full store combinations, fresh Play,
 ARM hardware, full-device lifecycle and the OS-blocked Linux browser route.
+
+### Folder and interruption recovery follow-up, 2026-10-04
+
+Authorized next slice: qualify current second-cohort retained-folder repair,
+picker cancellation/retry, Android process interruption and simulated transport
+loss. Keep device Wi-Fi enabled and preserve SSH, idle/lid availability and
+inherited apps. Network loss means a controlled seed interruption or a
+page-scoped transport failure, never disabling a physical network interface.
+Real suspend, reboot, radio loss and production store replacement remain open.
+
+Use the isolated qualification package and independently authored payloads.
+Release only that package's persisted SAF grant through its existing debug
+hook; preserve its root identity and payload, repair through the actual picker,
+and independently compare bytes after recovery. Move only owned fixture
+folders for missing/renamed-root cases. Record successful second picker
+completion, not merely request acceptance. Distinguish injected connection
+failure from physical app/worker termination and record each separately.
+
+Existing service, root registry, companion page and controlled seed retain
+ownership/cancellation; add no product task or transport. Reuse deterministic
+failure tests before physical interaction. Repair reproduced defects within
+these boundaries, update owning topics and the local screenshot/HTML review,
+and commit completed slices. Stop this slice at recorded bounded recovery and
+verified cleanup, preserving unrun distribution and larger-library gates.
+
+Investigate a Linux UX alternative to broken hostname registration through
+read-only source inspection and an owned reachability probe. In particular,
+test supported localhost forwarding without hosts overrides, manual forwarding,
+new dependencies or broader origin/listener access. Discuss the verified
+options with the maintainer before adopting a new product routing contract.
+
+#### Saved pairing interruption repair
+
+The browser previously treated every application handshake failure as revoked
+pairing and requested another Android approval. Four new regression cases fail
+against that behavior: transport error, closed connection, busy/resource-limit
+response and repeated approval after a fresh credential fails. The existing
+typed `authentication_failed` frame is emitted by
+`application_websocket.rs` after companion credential validation, so it alone
+permits one re-pair attempt for saved authority. Other failures retain the saved
+credential and end the attempt for explicit manual retry. Existing page and
+socket cancellation/close ownership is unchanged.
+
+All five focused cases pass, including actual typed rejection followed by fresh
+approval and manual retry after each non-authentication failure. Web typecheck
+and 470 tests pass (two skipped); 54 extension tests, archive validation and the
+15-bundle CSP gate pass. No native code, application contract, generated types,
+discovery deadline or engine behavior changes in this repair.
