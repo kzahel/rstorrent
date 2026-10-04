@@ -208,7 +208,8 @@ Completed Tactical
 configured columns authoritative at every viewport width and restores trusted
 touch horizontal scrolling across every shared table. Tactical
 [`256`](../tactical/256-swarm-touch-ci-stabilization.md) stabilizes the swarm
-layout CI journey by completing a native touch gesture with fling suppressed
+layout CI journey by enabling touch capability and completing a native gesture
+with fling suppressed
 before position and resize assertions. It retains every scrolling,
 column-bounds and accessibility oracle; six CPU-throttled repeats and the
 complete deterministic browser suite pass locally. Product behavior is unchanged.

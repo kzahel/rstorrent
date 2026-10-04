@@ -54,6 +54,16 @@ def check_manifest(text, version, code):
         assert not name.endswith(('CommandReceiver', 'ProductTestReceiver')), 'Diagnostic receiver in release'
 
 
+def check_application_labels(apk_badging, bundle_manifest, bundle_resources):
+    labels = re.findall(r"^application-label(?:-[^:]+)?:'(.*)'$", apk_badging, re.M)
+    assert labels and all(label == 'JSTorrent' for label in labels), 'Wrong resolved APK application label'
+    app = ET.fromstring(bundle_manifest).find('application')
+    assert app.get(ANDROID + 'label') == '@string/app_name', 'Wrong AAB application label resource'
+    assert re.search(r'^0x[0-9a-fA-F]+ - string/app_name$', bundle_resources, re.M), 'Missing AAB app_name resource'
+    values = re.findall(r'^\s*\([^\n]*\) - \[STR\] "(.*)"$', bundle_resources, re.M)
+    assert values and all(value == 'JSTorrent' for value in values), 'Wrong resolved AAB application label'
+
+
 def check_elf(data, name):
     assert data[:6] == b'\x7fELF\x02\x01', f'{name}: expected little-endian ELF64'
     offset = struct.unpack_from('<Q', data, 32)[0]
@@ -92,6 +102,9 @@ def main():
     aab_manifest = run('java', '-jar', args.bundletool, 'dump', 'manifest', f'--bundle={aab}')
     check_manifest(apk_manifest, version, code)
     check_manifest(aab_manifest, version, code)
+    badging = run(tools / 'aapt2', 'dump', 'badging', apk)
+    app_name = run('java', '-jar', args.bundletool, 'dump', 'resources', f'--bundle={aab}', '--resource=string/app_name', '--values')
+    check_application_labels(badging, aab_manifest, app_name)
     config = run('java', '-jar', args.bundletool, 'dump', 'config', f'--bundle={aab}')
     assert 'PAGE_ALIGNMENT_16K' in config, 'AAB must request 16 KiB ZIP alignment'
     run('java', '-jar', args.bundletool, 'validate', f'--bundle={aab}')

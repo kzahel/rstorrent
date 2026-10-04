@@ -2,6 +2,16 @@
 
 Topic: `beta-release-readiness`
 
+Tactical [257](../tactical/257-play-upgrade-and-fresh-signed-candidates.md)
+qualifies a bounded physical Play 1.0.23-to-1.0.25 standalone upgrade: original
+managed signer, unchanged installation identity, two retained paused rows and
+payload hashes, retained unmetered policy, source-offline completed-file recheck,
+partial-file verified completion and force-stop/relaunch. Broader store, companion,
+SAF and lifecycle cohorts remain open. The observed release-only Canary label is
+corrected in source candidate 1.0.26/code 26, with final APK/AAB label validation.
+Fresh original-key hosted signing is pending; internal Play code 25 and production
+code 23 are unchanged. The tactical owns exact evidence and cleanup limits.
+
 Tactical [255](../tactical/255-android-play-internal-replacement.md) completes
 the authorized Android internal Play release on 2026-10-04. The original upload
 key matches Play and the retained public certificate; the existing CI inputs
@@ -9,8 +19,7 @@ are corrected. Local source `42a11817` produces validated 1.0.25/code 25 APK/AAB
 with both ABIs, 116 passing release JVM tests and passing lint. Play reports the
 replacement **Available to internal testers** on the existing `com.jstorrent.app`
 property. Production remains 1.0.23. This supersedes the Android signing blocker
-in the historical 251 account below; real Play-installed migration and broader
-production cutover remain open. See the [artifact and publication receipt](../evidence/android-play-internal-255.json).
+in the historical 251 account below; broader Play-installed cohorts and production cutover remain open. See the [artifact and publication receipt](../evidence/android-play-internal-255.json).
 
 Tactical [254](../tactical/254-ci-candidate-and-pages-validation.md) repairs
 the latest CI candidate-identity check for the isolated ChromeOS qualification

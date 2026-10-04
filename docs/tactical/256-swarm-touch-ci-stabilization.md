@@ -28,10 +28,11 @@ offset after the reset. The CI trace transitions to the second viewport about
 compositor scrolling in flight across subsequent position changes.
 
 The test helper owns its CDP session and detaches it in finally. Replace the
-manual touch event train with Chromium's completed native touch-scroll gesture
-and explicit fling suppression. Existing signed-distance, viewport geometry,
-real scrolling and UI-effect assertions remain. No product task, application
-boundary, generated code or Android semantics change.
+manual touch event train with Chromium's completed native touch-scroll gesture,
+explicit touch capability and fling suppression. Restore the desktop context's
+no-touch baseline and detach in nested finally cleanup. Existing signed-distance,
+viewport geometry, real scrolling and UI-effect assertions remain. No product
+task, application boundary, generated code or Android semantics change.
 
 ## Ordered Work And Validation
 
@@ -49,4 +50,14 @@ Local repair passes six eightfold-CPU-throttled repetitions, web typecheck,
 470 web unit tests (two skipped), production build/CSP and the complete
 deterministic browser suite: 46 passed, 14 opt-in live cases skipped. All
 original touch-effect, overflow, column-bounds and accessibility assertions
-remain. Diagnostic instrumentation is removed. Hosted qualification pending.
+remain. Diagnostic instrumentation is removed.
+
+Commit 24d31b43's hosted run 37227315607 exposes an additional input prerequisite:
+Linux acknowledges the synthesized touch gesture but produces no scrolling in
+the default no-touch desktop context. The existing effect assertion correctly
+rejects it. A raw-event/scrollend diagnostic also records reversed post-release
+momentum under CPU pressure; waiting longer is insufficient. Explicit native
+touch capability fixes the synthesized route, with six new pressured repeats
+and the full 46-test browser suite passing. Hosted corrected-source qualification
+is pending. The other nine product/source jobs are independently tracked;
+their result does not qualify the failing web source.

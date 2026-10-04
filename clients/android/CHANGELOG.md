@@ -1,5 +1,12 @@
 # Android Changelog
 
+## [1.0.26]
+
+- Correct the release-only application label to JSTorrent, including the
+  launcher and Android header.
+- Validate resolved APK and App Bundle branding before release staging.
+- Signed qualification candidate; no Play upload or production rollout.
+
 ## [1.0.25]
 
 - Prepare the in-place JSTorrent package and retained upload certificate lane.

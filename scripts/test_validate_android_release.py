@@ -52,6 +52,24 @@ class ArtifactTests(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 validator.check_elf(elf, 'fixture')
 
+    def test_resolved_application_labels(self):
+        manifest = self.manifest.replace('<application ', '<application android:label="@string/app_name" ')
+        badging = "application-label:'JSTorrent'\napplication-label-de:'JSTorrent'\n"
+        resources = 'Package \'com.jstorrent.app\':\n0x7f0c003d - string/app_name\n\t(default) - [STR] "JSTorrent"\n'
+        validator.check_application_labels(badging, manifest, resources)
+        for apk, bundle, names in (
+            (badging.replace('JSTorrent', 'RSTorrent Canary'), manifest, resources),
+            (badging.replace("application-label-de:'JSTorrent'", "application-label-de:'Canary'"), manifest, resources),
+            ('', manifest, resources),
+            (badging, manifest.replace('@string/app_name', '@string/canary_name'), resources),
+            (badging, manifest, resources.replace('JSTorrent', 'RSTorrent Canary')),
+            (badging, manifest, ''),
+            (badging, manifest, resources + '\t(de) - [STR] "Canary"\n'),
+        ):
+            with self.subTest(apk=apk, manifest=bundle, resources=names):
+                with self.assertRaises(AssertionError):
+                    validator.check_application_labels(apk, bundle, names)
+
 
 if __name__ == '__main__':
     unittest.main()

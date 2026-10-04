@@ -46,7 +46,8 @@ cohort if its existing state and store enrollment can be safely preserved.
    account steps from application failures. Do not substitute an APK sideload.
 3. After repaired exact-source CI passes, dispatch the existing production
    desktop candidate and Android signed-build workflows on that exact commit.
-   Both dispatch routes retain private artifacts and do not publish.
+   Both dispatch routes retain Actions artifacts and do not publish releases.
+   Artifacts in this public repository are downloadable; no keys are included.
 4. Inspect complete package/collector gates and independently verify retained
    public-root signatures and artifact hashes. Reconcile the checklist with
    exact passing subsets and remaining cohorts. Clean owned fixture state,
@@ -69,5 +70,35 @@ publisher checks; retain actual skipped or failing lanes explicitly.
 
 ## Evidence And Restart Checkpoint
 
-Initial read-only physical package inspection complete. Installed journey and
-fresh signed candidates pending the repaired presubmit and store availability.
+The actual Play 1.0.23-to-1.0.25 update preserves package UID and first-install
+time. Independently inspected APKs share the Google-managed app-signing root.
+Two ordinary old-app writers create one completed 256-KiB torrent and one
+paused partial 4-MiB torrent in an owned picker-granted tree. Both rows, paused
+intent and exact pre-update payload hashes survive. The unmetered-only setting
+also survives. With the independent source offline, the completed file reaches
+verified seeding state without changing its hash. The partial file conservatively
+starts at zero verified progress while preserving its bytes; after the source
+returns it completes with the independently expected full 4-MiB hash. Both rows
+and full hashes survive force-stop/relaunch. This proves bounded standalone
+read/write grant continuity, not reboot, a second tree or actual upload serving.
+Fixture cleanup qualification is continuing.
+
+The installed successor exposes an overlooked release resource override:
+`app/src/release/res/values/strings.xml` still names the app RSTorrent Canary,
+overriding the restored main resources. This is a production candidate branding
+defect, not a Play signer or migration failure. Correct the release resource
+and require final resolved APK/AAB labels to be JSTorrent before staging fresh
+signed candidates. Add negative artifact-label fixtures and qualify actual
+processed release resources. Prepare 1.0.26/code 26 above the already-published
+25 without changing identities, keys, minimum API or ABI scope.
+The already-published internal artifact remains immutable and its label limit
+stays recorded. No new Play upload is part of this repair.
+
+The original-key CI inputs remain the signing authority. The controller's
+existing local signing store still has the historical incubation certificate;
+the unchanged signature validator refuses those locally rebuilt packages.
+Do not substitute its certificate, generate a new key or weaken that gate.
+Local 1.0.26 APK/AAB metadata and resolved resources independently pass the new
+branding gate; all 24 Android release-tool tests, 116 release JVM tests and
+release lint pass. These checks are local preparation, not qualified signing.
+Fresh hosted candidates must supply original-key artifact evidence.

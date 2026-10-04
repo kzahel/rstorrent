@@ -1,7 +1,7 @@
 # Android Release Runbook
 
 Android release now targets the existing JSTorrent `com.jstorrent.app` app,
-starting with source candidate 1.0.25/versionCode 25 and `android-vX.Y.Z` tags.
+with source candidate 1.0.26/versionCode 26 and `android-vX.Y.Z` tags.
 Debug builds retain `org.rstorrent.bootstrap`; Kotlin/JNI namespace stays
 unchanged. A release-only alias preserves the legacy launcher component.
 The Android Release workflow builds both arm64-v8a and x86_64, runs release
@@ -18,6 +18,13 @@ broader production and installed-upgrade qualification. Minimum API 28
 (Android 9) is selected on 2026-10-01.
 API 26/27 are outside the replacement cohort; those devices keep the old app
 until an OS update permits replacement. Validate unsupported-device guidance.
+
+Tactical [257](tactical/257-play-upgrade-and-fresh-signed-candidates.md) qualifies
+a bounded physical Play 1.0.23-to-1.0.25 standalone library upgrade. It also
+corrects the overlooked Canary release-resource label and prepares code 26;
+the final APK and every resolved AAB app-name value must be JSTorrent.
+Internal Play code 25 is immutable and retains that branding defect. Code 26
+is currently a non-publishing candidate; uploading it is a separate action.
 
 The former independent canary's first verified release is
 [Android 0.1.0](https://github.com/kzahel/rstorrent/releases/tag/android-v0.1.0)

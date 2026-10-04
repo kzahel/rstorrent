@@ -2038,8 +2038,12 @@ async function swipeTableLeft(page: Page, table: Locator) {
   );
   const session = await page.context().newCDPSession(page);
   try {
-    // Complete a native touch drag without a fling carrying into the next
-    // viewport's explicit scroll-position checks.
+    // Desktop contexts need explicit touch capability for native gestures.
+    // Complete the drag without a fling reaching the next viewport's reset.
+    await session.send("Emulation.setTouchEmulationEnabled", {
+      enabled: true,
+      maxTouchPoints: 1,
+    });
     await session.send("Input.synthesizeScrollGesture", {
       x: startX,
       y,
@@ -2048,7 +2052,11 @@ async function swipeTableLeft(page: Page, table: Locator) {
       preventFling: true,
     });
   } finally {
-    await session.detach();
+    try {
+      await session.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    } finally {
+      await session.detach();
+    }
   }
 }
 

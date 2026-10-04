@@ -12,6 +12,21 @@ certificate/key fingerprints, platform/build, observation and recovery outcome
 for each installed cohort. Keep personal paths, credentials and private keys out
 of the public evidence. No row authorizes publication by itself.
 
+## Current Qualification Checkpoint, 2026-10-04
+
+Tactical [257](tactical/257-play-upgrade-and-fresh-signed-candidates.md) passes a
+bounded physical Play 1.0.23-to-1.0.25 standalone upgrade: managed signer,
+installation identity, paused completed/partial rows, unchanged pre-update bytes,
+unmetered setting, completed-file offline recheck, partial-file verified
+completion and force-stop/relaunch. This supplies a subset of D-03/A-01/A-02/A-04;
+full rows remain open for companion writers, other trees/providers, reboot,
+staggered production extension updates and broader historical cohorts.
+
+The observed internal code-25 release-resource Canary label is corrected in
+source candidate 1.0.26/code 26 and final APK/AAB label gates. New exact-source
+presubmit and non-publishing signed desktop/Android builds are pending. Internal
+Play and production tracks, production update feeds and Web Store are unchanged.
+
 ## Internal Android Delivery Checkpoint, 2026-10-04
 
 Tactical [255](tactical/255-android-play-internal-replacement.md) verifies the
@@ -19,8 +34,7 @@ original upload key against Play, corrects the existing CI signing inputs, and
 publishes validated 1.0.25/code 25 to the existing app's internal track. The
 separate managed app-signing certificate is recorded in its evidence. Production
 remains 1.0.23/code 23. This supersedes the signing-input/Play-inspection blockers
-in the historical checkpoint below. D-03 and installed migration rows remain
-open until an actual Play-delivered replacement preserves the selected cohorts.
+in the historical checkpoint below. D-03 and installed migration rows retain the unqualified cohorts listed above.
 
 ## Source Preparation Checkpoint, 2026-10-01
 
