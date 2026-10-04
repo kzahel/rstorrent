@@ -3,14 +3,16 @@
 Topic: `beta-release-readiness`
 
 Tactical [257](../tactical/257-play-upgrade-and-fresh-signed-candidates.md)
-qualifies a bounded physical Play 1.0.23-to-1.0.25 standalone upgrade: original
-managed signer, unchanged installation identity, two retained paused rows and
-payload hashes, retained unmetered policy, source-offline completed-file recheck,
-partial-file verified completion and force-stop/relaunch. Broader store, companion,
-SAF and lifecycle cohorts remain open. The observed release-only Canary label is
-corrected in source candidate 1.0.26/code 26, with final APK/AAB label validation.
-Fresh original-key hosted signing is pending; internal Play code 25 and production
-code 23 are unchanged. The tactical owns exact evidence and cleanup limits.
+completes bounded current-source qualification at f5860c99: all ten executed
+CI jobs and Website, signed JSTorrent desktop 0.3.0 on all five targets, all ten
+original-root updater payload signatures and 23 independently matched receipt
+hashes. Android 1.0.26/code 26 passes original upload signing and full package
+validation, including the resolved JSTorrent label. The tactical links exact
+receipts and a bounded actual Play 1.0.23-to-1.0.25 standalone migration.
+Code 26 is not Play-uploaded or installed through Play; internal code 25 and
+production code 23 remain. Fresh installed desktop, production extension,
+broader SAF/lifecycle and product/soak gates stay open in the
+[cutover checklist](../jstorrent-cutover-checklist.md).
 
 Tactical [255](../tactical/255-android-play-internal-replacement.md) completes
 the authorized Android internal Play release on 2026-10-04. The original upload

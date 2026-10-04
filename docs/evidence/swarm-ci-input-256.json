@@ -50,9 +50,9 @@
     "exclusiveClaimReleased": true
   },
   "hostedBrowserJob": {
-    "sourceSha": "46c19b3abf77e0d9d5ab2fca467a3bc48cf533b4",
-    "runUrl": "https://github.com/kzahel/rstorrent/actions/runs/37232124959",
-    "jobId": 111523937134,
+    "sourceSha": "f5860c99bbaf6b40c0ba40735071aff6a0b5527d",
+    "runUrl": "https://github.com/kzahel/rstorrent/actions/runs/37236977716",
+    "jobId": 111537962232,
     "conclusion": "success",
     "e2ePassed": 46,
     "skippedOptInLive": 14
@@ -63,5 +63,21 @@
     "limits": "No retrospective reconstruction; raw shell detail is not captured; claimant labels are self-asserted, not authenticated identity; retained events may be incomplete",
     "currentLinuxClaimAndResourceCorrelated": true
   },
-  "completeSourceCi": "https://github.com/kzahel/rstorrent/actions/runs/37232124959"
+  "completeSourceCi": "https://github.com/kzahel/rstorrent/actions/runs/37236977716",
+  "externalIntakeUnitRace": {
+    "failedReleaseRun": "https://github.com/kzahel/rstorrent/actions/runs/37235683007",
+    "observation": "Second command submission can precede its async success/status and queue synchronization",
+    "repair": "Await all existing no-dialog, success-message and empty-queue assertions together",
+    "productBehaviorChanged": false,
+    "localAffectedFilePassed": 68,
+    "localFullUnitsPassed": 470,
+    "localSkipped": 2,
+    "typecheck": "passed",
+    "hostedBrowserRetry": {
+      "sourceSha": "f5860c99bbaf6b40c0ba40735071aff6a0b5527d",
+      "runUrl": "https://github.com/kzahel/rstorrent/actions/runs/37236977716",
+      "jobId": 111537962232,
+      "conclusion": "success"
+    }
+  }
 }

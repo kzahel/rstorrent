@@ -40,9 +40,11 @@ production and installed migration qualification remain separate.
 Latest release qualification work:
 
 - [`256-swarm-touch-ci-stabilization.md`](256-swarm-touch-ci-stabilization.md):
-  repair the current browser CI timing failure without weakening touch oracles.
+  complete; repair native-touch and asynchronous-intake CI races with all
+  ten exact-source CI jobs and Website passing.
 - [`257-play-upgrade-and-fresh-signed-candidates.md`](257-play-upgrade-and-fresh-signed-candidates.md):
-  qualify actual Play delivery and current-source non-publishing signed builds.
+  complete bounded Play 1.0.23-to-1.0.25 migration and current-source signed
+  desktop five-target/Android candidates; full cutover remains open.
 
 ## Work Selection And Concurrency
 

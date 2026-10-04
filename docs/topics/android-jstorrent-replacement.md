@@ -9,8 +9,11 @@ payload hashes, retained unmetered policy, source-offline completed-file recheck
 partial-file verified completion and force-stop/relaunch. Broader store, companion,
 SAF and lifecycle cohorts remain open. The observed release-only Canary label is
 corrected in source candidate 1.0.26/code 26, with final APK/AAB label validation.
-Fresh original-key hosted signing is pending; internal Play code 25 and production
-code 23 are unchanged. The tactical owns exact evidence and cleanup limits.
+Fresh original-key APK/AAB signing and independent package validation pass at
+f5860c99; see the [candidate receipt](../evidence/android-fresh-candidate-257.json).
+Internal Play code 25 and production code 23 are unchanged; code 26 is neither
+Play-uploaded nor installed as a Play upgrade. The tactical owns exact evidence
+and cleanup limits.
 
 Tactical [255](../tactical/255-android-play-internal-replacement.md) completes
 the authorized Android internal Play release on 2026-10-04. The original upload

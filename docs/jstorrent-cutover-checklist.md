@@ -22,10 +22,18 @@ completion and force-stop/relaunch. This supplies a subset of D-03/A-01/A-02/A-0
 full rows remain open for companion writers, other trees/providers, reboot,
 staggered production extension updates and broader historical cohorts.
 
-The observed internal code-25 release-resource Canary label is corrected in
-source candidate 1.0.26/code 26 and final APK/AAB label gates. New exact-source
-presubmit and non-publishing signed desktop/Android builds are pending. Internal
-Play and production tracks, production update feeds and Web Store are unchanged.
+The observed internal code-25 Canary label is corrected in final Android
+1.0.26/code 26. Exact-source f5860c99 passes all ten executed CI jobs and
+Website. Non-publishing signed desktop 0.3.0 passes all five targets,
+macOS notarization/stapling/Gatekeeper and Windows publisher/activation gates;
+independent verification passes its exact 23-asset inventory/hashes and all ten
+original-root updater payload signatures. Android APK/AAB independently pass
+original upload signing, JSTorrent labels, launcher, both ABIs, alignment and
+notices. See the [desktop receipt](evidence/jstorrent-fresh-desktop-257.json)
+and [Android receipt](evidence/android-fresh-candidate-257.json). These are
+package gates, not current-source installed update qualification. Code 26 is
+not uploaded to Play; internal/production tracks, production feeds and Web Store
+remain unchanged. Earlier installed evidence retains its own source/hashes.
 
 ## Internal Android Delivery Checkpoint, 2026-10-04
 
@@ -228,7 +236,7 @@ rows independently; those tests use disposable signing and owned emulators.
   Remove/keep/restart pass. Linux hour observations and three repetitions remain
   runtime only; the follow-up adds bounded real browser/file-picker and
   source-offline VM recovery evidence. Current storage repair,
-  sleep/reboot/device network loss and all cohort-B rows remain unrun.
+  sleep/reboot/device network loss and remaining cohort-B acceptance stay open.
   Owned test state, pairing storage and the stopped VM baseline are restored.
 
 ## Product, Recovery And Release Decision

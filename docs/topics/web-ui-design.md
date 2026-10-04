@@ -213,13 +213,13 @@ observed `scrollend` before position/resize assertions. The current Linux
 headless probe acknowledges synthesized gestures without touch-move events;
 the native route is independently exercised there. Every scrolling,
 column-bounds and accessibility oracle remains. Pressured
-repeats and the full local browser suite pass; exact-source 46c19b3a CI now passes
-all ten executed jobs and Website. The tactical links its receipts.
+repeats and the full local browser suite pass. The tactical links its receipts.
 The subsequent desktop release source gate exposes a separate external-intake
 unit-test race: command submission precedes its asynchronous completion.
 Await the existing success message and empty-queue observations together;
-all 470 unit tests (two skipped) and typecheck pass locally. Hosted retry
-remains required, with application behavior unchanged.
+all 470 unit tests (two skipped) and typecheck pass locally. Final source
+f5860c99 passes all ten executed CI jobs and Website; application behavior
+is unchanged.
 Tactical `043` adds the responsive live Trackers table, local deadline
 countdowns, and a permanent tracker-recovery scenario. Tacticals `044`--`045`
 add the global Disk pipeline and selected-torrent bounded Canvas Pieces

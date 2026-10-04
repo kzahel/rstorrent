@@ -1,6 +1,6 @@
 # Tactical 256: Swarm Touch CI Stabilization
 
-Status: **Active supplemental release-gate repair, 2026-10-04.**
+Status: **Complete, 2026-10-05.**
 
 Topic: `web-ui-design`. Release owner: `beta-release-readiness`.
 
@@ -86,4 +86,6 @@ before finishing. Preserve the exact command/order/default-root assertions.
 No runtime behavior changes. Revalidate the unit suite and hosted source gate
 before qualifying fresh signed desktop packages.
 The affected 68-test file, full 470-test unit suite (two skipped) and typecheck
-pass locally. The fresh source retry remains required.
+pass locally. Final source f5860c99bbaf6b40c0ba40735071aff6a0b5527d passes
+all ten executed CI jobs and Website in runs 37236977716/37236977340.
+The source receipt binds that correction and preserves the prior green source.

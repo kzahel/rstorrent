@@ -7,8 +7,13 @@ adds bounded physical Play 1.0.23-to-1.0.25 standalone migration evidence.
 The [receipt](../evidence/android-play-upgrade-257.json) records retained rows,
 independent bytes, setting/grant continuity, conservative recheck/resume and
 restart, plus cleanup limits. This leaves the broader installed matrix open.
-Source candidate Android 1.0.26/code 26 corrects the observed internal release
-label; current-source signed candidates and their gates remain separate.
+Current-source f5860c99 signed desktop 0.3.0 on all five targets and Android
+1.0.26/code 26 pass original-root signing/package validation and independent
+artifact verification. Code 26 corrects the observed internal release label.
+The tactical links exact receipts. Fresh package evidence retains 252's earlier
+installed desktop source/hashes; code 26 is not Play-uploaded or installed
+through Play. Code 25 remains internal, code 23 remains production, and feeds
+and Web Store are unchanged.
 
 Tactical 253's accepted Linux connection update uses
 `http://jstorrent.localhost:3030` as its primary browser address, avoiding the

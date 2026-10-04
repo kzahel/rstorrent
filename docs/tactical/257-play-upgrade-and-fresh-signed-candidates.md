@@ -1,6 +1,6 @@
 # Tactical 257: Play Upgrade And Fresh Signed Candidates
 
-Status: **Active, 2026-10-04.**
+Status: **Complete bounded qualification, 2026-10-05.**
 
 Topics: `android-jstorrent-replacement`, `beta-release-readiness`,
 `product-surfaces-and-migration`.
@@ -120,5 +120,41 @@ and Android [37235699078](https://github.com/kzahel/rstorrent/actions/runs/37235
 are dispatched on that source. Desktop updater-input identity proof passes,
 but its source gate exposes a separate asynchronous external-intake unit-test
 race; packaging is correctly refused. Tactical 256 owns that repair and the
-next exact-source retry. Android remains in progress. Neither route tags or
-publishes a release.
+next exact-source retry. Android completes and independent verification passes
+original upload signing, resolved JSTorrent labels, launcher, both ABIs,
+alignment and notices. Neither route tags or publishes a release.
+
+Final source f5860c99bbaf6b40c0ba40735071aff6a0b5527d passes all ten
+executed CI jobs and Website. Fresh desktop
+[37239152531](https://github.com/kzahel/rstorrent/actions/runs/37239152531)
+and Android
+[37239167494](https://github.com/kzahel/rstorrent/actions/runs/37239167494)
+are dispatched on that same source. Updater-input proof passes. Android
+finishes with publication skipped; independent hashes and complete APK/AAB
+validation pass. See its
+[candidate receipt](../evidence/android-fresh-candidate-257.json). Five-target
+desktop signing and collection pass, including both macOS signing, notarization,
+stapling and Gatekeeper gates and Windows publisher/installed-activation checks.
+Independent verification passes all 23 downloaded asset hashes, exact
+inventory, updater metadata and all ten original-root payload signatures. See the
+[desktop receipt](../evidence/jstorrent-fresh-desktop-257.json).
+
+## Final Result And Next Slice
+
+The bounded slice is complete: both CI races are repaired; final-source CI and
+Website pass; actual Play 1.0.23-to-1.0.25 standalone migration passes the stated
+state, setting, read/write-grant, independent-byte and restart subset; fresh
+JSTorrent desktop 0.3.0 and Android 1.0.26/code 26 pass signing/package gates
+and independent artifact verification at the same final source. Qualified
+files remain in Actions and the controller's ignored local candidate capsule.
+Owned physical fixtures and VM tooling are cleaned with the recorded empty-tree
+and retained-legacy-source limits; the VM is off and all claims/markers released.
+No tag, release/feed promotion, new Play upload or Web Store publication occurs.
+
+The [cutover checklist](../jstorrent-cutover-checklist.md) keeps complete rows
+open and orders the remaining store/extension, SAF/lifecycle, fresh installed
+desktop and product/soak decisions. Code 26 is an upload-signed candidate, not a
+Play-generated installed upgrade. Installed desktop evidence remains pinned to
+252's prior source/hashes; this slice does not repeat those installations or
+claim additional architectures. Wider migration writers, actual upload serving,
+reboot/grant-loss/network-loss and production cutover remain unqualified.
