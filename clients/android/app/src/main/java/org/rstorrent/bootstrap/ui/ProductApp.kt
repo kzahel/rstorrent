@@ -756,6 +756,7 @@ private fun ProductNavHost(
                         if (notificationsGranted) R.string.action_manage else R.string.action_enable,
                     ),
                 onSelectStorage = onSelectStorage,
+                onRepairStorage = onRepairStorage,
                 onOpenTorrent = { navController.navigate(ProductRoutes.detail(it)) },
                 onAddMagnet = { magnet ->
                     service?.addMagnet(

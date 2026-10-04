@@ -1189,3 +1189,94 @@ approval and manual retry after each non-authentication failure. Web typecheck
 and 470 tests pass (two skipped); 54 extension tests, archive validation and the
 15-bundle CSP gate pass. No native code, application contract, generated types,
 discovery deadline or engine behavior changes in this repair.
+
+#### Native Library repair action
+
+Physical revoked-grant presentation exposes a Library Repair action beneath
+first-folder setup copy. Inspection finds that action calls `onSelectStorage`
+without the retained default root, whereas Settings correctly calls
+`onRepairStorage(rootId)`. Selecting a different tree can therefore add a new
+root instead of repairing the original torrent binding; selecting the same
+tree follows SetDefault rather than the generation-advancing repair path.
+
+Pass the existing default root to the existing repair callback and distinguish
+an unavailable retained folder from first selection in the banner. No registry,
+grant, engine, migration or root-rebinding semantics change. Require a Compose
+click regression with two roots, first-selection control, and physical same-root
+generation advancement plus independent bytes after cancellation/retry. Reuse
+the already qualified native ABIs for this presentation-only APK rebuild.
+
+#### Browser recovery and Linux alternate-route feasibility
+
+The final packaged extension physically pairs with the isolated Android APK.
+Force-stop/relaunch and a simulated page-owned WebSocket closure both recover
+with the saved credential and no new approval. Stopping only this extension's
+worker leaves the connected library intact; an ordinary extension message wakes
+its worker. These browser cases use an empty isolated library, so they do not
+claim retained payload verification. The native controlled fixture owns that
+separate evidence. Device Wi-Fi remains enabled throughout.
+
+A real Android folder selection expires with HTTP 408 and the intended browser
+instruction. Closing that expired picker, explicitly retrying and completing the
+actual picker returns HTTP 200, commits the retained root registry and renders
+the selected folder in Chrome. The visible expiry takes longer than the nominal
+server timeout while window focus changes; this proves bounded recovery, not
+precise wall-clock timeout presentation.
+
+Chrome reaches an owned Linux HTTP marker at `http://localhost:3030` through
+ordinary ChromeOS forwarding. No hosts override, manual forwarding or product
+origin expansion is used; the temporary listener is removed and its absence
+verified. Chromium's [forwarding contract](https://www.chromium.org/chromium-os/developer-library/reference/security/port-forwarding/)
+and Google's [Baguette notes](https://developers.google.com/chromeos/app-development/develop/news)
+support this alternative's investigation. The marker proves transport
+feasibility only; it does not qualify an RSTorrent browser session.
+
+Recommend an explicit **Try alternate local connection** recovery action before
+considering automatic fallback. It should reach the same Linux engine/profile,
+not switch to Android or migrate files. This remains a discussion proposal:
+167's exact-host contract is unchanged. Implementation would require two exact
+reviewed Host/Origin routes, protected session/CSRF checks, responder identity
+and same-library validation, launcher/restart/tab-reuse qualification, and a
+choice for origin-local appearance preferences. No new proxy is proposed.
+
+#### Completed bounded recovery evidence and pause checkpoint
+
+The final APK passes all seven physical native cases: partial process restart
+with the controlled source paused, resumed completion, revoked-grant refusal,
+repair-picker cancellation, completed same-tree repair, renamed-root refusal
+without recreation, and repair to the relocated tree with the source offline.
+Both repairs preserve the original root ID and advance its generation. The
+4 MiB payload independently retains SHA-1
+`6788172e1ce40d42ebb058a29376a0cd9ba22006`. The old APK fails the same-tree
+repair-generation assertion; that negative regression is retained separately.
+The reusable runner is `tests/interop/chromeos_android_recovery.py` and requires
+an isolated installed qualification APK, an explicit seed address/port, and
+absent owned fixture paths. Its finally path removes the owned profile/files
+and closes the controlled source.
+
+The Linux host passes `testDebugUnitTest assembleDebug assembleDebugAndroidTest`:
+116 JVM cases and three actual device Compose cases pass. Twelve portable
+ChromeOS harness tests and all localization catalogs pass. All six packaged
+native libraries remain byte-identical to the earlier two-ABI qualification;
+no Rust or generated application contract changed, so its workspace baseline
+was not rerun. Final APK SHA-256:
+`e2736838520423f287ddf517034788c8e29569efde00de2fcdbda2c5164a265b`.
+Extension ZIP SHA-256:
+`a6917b97b2e6990bdfd804597d061254e0eee062e55e4e0ea88e9f1f2daf5cb3`.
+
+The local `target/reports/chromeos-253-recovery/index.html` review embeds eleven
+actual device screenshots, recorded outcomes, artifact hashes and the clearly
+marked Linux UX proposal. This slice stops here at the maintainer's pause;
+Tactical 253 remains active/partial. Resume with discussion of the exact
+alternate-local-route contract before implementing it. Fresh Play delivery,
+signed store combinations, ARM physical hardware, real radio loss, suspend/
+reboot and broader startup scaling remain open; no Wi-Fi disabling occurred.
+
+Final cleanup removes both owned APKs, profiles, roots, UI XML, beta extension,
+staging, task tabs and exclusive marker. All eight inherited tabs and sixteen
+extensions remain, and the inherited Play app still reports 1.0.23. Both owned
+listeners are absent, the Linux build checkout is clean, and common doctor
+passes ten checks. The HTML passes isolated headless Chromium rendering at
+1280 and 390 pixels: eleven embedded images load, no horizontal overflow and no
+page errors. The test browser closes afterward. Curated evidence remains local;
+temporary build/transport material is removed. No push or publication occurs.

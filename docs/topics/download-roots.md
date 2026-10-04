@@ -6,8 +6,12 @@ Tactical 253's second-cohort follow-up keeps the native Library in a checking
 state until the startup probe completes, instead of offering premature folder
 repair. Android browser HTTP 408 now explains picker expiration and an explicit
 new selection, preserving cancellation and authorization errors. The physical
-picker expires with that message and accepts another explicit request; retained
-root/payload bytes are unchanged. No automatic retry or permission change is
+picker expires with that message, and a subsequent explicit selection completes
+through the real picker, committing the root and rendering it in Chrome.
+A separate controlled native payload remains unchanged through revoked-grant
+cancellation and completed repair. Library Repair now passes the retained
+default root to the existing repair callback; ordinary menu selection remains
+an add-folder action. No automatic retry or permission change is
 introduced. The second cohort's Linux hostname failure is now traced to the
 ChromeOS 150 Baguette path; ordinary restart is not a repair for that defect.
 
@@ -20,8 +24,9 @@ does not migrate roots or authorize simultaneous writing of one payload.
 The explicit Linux guide retains Share
 with Linux versus Android-grant wording; ordinary Terminal startup restores Linux
 hostname registration. Current installed candidate Launcher remains unrun.
-Retain 178/194's exact historical sharing/repair evidence; new revoked/share
-journeys and cohort B remain open.
+Retain 178/194's exact historical sharing/repair evidence. Cohort B now adds
+the bounded Android revoked-grant checks above; new Linux share-loss journeys
+remain open.
 
 Tactical [246](../tactical/246-android-legacy-import-and-installed-upgrade.md)
 maps Android root keys to stable SAF root IDs and preserves the pinned private

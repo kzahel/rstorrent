@@ -110,6 +110,7 @@
     <string name="library_background_unavailable">JSTorrent works while Android is visible. Leaving Android stops background work.</string>
     <string name="storage_checking_folders">Checking download folders…</string>
     <string name="storage_choose_folder">Choose a download folder</string>
+    <string name="storage_repair_existing_folder">Restore access to this folder to resume its downloads. Your library is retained.</string>
     <string name="storage_select_before_download">Select a folder before adding or resuming downloads.</string>
 
     <!-- Add and add-time file selection. -->

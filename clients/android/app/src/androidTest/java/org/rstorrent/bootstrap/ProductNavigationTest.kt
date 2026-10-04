@@ -65,6 +65,9 @@ import org.rstorrent.session.uniffi.PortMappingPolicy
 import org.rstorrent.session.uniffi.PortMappingStatus
 import org.rstorrent.session.uniffi.PendingFileSelectionBase
 import org.rstorrent.session.uniffi.SessionUdpStatus
+import org.rstorrent.session.uniffi.StorageRootAvailability
+import org.rstorrent.session.uniffi.StorageRootSnapshot
+import org.rstorrent.session.uniffi.StorageSettingsSnapshot
 import org.rstorrent.session.uniffi.StorageState
 import org.rstorrent.session.uniffi.TorrentTransferLimits
 import org.rstorrent.session.uniffi.TransferRateLimit
@@ -993,6 +996,63 @@ class ProductNavigationTest {
 
         compose.onNodeWithText("That torrent is no longer available.").assertIsDisplayed()
         assertEquals(listOf(8L), consumed)
+    }
+
+    @Test
+    fun libraryRepairTargetsRetainedDefaultRoot() {
+        checkLibraryStorageAction(repair = true)
+    }
+
+    @Test
+    fun libraryFirstFolderUsesSelection() {
+        checkLibraryStorageAction(repair = false)
+    }
+
+    @Test
+    fun libraryMenuCanChooseAnotherFolderWhileRepairIsNeeded() {
+        checkLibraryStorageAction(repair = true, chooseFromMenu = true)
+    }
+
+    private fun checkLibraryStorageAction(repair: Boolean, chooseFromMenu: Boolean = false) {
+        var selections = 0
+        val repairs = mutableListOf<String>()
+        val roots = if (repair) listOf(
+            StorageRootSnapshot("other", "Other folder", null, StorageRootAvailability.AVAILABLE),
+            StorageRootSnapshot("retained", "Saved folder", null, StorageRootAvailability.UNAVAILABLE),
+        ) else emptyList()
+        compose.setContent {
+            ProductApp(
+                service = null,
+                onSelectStorage = { selections += 1 },
+                onRepairStorage = { repairs += it },
+                onBrowseTorrent = {},
+                notificationsGranted = true,
+                onRequestNotifications = {},
+                onOpenNotificationSettings = {},
+                themeMode = ProductThemeMode.LIGHT,
+                dynamicColor = false,
+                onThemeMode = {},
+                onDynamicColor = {},
+                stateOverride = ProductState(
+                    ready = true,
+                    storageRootChecking = false,
+                    storageRootLabel = if (repair) "Saved folder" else null,
+                    storage = StorageSettingsSnapshot(roots, if (repair) "retained" else null, false, true),
+                ),
+            )
+        }
+        compose.onNodeWithText(if (repair) "Selected download folder is unavailable." else "Choose a download folder")
+            .performScrollTo().assertIsDisplayed()
+        if (chooseFromMenu) {
+            compose.onNodeWithContentDescription("More options").performClick()
+            compose.onNodeWithText("Choose a download folder").performClick()
+        } else {
+            compose.onNodeWithText(if (repair) "Repair" else "Select folder").performScrollTo().performClick()
+        }
+        compose.runOnIdle {
+            assertEquals(if (repair && !chooseFromMenu) 0 else 1, selections)
+            assertEquals(if (repair && !chooseFromMenu) listOf("retained") else emptyList<String>(), repairs)
+        }
     }
 
     private fun torrent(): TorrentView =

@@ -7,9 +7,9 @@ Tactical
 adds current isolated physical APK evidence on cohort A: the real picker
 commits its owned binary retained-root registry, controlled magnet/file-input
 bytes verify independently, and native restart retains the binding/library in
-bounded recovery. Inherited apps/grants are preserved. Current revoked-root
-repair and real Play installation remain open; retain 194's original
-bounded repair pass.
+bounded recovery. Inherited apps/grants are preserved. Second-cohort revoked
+grant/cancel/retry evidence is recorded below; real Play installation remains
+open. Retain 194's original bounded repair pass.
 
 Second-cohort Tactical 253 adds independently hashed download/restart and
 full-hour observation evidence. Its startup follow-up isolates the 121-file
@@ -22,8 +22,16 @@ Saved pairing and a completed browser row recover within the existing discovery
 budget. Both Android ABIs, generated Kotlin and 116 JVM tests pass. Exact
 before/after startup cohorts and screenshots belong to 253's follow-up review.
 The earlier rough 45-second observation remains historical, not a measured
-native-open timing or a revoked-grant test. Fresh Play delivery, real revoked
-root repair and full-device lifecycle gates remain open.
+native-open timing or a revoked-grant test. The subsequent recovery slice
+corrects Library Repair to invoke the existing retained-root repair callback,
+rather than ordinary add-folder selection. Physical grant revocation fails
+closed, picker cancellation preserves the binding, and completed retry advances
+its generation under the same root ID with independently unchanged bytes.
+Renaming the owned folder fails closed without recreating it; selecting its
+relocated tree repairs the same root and retains verified bytes with the source
+offline. Three physical Compose click regressions preserve first selection and ordinary
+menu selection as separate actions. Fresh Play delivery and full-device
+lifecycle gates remain open.
 
 Tactical [248](../tactical/248-chromeos-staggered-upgrade.md) extends controlled
 API 28/35 upgrade evidence to the released extension engine/session writer:

@@ -7,8 +7,14 @@ transport, connection-close and resource-limit handshake failures. Only an
 explicit `authentication_failed` response for a saved credential starts fresh
 approval; a rejected newly approved credential does not create another approval
 loop. Five focused cases, the 470-test web suite and extension packaging pass.
-Physical process/storage recovery and the Linux alternate-route discussion
-remain distinct evidence gates.
+The actual packaged extension also passes physical Android process restart,
+simulated page-owned socket interruption, worker stop/wake and real picker
+expiration followed by completed selection. Saved pairing is retained without
+new approval. These browser cases use an empty isolated library; native payload
+recovery is separately recorded. An owned Linux localhost marker is reachable
+from Chrome, supporting an explicit alternate-connection UX proposal. That
+product route remains unimplemented and unqualified; the exact-host contract
+is unchanged.
 
 Tactical 253's portable recovery checkpoint passes bounded Android discovery,
 manual recovery, detached-view cleanup, offline troubleshooting and explicit

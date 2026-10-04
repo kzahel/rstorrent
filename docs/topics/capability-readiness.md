@@ -1241,7 +1241,14 @@ hosted repeats.
   signed successor delivery, full store pairs, lifecycle gaps and real fresh
   Play installation remain open. Both second-cohort full-hour observations
   verify bytes; Android also keeps a stable connected completed browser row.
-  Linux retains its runtime-only limit; exact outcomes belong to 253.
+  Linux retains its runtime-only limit; exact outcomes belong to 253. The
+  recovery follow-up adds seven physical native cases covering partial restart,
+  controlled source interruption, revoked-grant cancel/repair and relocated
+  folder repair with verified bytes. Library Repair now targets the retained
+  root. Actual extension process/socket recovery preserves saved pairing;
+  worker stop/wake and real picker expiry/completed retry also pass. Wi-Fi is
+  unchanged. A localhost HTTP marker is reachable from Chrome, but the
+  alternate product route remains a discussion proposal, not qualified support.
 
 - Selected three-platform beta package matrices pass in **236/237**, signed
   published-cohort updates in **238**, and bounded browser/transfer recovery in

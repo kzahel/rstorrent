@@ -84,6 +84,7 @@ internal fun LibraryScreen(
     onRequestNotifications: () -> Unit,
     notificationActionLabel: String,
     onSelectStorage: () -> Unit,
+    onRepairStorage: (String) -> Unit,
     onOpenTorrent: (String) -> Unit,
     onAddMagnet: (String) -> Unit,
     onBrowseTorrent: () -> Unit,
@@ -313,10 +314,16 @@ internal fun LibraryScreen(
                 } else if (!state.storageRootReady) {
                     item("storage") {
                         SetupCard(
-                            title = stringResource(R.string.storage_choose_folder),
+                            title = stringResource(
+                                if (state.storageRootLabel == null) R.string.storage_choose_folder
+                                else R.string.error_storage_unavailable,
+                            ),
                             detail =
                                 stateError
-                                    ?: stringResource(R.string.storage_select_before_download),
+                                    ?: stringResource(
+                                        if (state.storageRootLabel == null) R.string.storage_select_before_download
+                                        else R.string.storage_repair_existing_folder,
+                                    ),
                             action =
                                 stringResource(
                                     if (state.storageRootLabel == null) {
@@ -325,7 +332,10 @@ internal fun LibraryScreen(
                                         R.string.action_repair
                                     },
                                 ),
-                            onAction = onSelectStorage,
+                            onAction = {
+                                val rootId = state.storage?.defaultRoot
+                                if (rootId == null) onSelectStorage() else onRepairStorage(rootId)
+                            },
                         )
                     }
                 }
