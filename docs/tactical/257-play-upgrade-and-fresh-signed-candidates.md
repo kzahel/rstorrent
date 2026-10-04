@@ -109,3 +109,16 @@ Local 1.0.26 APK/AAB metadata and resolved resources independently pass the new
 branding gate; all 24 Android release-tool tests, 116 release JVM tests and
 release lint pass. These checks are local preparation, not qualified signing.
 Fresh hosted candidates must supply original-key artifact evidence.
+
+## Exact-Source Hosted Build Checkpoint
+
+Source 46c19b3abf77e0d9d5ab2fca467a3bc48cf533b4 passes all ten executed
+presubmit jobs and Website; manual-only verification/dependency jobs are skipped.
+The [source receipt](../evidence/release-source-ci-257.json) binds their exact runs.
+Fresh non-publishing desktop [37235683007](https://github.com/kzahel/rstorrent/actions/runs/37235683007)
+and Android [37235699078](https://github.com/kzahel/rstorrent/actions/runs/37235699078)
+are dispatched on that source. Desktop updater-input identity proof passes,
+but its source gate exposes a separate asynchronous external-intake unit-test
+race; packaging is correctly refused. Tactical 256 owns that repair and the
+next exact-source retry. Android remains in progress. Neither route tags or
+publishes a release.

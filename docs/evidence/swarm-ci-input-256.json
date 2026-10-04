@@ -1,5 +1,5 @@
 {
-  "qualification": "Native touch CI regression repair; exact-source hosted qualification pending",
+  "qualification": "Native touch regression and complete exact-source hosted CI pass",
   "date": "2026-10-04",
   "testSourceSha256": "577b3179599a0b0c7b4a8271f25adce7cfa9b337b3295fa8a4f4f61a247237ba",
   "originalFailure": {
@@ -48,5 +48,20 @@
     "noOwnedBrowserProcessesRemained": true,
     "originalOffBaselineRestoredByOrderlyShutdown": true,
     "exclusiveClaimReleased": true
-  }
+  },
+  "hostedBrowserJob": {
+    "sourceSha": "46c19b3abf77e0d9d5ab2fca467a3bc48cf533b4",
+    "runUrl": "https://github.com/kzahel/rstorrent/actions/runs/37232124959",
+    "jobId": 111523937134,
+    "conclusion": "success",
+    "e2ePassed": 46,
+    "skippedOptInLive": 14
+  },
+  "auditCoverage": {
+    "privateControllerHistoryInspected": true,
+    "complete": false,
+    "limits": "No retrospective reconstruction; raw shell detail is not captured; claimant labels are self-asserted, not authenticated identity; retained events may be incomplete",
+    "currentLinuxClaimAndResourceCorrelated": true
+  },
+  "completeSourceCi": "https://github.com/kzahel/rstorrent/actions/runs/37232124959"
 }

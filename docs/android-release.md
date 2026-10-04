@@ -34,12 +34,12 @@ passed build, signature/packaging validation, and prerelease publication.
 
 ## Release A Version
 
-Only after explicit release authorization, add a nonempty `## [1.0.26]`
+Only after explicit release authorization, add a nonempty `## [1.0.27]`
 section to `clients/android/CHANGELOG.md` and commit it first. From a clean `main` checkout:
 
 ```sh
-scripts/release-android.sh 1.0.26 --dry-run
-scripts/release-android.sh 1.0.26
+scripts/release-android.sh 1.0.27 --dry-run
+scripts/release-android.sh 1.0.27
 ```
 
 The helper validates the version and changelog, increments Gradle's integer
@@ -48,6 +48,11 @@ annotated tag, and atomically pushes main and the tag. Each release version
 must increase; the version code is never derived from CI run numbers. If a
 push fails, the local commit/tag remain available for inspection and retry;
 do not run the bump helper again blindly.
+
+The already-prepared 1.0.26/code 26 candidate uses the manual build route below.
+The bump helper requires a strictly newer version; it cannot tag that same
+prepared version. Publishing the exact candidate would require separate explicit
+tag/publication direction rather than another accidental bump.
 
 The tag workflow checks that the tag matches the checked-in version, builds
 signed artifacts, then creates a GitHub **prerelease** with:

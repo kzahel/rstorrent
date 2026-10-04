@@ -2591,9 +2591,11 @@ describe("inspection application", () => {
       storageRoot: "root_a",
       startContent: true,
     });
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("Torrent added");
-    expect(external.getSnapshot().pending).toEqual([]);
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(screen.getByRole("status")).toHaveTextContent("Torrent added");
+      expect(external.getSnapshot().pending).toEqual([]);
+    });
   });
 
   it("keeps a retryable external activation available and reports queue notices", async () => {

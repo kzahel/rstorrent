@@ -233,6 +233,22 @@ rows independently; those tests use disposable signing and owned emulators.
 
 ## Product, Recovery And Release Decision
 
+After the current source/package gates, prioritize the remaining work in this
+order. These are qualification and product decisions, not publication authority:
+
+1. Review corrected Android code 26 for a separately authorized internal Play
+   release; code 25's visible Canary label cannot be repaired in place.
+2. Qualify companion/browser-local writers and the actual production extension
+   ID updated in place, then repeat mixed-store pairings on both physical cohorts.
+3. Complete the two-tree/reboot/grant-loss and sleep/network-loss matrix; include
+   retained bytes, actual upload serving and independently verified repair.
+4. Requalify installed delivery against the fresh signed desktop bytes where
+   source changes matter. Extend macOS x64/Linux arm64 and the old Linux GUI
+   cohorts; previous signed-candidate evidence remains pinned to its own hashes.
+5. Select the supported persistence/platform scope, feature dispositions, soak
+   window and recovery responsibility, then review the exact shipment capsule.
+   Keep unrun rows unchecked or explicitly exclude their unsupported scope.
+
 - [ ] **R-01 Feature disposition:** review recorded unsupported VPN, battery/plugin
   and other gaps. Migrate only implemented matching semantics.
   Minimum API 28 (Android 9) is accepted; API 26/27 remain on the old app and

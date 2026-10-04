@@ -1,6 +1,6 @@
 # Tactical 256: Swarm Touch CI Stabilization
 
-Status: **Active, 2026-10-04.**
+Status: **Active supplemental release-gate repair, 2026-10-04.**
 
 Topic: `web-ui-design`. Release owner: `beta-release-readiness`.
 
@@ -11,6 +11,8 @@ qualification and fresh signed candidates. Repair the failing swarm layout
 journey without weakening its touch-input, overflow, column visibility or
 accessibility assertions. Stop after local validation and exact-source hosted
 CI pass. Commit and push this bounded fix for that qualification.
+An additional source-test race exposed by the fresh release workflow belongs
+to this CI owner; retain its external-intake success and queue assertions.
 
 Engine, table behavior, release publication, production feeds and stores are
 outside this repair. The subsequent installed and signed-candidate campaign
@@ -59,11 +61,29 @@ twofold-CPU Linux repetitions, six eightfold-CPU macOS repetitions, web typechec
 and the full deterministic browser suite: 46 passed, 14 opt-in live cases
 skipped. Final nested cleanup also passes a further Linux repetition. Unchanged
 web product gates pass 470 unit tests (two skipped) and production build/CSP.
-See the [input receipt](../evidence/swarm-ci-input-256.json). Exact corrected-source
-hosted qualification remains required.
+See the [input receipt](../evidence/swarm-ci-input-256.json). Exact-source
+46c19b3a hosted browser job 111523937134 now passes in
+[CI run 37232124959](https://github.com/kzahel/rstorrent/actions/runs/37232124959).
+All ten executed source jobs and exact-source Website pass; the two manual-only
+CI jobs are skipped on this ordinary push. See the
+[source CI receipt](../evidence/release-source-ci-257.json).
 
 The Linux VM is used under a common read-only doctor and exclusive ordinary
 claim, with portable tooling and bundled headless Chromium in one owned scratch
 directory. No installed primary browser or outer UI is used. Owned fixtures/tooling and browser processes are removed; its original powered-off
 state is restored by orderly shutdown and the exclusive claim is released.
 The independent signed-candidate campaign waits for the complete source gate.
+
+## Fresh Release Source-Test Race
+
+Desktop run 37235683007 passes updater identity, Rust checks and tests, then
+fails the unit external-intake FIFO success assertion. The recording application
+pushes the second command before its async result, queue synchronization and
+status update finish. Waiting for two command submissions does not prove their
+completion; the test reads the preceding terminal-error message. Await the
+existing no-dialog, successful status and empty-queue observations together
+before finishing. Preserve the exact command/order/default-root assertions.
+No runtime behavior changes. Revalidate the unit suite and hosted source gate
+before qualifying fresh signed desktop packages.
+The affected 68-test file, full 470-test unit suite (two skipped) and typecheck
+pass locally. The fresh source retry remains required.

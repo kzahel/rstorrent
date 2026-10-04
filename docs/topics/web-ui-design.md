@@ -209,10 +209,17 @@ configured columns authoritative at every viewport width and restores trusted
 touch horizontal scrolling across every shared table. Tactical
 [`256`](../tactical/256-swarm-touch-ci-stabilization.md) stabilizes the swarm
 layout CI journey with native touch-event timing, a stationary release and an
-observed `scrollend` before position/resize assertions. Synthesized scrolling
-omits Linux touch-move events; the native route is independently exercised on
-Linux. Every scrolling, column-bounds and accessibility oracle remains. Pressured
-repeats pass locally; complete corrected-source hosted CI remains required.
+observed `scrollend` before position/resize assertions. The current Linux
+headless probe acknowledges synthesized gestures without touch-move events;
+the native route is independently exercised there. Every scrolling,
+column-bounds and accessibility oracle remains. Pressured
+repeats and the full local browser suite pass; exact-source 46c19b3a CI now passes
+all ten executed jobs and Website. The tactical links its receipts.
+The subsequent desktop release source gate exposes a separate external-intake
+unit-test race: command submission precedes its asynchronous completion.
+Await the existing success message and empty-queue observations together;
+all 470 unit tests (two skipped) and typecheck pass locally. Hosted retry
+remains required, with application behavior unchanged.
 Tactical `043` adds the responsive live Trackers table, local deadline
 countdowns, and a permanent tracker-recovery scenario. Tacticals `044`--`045`
 add the global Disk pipeline and selected-torrent bounded Canvas Pieces

@@ -90,5 +90,10 @@
     "ownedSeedAndTrackerStopped": true,
     "legacySourcePreserved": "Existing migration source intentionally retained; removed destination rows do not resurrect on relaunch",
     "unmeteredSettingRestoredToOriginalFalse": true
+  },
+  "auditCoverage": {
+    "privateControllerHistoryInspected": true,
+    "complete": false,
+    "limits": "Native adapter has no common target claims; matching marker and detailed shell fixture effects are directly observed, outside full audit coverage; no prior-user activity inferred"
   }
 }
