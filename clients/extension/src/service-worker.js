@@ -2,7 +2,7 @@ import { ProductMetricsOwner } from "./product-metrics.js";
 
 const NATIVE_HOST = "com.jstorrent.rstorrent.native";
 const PROTOCOL_VERSION = 1;
-const CROSTINI_ORIGIN = "http://penguin.linux.test:3030";
+const CROSTINI_ORIGIN = "http://jstorrent.localhost:3030";
 const CROSTINI_ROOT = `${CROSTINI_ORIGIN}/`;
 const CROSTINI_LAUNCH_URL = `${CROSTINI_ORIGIN}/launch-chromeos`;
 const CROSTINI_CONNECTION_PAGE = "crostini/connect.html";
@@ -196,7 +196,7 @@ function validCrostiniLaunchMessage(message, sender) {
     return (
       url.href === CROSTINI_LAUNCH_URL &&
       url.protocol === "http:" &&
-      url.hostname === "penguin.linux.test" &&
+      url.hostname === "jstorrent.localhost" &&
       url.port === "3030" &&
       url.username === "" &&
       url.password === ""

@@ -89,7 +89,7 @@ export function validateSource(production = false) {
   }
   if (
     JSON.stringify(manifest.optional_host_permissions) !==
-    JSON.stringify(["http://100.115.92.2/*", "http://penguin.linux.test/*"])
+    JSON.stringify(["http://100.115.92.2/*", "http://jstorrent.localhost/*"])
   ) {
     fail("optional host permission must contain only the exact ARC and Crostini hosts");
   }
@@ -103,7 +103,7 @@ export function validateSource(production = false) {
   }
   if (
     JSON.stringify(manifest.externally_connectable) !==
-    JSON.stringify({ matches: ["http://penguin.linux.test/*"] })
+    JSON.stringify({ matches: ["http://jstorrent.localhost/*"] })
   ) {
     fail("externally_connectable must contain only the exact Crostini host match");
   }
@@ -125,7 +125,7 @@ export function validateSource(production = false) {
         ),
       )
       .join(" ") + " " + [7800, 7805, 7814, 7827, 7844]
-        .map((port) => `http://100.115.92.2:${port}`).join(" ") + " ws://127.0.0.1:* http://penguin.linux.test:3030";
+        .map((port) => `http://100.115.92.2:${port}`).join(" ") + " ws://127.0.0.1:* http://jstorrent.localhost:3030";
   if (manifest.content_security_policy?.extension_pages !== expectedCsp) {
     fail("extension-page CSP must contain only local scripts and the five exact ARC endpoints");
   }
@@ -144,9 +144,9 @@ export function validateSource(production = false) {
     if (
       urls.some(
         (url) =>
-          url !== "http://penguin.linux.test:3030" &&
+          url !== "http://jstorrent.localhost:3030" &&
           url !== "http://100.115.92.2/*" &&
-          url !== "http://penguin.linux.test/*" &&
+          url !== "http://jstorrent.localhost/*" &&
           url !== "https://jstorrent.com/privacy.html" &&
           url !== "https://jstorrent.com/uninstall.html",
       )

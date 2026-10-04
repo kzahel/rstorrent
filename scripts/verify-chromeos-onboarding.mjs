@@ -87,7 +87,7 @@ try {
   try {
     for (const scenario of ["denied", "unreachable", "timeout", "cancel", "wrong-service", "incompatible", "invalid", "oversized", "http-error", "ready"]) {
       const page = await context.newPage();
-      await page.route("http://penguin.linux.test:3030/**", route => route.fulfill({
+      await page.route("http://jstorrent.localhost:3030/**", route => route.fulfill({
         contentType: "text/html", body: "<main>Controlled Linux navigation destination</main>",
       }));
       await page.addInitScript(({ scenario }) => {
@@ -113,7 +113,7 @@ try {
       }, { scenario });
       await page.goto(`${origin}/crostini/connect.html`);
       if (scenario === "ready") {
-        await page.waitForURL(url => url.origin === "http://penguin.linux.test:3030" && url.pathname === "/" && url.searchParams.has("connect"));
+        await page.waitForURL(url => url.origin === "http://jstorrent.localhost:3030" && url.pathname === "/" && url.searchParams.has("connect"));
       } else {
         const retry = page.getByRole("button", { name: "Retry", exact: true });
         if (scenario === "cancel") await page.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -133,7 +133,7 @@ try {
         }
         if (["unreachable", "denied"].includes(scenario)) {
           await page.evaluate(() => { globalThis.__linuxScenario = "ready"; });
-          await retry.click(); await page.waitForURL(url => url.origin === "http://penguin.linux.test:3030" && url.pathname === "/" && url.searchParams.has("connect"));
+          await retry.click(); await page.waitForURL(url => url.origin === "http://jstorrent.localhost:3030" && url.pathname === "/" && url.searchParams.has("connect"));
         }
       }
       console.log(`PASS injected packaged Linux journey: ${scenario}`);
@@ -163,13 +163,13 @@ try {
   try {
     browser = await chromium.launchPersistentContext(cacheProfile, { channel: "chromium", headless: true,
       args: [`--disable-extensions-except=${staging}`, `--load-extension=${staging}`,
-        "--host-resolver-rules=MAP penguin.linux.test 127.0.0.1", "--no-proxy-server"] });
+        "--no-proxy-server"] });
     const page = await browser.newPage();
-    await page.goto("http://penguin.linux.test:3030/");
+    await page.goto("http://jstorrent.localhost:3030/");
     assert.match(await page.locator("body").innerText(), /Old Linux shell/u);
     currentPackage = true;
     await page.goto(`${origin}/crostini/setup.html`);
-    await page.goto("http://penguin.linux.test:3030/");
+    await page.goto("http://jstorrent.localhost:3030/");
     assert.match(await page.locator("body").innerText(), /Old Linux shell/u);
     assert.equal(currentDocuments, 0, "ordinary navigation still uses the old cached document");
     await page.addInitScript(() => {

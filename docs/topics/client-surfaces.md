@@ -2,6 +2,18 @@
 
 Topic: `client-surfaces`
 
+Tactical 253 now makes `http://jstorrent.localhost:3030` the primary Linux
+browser route. Its dedicated loopback name bypasses ChromeOS Linux DNS
+registration and keeps host-only cookies separate from bare localhost apps.
+Exact Host/Origin, extension handoff, optional permission and service identity
+checks remain. Both physical cohorts pass actual browser download, independent
+hash verification, source-offline process restart and tab reuse; cohort B also
+passes the installed launcher and real permission prompt. Cohort A uses an
+isolated runtime alongside its preserved installation. The old hostname route
+requires updating the Linux package and extension together; it is not an
+automatic fallback. These unsigned candidates do not qualify store delivery,
+ARM hardware, full-device suspend/reboot or forwarding endurance.
+
 Tactical 253's interruption follow-up preserves saved Android pairing after
 transport, connection-close and resource-limit handshake failures. Only an
 explicit `authentication_failed` response for a saved credential starts fresh
@@ -11,10 +23,8 @@ The actual packaged extension also passes physical Android process restart,
 simulated page-owned socket interruption, worker stop/wake and real picker
 expiration followed by completed selection. Saved pairing is retained without
 new approval. These browser cases use an empty isolated library; native payload
-recovery is separately recorded. An owned Linux localhost marker is reachable
-from Chrome, supporting an explicit alternate-connection UX proposal. That
-product route remains unimplemented and unqualified; the exact-host contract
-is unchanged.
+recovery is separately recorded. The initial localhost-marker proposal is superseded by the primary dedicated
+localhost route and physical product evidence above.
 
 Tactical 253's portable recovery checkpoint passes bounded Android discovery,
 manual recovery, detached-view cleanup, offline troubleshooting and explicit
@@ -39,9 +49,10 @@ startup was slow with temporary unavailable-root presentation; the subsequent
 four-observation/checking-state repair reduces the 121-file case to 11–11.5
 seconds and removes that false presentation. Fresh Linux
 setup and signed public installation work, but the registered launcher's browser
-handoff remains blocked by ChromeOS hostname registration, even after ordinary
-VM recovery. Both full-hour controlled observations verify their bytes; Linux
-retains its runtime-only limit. The local screenshot/HTML review retains exact
+handoff was blocked by ChromeOS hostname registration, even after ordinary
+VM recovery, before the dedicated-localhost update above. Both full-hour controlled observations verify their bytes; Linux
+retains its original runtime-only limit; the new bounded route checks are
+recorded separately above. The local screenshot/HTML review retains exact
 candidate limits and the remaining startup/store/lifecycle gaps.
 Neither injected presentation nor appliance health qualifies Play installation.
 

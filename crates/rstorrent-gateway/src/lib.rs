@@ -74,7 +74,7 @@ pub const MAX_BUILD_ID_BYTES: usize = 128;
 pub const MAX_PRODUCT_ID_BYTES: usize = 128;
 pub const MAX_UPDATE_FIELD_BYTES: usize = 1024;
 pub const HTTP_OWNER_HEX_BYTES: usize = 32;
-pub const CROSTINI_HOST: &str = "penguin.linux.test";
+pub const CROSTINI_HOST: &str = "jstorrent.localhost";
 pub const CROSTINI_PRODUCT: &str = "rstorrent-crostini";
 pub const CROSTINI_LAUNCH_PROTOCOL_VERSION: u16 = 1;
 pub const JSTORRENT_BETA_EXTENSION_ID: &str = "gcgoepclopkgijmclmlheafaglmbjlcc";
@@ -3993,13 +3993,13 @@ mod tests {
         let reservation = std::net::TcpListener::bind("127.0.0.1:0").expect("reserve port");
         let port = reservation.local_addr().expect("reserved address").port();
         drop(reservation);
-        let origin = format!("http://penguin.linux.test:{port}");
+        let origin = format!("http://jstorrent.localhost:{port}");
         let config = GatewayConfig {
             bind: format!("0.0.0.0:{port}").parse().expect("address"),
             authentication: GatewayAuthentication::Web(WebAuthenticationConfig {
                 database: root.join("profile/web-auth.sqlite3"),
                 pairing_window: false,
-                policy_override: Some(WebAccessPolicy::LocalOpen),
+                policy_override: None,
             }),
             allowed_origin: origin.clone(),
             max_connections: 2,
@@ -4012,13 +4012,103 @@ mod tests {
             .await
             .expect("bind Crostini gateway");
         let address = SocketAddr::from(([127, 0, 0, 1], server.local_addr().port()));
-        let host = format!("penguin.linux.test:{}", address.port());
+        let host = format!("jstorrent.localhost:{}", address.port());
         let shutdown = CancellationToken::new();
         let task = tokio::spawn(server.serve(shutdown.clone()));
 
         assert_eq!(
             raw_get_with_host(address, "attacker.example", "/").await.0,
             403
+        );
+        for rejected in [
+            format!("localhost:{port}"),
+            format!("127.0.0.1:{port}"),
+            format!("other.localhost:{port}"),
+            format!("penguin.linux.test:{port}"),
+            format!("jstorrent.localhost.evil:{port}"),
+        ] {
+            assert_eq!(raw_get_with_host(address, &rejected, "/").await.0, 403);
+        }
+        // Pair a browser at the dedicated origin. The cookie remains host-only;
+        // even possession of it does not permit a foreign Origin to mutate state.
+        let (status, headers, _) = raw_http_request_with_host(
+            address,
+            &host,
+            "POST",
+            "/api/v1/web-auth/policy",
+            None,
+            Some(&origin),
+            None,
+            None,
+            Some(r#"{"policy":"paired","label":"Crostini browser"}"#.to_owned()),
+        )
+        .await;
+        assert_eq!(status, 201);
+        let cookie_header = headers
+            .lines()
+            .find(|line| line.starts_with("set-cookie:"))
+            .expect("session cookie");
+        assert!(cookie_header.contains("HttpOnly; SameSite=Strict; Path=/"));
+        assert!(!cookie_header.to_ascii_lowercase().contains("domain="));
+        let cookie = cookie_header
+            .trim_start_matches("set-cookie: ")
+            .split(';')
+            .next()
+            .expect("cookie value");
+        for rejected in [
+            format!("http://localhost:{port}"),
+            format!("http://other.localhost:{port}"),
+            format!("http://penguin.linux.test:{port}"),
+            format!("http://jstorrent.localhost:{}", port ^ 1),
+        ] {
+            assert_eq!(
+                raw_http_request_with_host(
+                    address,
+                    &host,
+                    "POST",
+                    "/api/v1/web-auth/logout",
+                    None,
+                    Some(&rejected),
+                    None,
+                    Some(cookie),
+                    None
+                )
+                .await
+                .0,
+                403
+            );
+        }
+        assert_eq!(
+            raw_http_request_with_host(
+                address,
+                &host,
+                "GET",
+                "/api/v1/web-auth/sessions",
+                None,
+                Some(&origin),
+                None,
+                None,
+                None
+            )
+            .await
+            .0,
+            401
+        );
+        assert_eq!(
+            raw_http_request_with_host(
+                address,
+                &host,
+                "GET",
+                "/api/v1/web-auth/sessions",
+                None,
+                Some(&origin),
+                None,
+                Some(cookie),
+                None
+            )
+            .await
+            .0,
+            200
         );
         let (status, _, body) = raw_get_with_host(address, &host, "/healthz").await;
         assert_eq!(status, 200);
@@ -4067,7 +4157,7 @@ mod tests {
                 pairing_window: false,
                 policy_override: Some(WebAccessPolicy::LocalOpen),
             }),
-            allowed_origin: "http://penguin.linux.test:3030".to_owned(),
+            allowed_origin: "http://jstorrent.localhost:3030".to_owned(),
             max_connections: 2,
         };
         assert!(valid().validate_crostini().is_ok());
@@ -4076,7 +4166,7 @@ mod tests {
         wrong_host.allowed_origin = "http://100.115.92.2:3030".to_owned();
         assert!(wrong_host.validate_crostini().is_err());
         let mut wrong_port = valid();
-        wrong_port.allowed_origin = "http://penguin.linux.test:4040".to_owned();
+        wrong_port.allowed_origin = "http://jstorrent.localhost:4040".to_owned();
         assert!(wrong_port.validate_crostini().is_err());
         let mut loopback = valid();
         loopback.bind = "127.0.0.1:3030".parse().expect("address");

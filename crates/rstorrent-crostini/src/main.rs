@@ -80,7 +80,7 @@ fn serve() -> ExitCode {
             .arg("--listen")
             .arg("0.0.0.0:3030")
             .arg("--origin")
-            .arg("http://penguin.linux.test:3030")
+            .arg("http://jstorrent.localhost:3030")
             .arg("--auth")
             .arg("local-open")
             .arg("--web-root")

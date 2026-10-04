@@ -2,6 +2,20 @@
 
 Topic: `application-connection-architecture`
 
+Tactical 253 replaces Crostini's exact `penguin.linux.test` authority with
+`jstorrent.localhost` on the existing port 3030. Chromium's loopback resolution
+and ChromeOS forwarding replace the failing Linux DNS-registration dependency;
+no proxy, new listener or authentication protocol is added. Bare localhost,
+other localhost subdomains, the former hostname and wrong Origin/port remain
+rejected. Existing fixed local-open product policy and optional paired browser
+sessions are unchanged. Host-only HttpOnly cookies do not accompany requests
+to bare or unrelated localhost names; they still share authority across ports
+of the same dedicated hostname. This does not defend against malicious local
+processes impersonating that hostname. Actual Chromium tests cover paired
+session persistence and cross-origin refusal, while both hardware cohorts
+qualify the packaged product's local-open route. Browser approval/appearance
+may need reconfiguration at the new origin; the Linux profile is unchanged.
+
 Tactical [242](../tactical/242-legacy-desktop-handoff-rehearsal.md) adds the
 future production desktop's retirement of `com.jstorrent.native`. That name
 targets a refusal-only helper accepting bounded released frames and returning

@@ -1242,7 +1242,7 @@ hosted repeats.
   browser/file-picker intake and completed-row/byte retention after VM restart.
   Cohort B now adds an inherited Play baseline, isolated Android/extension
   flows, corrected completion, fresh Linux setup and signed public installation.
-  Its launcher starts a healthy service but browser access remains blocked by
+  Its earlier launcher started a healthy service but browser access was blocked by
   ChromeOS Baguette empty-address hostname registration after normal VM
   recovery; matching release source explains the device logs. Android startup
   now overlaps four structural observations and keeps Library in an explicit
@@ -1251,14 +1251,20 @@ hosted repeats.
   signed successor delivery, full store pairs, lifecycle gaps and real fresh
   Play installation remain open. Both second-cohort full-hour observations
   verify bytes; Android also keeps a stable connected completed browser row.
-  Linux retains its runtime-only limit; exact outcomes belong to 253. The
+  The original Linux hour retained its runtime-only limit; exact outcomes
+  belong to 253. The
   recovery follow-up adds seven physical native cases covering partial restart,
   controlled source interruption, revoked-grant cancel/repair and relocated
   folder repair with verified bytes. Library Repair now targets the retained
   root. Actual extension process/socket recovery preserves saved pairing;
   worker stop/wake and real picker expiry/completed retry also pass. Wi-Fi is
   unchanged. A localhost HTTP marker is reachable from Chrome, but the
-  alternate product route remains a discussion proposal, not qualified support.
+  dedicated `jstorrent.localhost:3030` route is now the accepted primary path.
+  Both physical cohorts pass packaged browser downloads, independent hashes,
+  same-library process restart and tab reuse; cohort B also passes installed
+  launcher and exact-host permission. Host-only cookie isolation and paired
+  session restart pass real Chromium checks. These are unsigned local candidate
+  results; full-device lifecycle, ARM hardware and distribution gates stay open.
 
 - Selected three-platform beta package matrices pass in **236/237**, signed
   published-cohort updates in **238**, and bounded browser/transfer recovery in

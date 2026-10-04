@@ -44,7 +44,7 @@ vsh --vm_name=termina --owner_id="$user_hash" -- env LXD_CONF=/tmp/rstorrent253-
         body = None if command is None else json.dumps({"version": 1, "request_id": "qualification253-"+uuid.uuid4().hex, "command": command})
         result = self.python(f'''import json,urllib.request
 body={body!r}
-request=urllib.request.Request("http://127.0.0.1:3030{path}", data=None if body is None else body.encode(), headers={{"Host":"penguin.linux.test:3030","Origin":"http://penguin.linux.test:3030","X-RSTorrent-Owner":"25300000000000000000000000000001","Content-Type":"application/json"}})
+request=urllib.request.Request("http://127.0.0.1:3030{path}", data=None if body is None else body.encode(), headers={{"Host":"jstorrent.localhost:3030","Origin":"http://jstorrent.localhost:3030","X-RSTorrent-Owner":"25300000000000000000000000000001","Content-Type":"application/json"}})
 with urllib.request.urlopen(request,timeout=5) as response: print(response.read().decode())
 ''')
         if command is not None and (result.get("status") != "success" or result.get("error")):

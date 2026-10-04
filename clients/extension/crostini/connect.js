@@ -1,5 +1,5 @@
-const ORIGIN = "http://penguin.linux.test:3030";
-const PERMISSION = "http://penguin.linux.test/*";
+const ORIGIN = "http://jstorrent.localhost:3030";
+const PERMISSION = "http://jstorrent.localhost/*";
 const MAX_HEALTH_BYTES = 4096;
 const TIMEOUT_MILLIS = 10_000;
 

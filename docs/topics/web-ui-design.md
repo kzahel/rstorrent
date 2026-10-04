@@ -2,6 +2,14 @@
 
 Topic: `web-ui-design`
 
+Tactical 253 now opens the Linux library through the dedicated loopback
+address `jstorrent.localhost:3030` by default. No alternate-connection choice is
+needed. The existing bounded connection page retains exact-host permission,
+service validation, Retry and Cancel. Setup explains the new address, paired
+Linux package/extension updates, retained library, origin-local preferences and
+preservation-safe troubleshooting. This replaces the earlier advice to use
+Android indefinitely when Baguette hostname registration fails.
+
 Tactical 253 implements portable pre-connection recovery: bounded discovery,
 manual Retry/Cancel, joined view/connection cleanup, offline stage-specific
 troubleshooting and explicit separate-library Linux guidance. A voluntary

@@ -434,7 +434,7 @@ fn print_help() {
            --bearer-token-file PATH    Bearer automation token file\n\
            --web-root PATH             Production web bundle directory\n\
            --build-id ID               Hosted build identity\n\
-           --chromeos-crostini         Exact penguin.linux.test product mode\n\
+           --chromeos-crostini         Exact jstorrent.localhost product mode\n\
            --open | --no-open          Open or do not open the browser\n\
            -h, --help                  Show this help\n\n\
          Secret values are accepted from files, not literal command arguments."

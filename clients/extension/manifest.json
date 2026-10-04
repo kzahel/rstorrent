@@ -10,7 +10,7 @@
   ],
   "optional_host_permissions": [
     "http://100.115.92.2/*",
-    "http://penguin.linux.test/*"
+    "http://jstorrent.localhost/*"
   ],
   "background": {
     "service_worker": "src/service-worker.js",
@@ -25,11 +25,11 @@
     "128": "icons/icon-128.png"
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'none'; connect-src http://100.115.92.2:3030 http://100.115.92.2:3031 http://100.115.92.2:3032 http://100.115.92.2:3033 http://100.115.92.2:3034 ws://100.115.92.2:3030 ws://100.115.92.2:3031 ws://100.115.92.2:3032 ws://100.115.92.2:3033 ws://100.115.92.2:3034 http://100.115.92.2:7800 http://100.115.92.2:7805 http://100.115.92.2:7814 http://100.115.92.2:7827 http://100.115.92.2:7844 ws://127.0.0.1:* http://penguin.linux.test:3030"
+    "extension_pages": "script-src 'self'; object-src 'none'; connect-src http://100.115.92.2:3030 http://100.115.92.2:3031 http://100.115.92.2:3032 http://100.115.92.2:3033 http://100.115.92.2:3034 ws://100.115.92.2:3030 ws://100.115.92.2:3031 ws://100.115.92.2:3032 ws://100.115.92.2:3033 ws://100.115.92.2:3034 http://100.115.92.2:7800 http://100.115.92.2:7805 http://100.115.92.2:7814 http://100.115.92.2:7827 http://100.115.92.2:7844 ws://127.0.0.1:* http://jstorrent.localhost:3030"
   },
   "externally_connectable": {
     "matches": [
-      "http://penguin.linux.test/*"
+      "http://jstorrent.localhost/*"
     ]
   },
   "host_permissions": [

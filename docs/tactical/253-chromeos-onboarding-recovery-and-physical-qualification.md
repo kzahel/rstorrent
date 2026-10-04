@@ -1280,3 +1280,106 @@ passes ten checks. The HTML passes isolated headless Chromium rendering at
 1280 and 390 pixels: eleven embedded images load, no horizontal overflow and no
 page errors. The test browser closes afterward. Curated evidence remains local;
 temporary build/transport material is removed. No push or publication occurs.
+
+### Primary localhost route, authorized 2026-10-04
+
+The maintainer authorizes making localhost the default Linux connection and
+committing the completed slice. Prefer the dedicated loopback hostname
+`jstorrent.localhost:3030` if real Chrome verifies it on both cohorts: Chromium
+resolves `.localhost` names internally to loopback (RFC 6761 section 6.3), so
+this uses ChromeOS forwarding without Linux DNS registration. The dedicated
+hostname retains host-only cookie separation from bare localhost and unrelated
+localhost subdomains; cookies still do not isolate ports or defend against a
+malicious local process deliberately impersonating the same host. Keep the
+existing exact Host/Origin and browser-session policy; no new auth protocol,
+proxy, listener, dependency, persistent daemon or engine change is intended.
+
+Before implementation, verify the route and cookie separation in actual Chrome.
+Then change the launcher, health probes, gateway exact authority, extension
+permission/CSP/handoff and current user guidance together. Preserve the same
+Linux profile/root and session owner. Do not silently fall back to bare
+localhost, arbitrary addresses or Android. Treat older hostname-based packages
+as requiring a matching update; any compatibility navigation must not forward
+session authority or accept arbitrary origins. No automatic copying of cookies
+or browser appearance preferences across origins. Named-host browser approval
+and appearance may need to be set again; payload/library state must not move.
+
+Required evidence: exact-host and cross-origin refusal, wrong-service handling,
+bounded discovery/cancellation, extension handoff/tab reuse, cookie isolation,
+protected actual browser session, same-library restart and controlled verified
+payload on both physical ChromeOS cohorts. Reuse deterministic tests and the
+existing Linux build-host packaging lane; preserve inherited apps and profile,
+Wi-Fi and appliance power policy. All test processes have explicit termination
+and owned filesystem cleanup. Stop at the current bounded route qualification
+and local commit, keeping store/publication, ARM hardware, suspend/radio loss,
+and long-duration forwarding performance separate.
+
+#### Primary-route completion
+
+Both physical ChromeOS 150 cohorts resolve `jstorrent.localhost` in actual
+Chrome without DNS/hosts overrides and reach the forwarded Linux listener.
+A host-only probe cookie returns only to the dedicated host, not bare localhost
+or an unrelated localhost subdomain. Adopt this dedicated localhost authority
+rather than bare localhost; no additional recovery choice is exposed.
+
+The gateway, launcher health/handoff, exact extension permission/CSP/sender
+validation, packaged recovery page and current setup guidance use this one
+origin. The previous hostname, arbitrary loopback aliases and wrong Origin or
+port are rejected. No compatibility fallback or cookie/preference copying is
+introduced. Users of older preview packages update the Linux app and extension
+together. This supersedes 167's original hostname decision and the earlier
+alternate-route discussion proposal, while retaining the same owner/profile,
+port/listener, fixed local-open product policy and optional browser-session
+implementation. Android and shared engine/application semantics are unchanged.
+
+Actual packaged browser intake verifies a controlled 1 MiB payload on both
+cohorts (SHA-1 `27b016b8f330f063a2776225cd2242821cbb8b40`). With the source
+paused, restarting the Linux process and reloading Chrome retains its complete
+row and independent hash. Repeated handoff focuses the original library tab.
+Cohort B additionally passes fresh local package installation, the actual
+installed launcher and explicit exact-host Chrome permission followed by the
+connection page reaching that same library. Cohort A uses an isolated runtime;
+its inherited package/profile remains byte-identical and its temporarily
+updated unpacked beta is restored to its original path, permissions and exact
+local/sync/session storage. This does not claim an installed update on cohort A.
+
+The independently authored `scripts/verify-crostini-localhost.mjs` uses the real
+product gateway and bundled headless Chromium without resolver overrides. It
+proves host-only HttpOnly/Strict cookie separation from bare/sibling localhost,
+explicitly records same-host cross-port cookie sharing, rejects foreign Host
+and cookie-bearing foreign-Origin requests, and retains a paired browser session
+across gateway restart. Existing fixed local-open packaging does not start
+issuing cookies as part of this change. No malicious-local-process isolation
+claim follows from hostname separation.
+
+Validation: Rust formatting, workspace Clippy, 1,574 workspace tests (18
+ignored), web typecheck, 470 web tests (two skipped), 54 extension tests,
+archive/CSP validation, six Android and ten Linux injected packaged journeys,
+cached-document replacement and all localization catalogs pass. Focused
+Crostini tests pass again after making the test's wrong-port choice independent
+of ephemeral-port overflow. The Ubuntu 22.04 x86_64 package passes archive,
+ELF dependency and version checks; the Linux build checkout is restored clean.
+Exact artifact hashes, cohort cases and validation live in
+[`docs/evidence/chromeos-localhost-253.json`](../evidence/chromeos-localhost-253.json).
+
+Preliminary harness runs needed a legacy-Python tar extraction fallback, the
+web table's actual `100%` spelling, and a raw Node HTTP request for explicit
+Host headers. Those driver failures are not product failures or promoted passes.
+The completed runs above use the exact recorded artifacts. The local review
+`target/reports/chromeos-253-localhost/index.html` embeds actual device screens.
+Both cleanup records preserve inherited tabs/extensions and remove owned test
+packages/profiles/payloads, listeners, staging and markers. Final common doctor
+passes ten checks on each device. Wi-Fi and appliance power policy are unchanged.
+The normal Linux environment started for cohort A remains available; no full
+VM/device lifecycle result is claimed.
+
+This bounded primary-route slice is complete. Tactical 253 remains active for
+store/production delivery, ARM hardware, full-device lifecycle and larger
+forwarding/endurance evidence. No push, tag, release or publication is performed.
+
+Final report inspection passes desktop/mobile widths (1280/390), all three
+embedded images, zero page errors and no horizontal overflow in bundled
+headless Chromium, which is closed afterward. Controller source and transfer
+listeners are absent. Curated screenshots/JSON/HTML are retained; temporary
+transport scripts, copied packages, extension-storage backups and logs are
+removed after verified restoration.

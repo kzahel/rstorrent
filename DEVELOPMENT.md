@@ -642,6 +642,18 @@ requirements plus executable version smokes. Finished packages are under
 `target/crostini-baseline/packages/`. The native ARM64 release lane remains
 `ubuntu-22.04-arm`; this local x86_64 script does not emulate that qualification.
 
+Validate the Crostini dedicated-localhost route and browser-session isolation
+without DNS overrides or the user's installed browser:
+
+```bash
+cargo build -p rstorrent-gateway --bin rstorrent-gateway
+node scripts/verify-crostini-localhost.mjs target/debug/rstorrent-gateway
+```
+
+The runner owns its temporary profile, gateway, neighboring HTTP fixture and
+bundled headless Chromium. It checks actual cookie host separation, exact
+Host/Origin refusal and paired-session restart, then joins/removes its fixtures.
+
 Preserve inherited physical Android apps with the debug-only test identity:
 
 ```bash

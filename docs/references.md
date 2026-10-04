@@ -254,6 +254,14 @@ its own state, ownership, and implementation.
 
 ## Chrome Extension And Native-Messaging References
 
+Tactical 253's dedicated-localhost route uses [RFC 6761 section 6.3](https://www.rfc-editor.org/rfc/rfc6761.html#section-6.3),
+Chromium's [localhost resolution change](https://codereview.chromium.org/938093003/),
+and the [ChromeOS forwarding contract](https://www.chromium.org/chromium-os/developer-library/reference/security/port-forwarding/).
+[RFC 6265 section 8.5](https://www.rfc-editor.org/rfc/rfc6265.html#section-8.5)
+explains why cookies do not isolate ports. A dedicated hostname with host-only
+cookies avoids bare-localhost sharing; it does not provide per-port isolation.
+Tests are independently authored; no source or fixtures are imported.
+
 Tactical
 [`166`](tactical/166-desktop-native-bootstrap-and-extension-scaffold.md) uses
 Chrome's official platform contracts:

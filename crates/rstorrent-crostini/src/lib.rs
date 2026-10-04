@@ -21,7 +21,9 @@ pub use x11_launcher::run_launcher_window;
 pub const APPLICATION_ID: &str = "com.jstorrent.rstorrent.crostini";
 pub const PRODUCT_NAME: &str = "RSTorrent for ChromeOS Linux";
 pub const SERVICE_NAME: &str = "com.jstorrent.rstorrent.crostini.service";
-pub const CROSTINI_HOST: &str = "penguin.linux.test";
+// A dedicated loopback name bypasses ChromeOS Linux DNS registration without
+// sharing host-only browser cookies with applications on bare localhost.
+pub const CROSTINI_HOST: &str = "jstorrent.localhost";
 pub const CROSTINI_PORT: u16 = 3030;
 pub const CROSTINI_PRODUCT: &str = "rstorrent-crostini";
 pub const LAUNCH_PROTOCOL_VERSION: u16 = 1;

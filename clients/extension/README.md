@@ -20,7 +20,7 @@ surfaces from Tactical
 It checks for the distinct `com.jstorrent.rstorrent.native` host and can ask
 the installed successor desktop app to open. Tactical
 [`167`](../../docs/tactical/167-chromeos-crostini-bundled-web-launcher.md) also
-lets the exact local `penguin.linux.test:3030` handoff page wake the worker and
+lets the exact local `jstorrent.localhost:3030` handoff page wake the worker and
 reuse its tab for the backend-served React UI.
 
 Tactical [`194`](../../docs/tactical/194-chromeos-android-extension-control.md)
@@ -69,7 +69,7 @@ The extension detects and opens the locally installed RSTorrent desktop
 application and performs the ChromeOS Linux tab handoff. Its regular
 permissions are `nativeMessaging` and `storage`; the user may grant only the
 optional `http://100.115.92.2/*` ARC host permission from the explicit Android
-connect action, or `http://penguin.linux.test/*` from the offline Linux
+connect action, or `http://jstorrent.localhost/*` from the offline Linux
 connection page's explicit Retry. Neither is granted automatically. It has no content scripts,
 and does not fetch executable code from either backend. Its CSP admits only the
 five fixed RSTorrent Android HTTP/WebSocket ports, reviewed legacy discovery
@@ -78,6 +78,6 @@ bounded product/protocol health before opening the separate Linux library and
 keeps offline troubleshooting available on failure. Ordinary explicit connection
 fetches a fresh HTML document to avoid old cached package asset references;
 warm handoff focuses an existing connected tab without reloading it. External messaging remains
-manifest-limited to `http://penguin.linux.test/*`, while the worker separately
+manifest-limited to `http://jstorrent.localhost/*`, while the worker separately
 requires the exact Crostini port, path, message keys, protocol version, and
 sender tab.

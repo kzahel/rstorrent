@@ -180,12 +180,12 @@ test("exact external Crostini handoff reuses its sender tab", async () => {
   tabs.set(41, {
     id: 41,
     windowId: 7,
-    url: "http://penguin.linux.test:3030/launch-chromeos",
+    url: "http://jstorrent.localhost:3030/launch-chromeos",
   });
   const response = await sendExternal(
     { type: "openCrostiniUi", protocolVersion: 1 },
     {
-      url: "http://penguin.linux.test:3030/launch-chromeos",
+      url: "http://jstorrent.localhost:3030/launch-chromeos",
       tab: { id: 41 },
     },
   );
@@ -194,29 +194,29 @@ test("exact external Crostini handoff reuses its sender tab", async () => {
     ok: true,
     result: { kind: "crostini_ui", status: "opened" },
   });
-  assert.match(tabs.get(41).url, /^http:\/\/penguin\.linux\.test:3030\/\?connect=[a-f0-9-]{36}$/u);
+  assert.match(tabs.get(41).url, /^http:\/\/jstorrent\.localhost:3030\/\?connect=[a-f0-9-]{36}$/u);
   assert.equal(stored.crostiniUiTabId, 41);
   assert.deepEqual(focusedWindow, { windowId: 7, update: { focused: true } });
 });
 
 test("repeated handoff focuses one remembered tab and closes the disposable tab", async () => {
   stored.crostiniUiTabId = 41;
-  tabs.set(41, { id: 41, windowId: 7, url: "http://penguin.linux.test:3030/" });
+  tabs.set(41, { id: 41, windowId: 7, url: "http://jstorrent.localhost:3030/" });
   tabs.set(42, {
     id: 42,
     windowId: 8,
-    url: "http://penguin.linux.test:3030/launch-chromeos",
+    url: "http://jstorrent.localhost:3030/launch-chromeos",
   });
 
   const response = await sendExternal(
     { type: "openCrostiniUi", protocolVersion: 1 },
     {
-      url: "http://penguin.linux.test:3030/launch-chromeos",
+      url: "http://jstorrent.localhost:3030/launch-chromeos",
       tab: { id: 42 },
     },
   );
   assert.equal(response.result.status, "focused");
-  assert.equal(tabs.get(41).url, "http://penguin.linux.test:3030/");
+  assert.equal(tabs.get(41).url, "http://jstorrent.localhost:3030/");
   assert.equal(tabs.get(41).active, true);
   assert.equal(tabs.has(42), false);
   assert.deepEqual(focusedWindow, { windowId: 7, update: { focused: true } });
@@ -232,10 +232,10 @@ test("popup requests an offline Linux connection tab without probing the backend
 test("real Linux handoff replaces a remembered recovery page and removes its disposable tab", async () => {
   stored.crostiniUiTabId = 41;
   tabs.set(41, { id: 41, windowId: 7, url: chrome.runtime.getURL("crostini/connect.html") });
-  tabs.set(42, { id: 42, windowId: 8, url: "http://penguin.linux.test:3030/launch-chromeos" });
+  tabs.set(42, { id: 42, windowId: 8, url: "http://jstorrent.localhost:3030/launch-chromeos" });
   await sendExternal({ type: "openCrostiniUi", protocolVersion: 1 },
-    { url: "http://penguin.linux.test:3030/launch-chromeos", tab: { id: 42 } });
-  assert.match(tabs.get(41).url, /^http:\/\/penguin\.linux\.test:3030\/\?connect=[a-f0-9-]{36}$/u);
+    { url: "http://jstorrent.localhost:3030/launch-chromeos", tab: { id: 42 } });
+  assert.match(tabs.get(41).url, /^http:\/\/jstorrent\.localhost:3030\/\?connect=[a-f0-9-]{36}$/u);
   assert.equal(tabs.has(42), false);
 });
 
@@ -275,12 +275,15 @@ test("repeated Android action focuses the one visible application tab", async ()
 
 test("external messages fail closed for URL and shape drift", () => {
   for (const [message, url] of [
-    [{ type: "openCrostiniUi", protocolVersion: 2 }, "http://penguin.linux.test:3030/launch-chromeos"],
-    [{ type: "openCrostiniUi", protocolVersion: 1, url: "http://evil" }, "http://penguin.linux.test:3030/launch-chromeos"],
-    [{ type: "openCrostiniUi", protocolVersion: 1 }, "https://penguin.linux.test:3030/launch-chromeos"],
-    [{ type: "openCrostiniUi", protocolVersion: 1 }, "http://penguin.linux.test:3031/launch-chromeos"],
-    [{ type: "openCrostiniUi", protocolVersion: 1 }, "http://penguin.linux.test:3030/not-launch"],
-    [{ type: "openCrostiniUi", protocolVersion: 1 }, "http://penguin.linux.test.evil:3030/launch-chromeos"],
+    [{ type: "openCrostiniUi", protocolVersion: 2 }, "http://jstorrent.localhost:3030/launch-chromeos"],
+    [{ type: "openCrostiniUi", protocolVersion: 1, url: "http://evil" }, "http://jstorrent.localhost:3030/launch-chromeos"],
+    [{ type: "openCrostiniUi", protocolVersion: 1 }, "https://jstorrent.localhost:3030/launch-chromeos"],
+    [{ type: "openCrostiniUi", protocolVersion: 1 }, "http://jstorrent.localhost:3031/launch-chromeos"],
+    [{ type: "openCrostiniUi", protocolVersion: 1 }, "http://jstorrent.localhost:3030/not-launch"],
+    [{ type: "openCrostiniUi", protocolVersion: 1 }, "http://jstorrent.localhost.evil:3030/launch-chromeos"],
+    [{ type: "openCrostiniUi", protocolVersion: 1 }, "http://localhost:3030/launch-chromeos"],
+    [{ type: "openCrostiniUi", protocolVersion: 1 }, "http://other.localhost:3030/launch-chromeos"],
+    [{ type: "openCrostiniUi", protocolVersion: 1 }, "http://penguin.linux.test:3030/launch-chromeos"],
   ]) {
     assert.equal(externalListener(message, { url, tab: { id: 5 } }, () => {}), false, url);
   }

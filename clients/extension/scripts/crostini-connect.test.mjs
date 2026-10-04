@@ -17,7 +17,7 @@ test("Linux health accepts only the exact local product/protocol and bounded val
   ]) {
     const signal = new AbortController().signal;
     assert.equal(await checkLinuxHealth(signal, async (url, options) => {
-      assert.equal(url, "http://penguin.linux.test:3030/healthz");
+      assert.equal(url, "http://jstorrent.localhost:3030/healthz");
       assert.equal(options.redirect, "error"); assert.equal(options.credentials, "omit");
       assert.equal(options.signal, signal);
       return new Response(JSON.stringify(health));
@@ -66,8 +66,8 @@ test("missing permission issues no requests; explicit Retry can grant exact-host
     assert.equal(requests, 0); assert.match(h.status.textContent, /not granted/u);
     h.state.granted = true; h.button.onclick(); await settle();
     assert.equal(requests, 1); assert.equal(h.navigations.length, 1);
-    assert.match(h.navigations[0], /^http:\/\/penguin\.linux\.test:3030\/\?connect=[a-f0-9-]{36}$/u);
-    assert.deepEqual(h.permissions[1], ["request", { origins: ["http://penguin.linux.test/*"] }]);
+    assert.match(h.navigations[0], /^http:\/\/jstorrent\.localhost:3030\/\?connect=[a-f0-9-]{36}$/u);
+    assert.deepEqual(h.permissions[1], ["request", { origins: ["http://jstorrent.localhost/*"] }]);
   } finally { globalThis.fetch = original; }
 });
 

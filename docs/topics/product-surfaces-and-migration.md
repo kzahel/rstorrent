@@ -2,6 +2,17 @@
 
 Topic: `product-surfaces-and-migration`
 
+Tactical 253's accepted Linux connection update uses
+`http://jstorrent.localhost:3030` as its primary browser address, avoiding the
+Baguette DNS-registration failure without moving the engine, library or files.
+The dedicated localhost name separates its host-only cookies from ordinary
+localhost applications. Update the preview Linux package and extension together;
+old-host bookmarks and browser-local approval/appearance are not migrated.
+No automatic Android switch, legacy-host fallback, cookie transfer or new proxy
+is added. Both physical x86_64 cohorts pass bounded browser download/restart;
+cohort B additionally passes the installed launcher. Production/store identity
+and distribution gates remain separate.
+
 Tactical [255](../tactical/255-android-play-internal-replacement.md) completes
 the authorized Android internal Play release on 2026-10-04. The original upload
 key matches Play and the retained public certificate; the existing CI inputs
@@ -717,7 +728,9 @@ browser qualification remain external. Setup guidance records this limitation.
 Exact artifact hashes
 and sustained outcomes belong to the tactical and private review report. Both
 full 3,600-second observations verify bytes, including stable connected Android
-completion; the Linux pass remains runtime-only. Test-only state is removed,
+completion; that original Linux pass remains runtime-only. The subsequent
+dedicated-localhost slice separately qualifies the browser route on both
+cohorts, as recorded at the top of this topic. Test-only state is removed,
 the inherited Play app is preserved, and final device doctor passes ten checks.
 
 The first-run UX should emphasize two backend choices:
