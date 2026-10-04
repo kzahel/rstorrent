@@ -2,6 +2,16 @@
 
 Topic: `android-jstorrent-replacement`
 
+Tactical [255](../tactical/255-android-play-internal-replacement.md) completes
+the authorized Android internal Play release on 2026-10-04. The original upload
+key matches Play and the retained public certificate; the existing CI inputs
+are corrected. Local source `42a11817` produces validated 1.0.25/code 25 APK/AAB
+with both ABIs, 116 passing release JVM tests and passing lint. Play reports the
+replacement **Available to internal testers** on the existing `com.jstorrent.app`
+property. Production remains 1.0.23. This supersedes the Android signing blocker
+in the historical 251 account below; real Play-installed migration and broader
+production cutover remain open. See the [artifact and publication receipt](../evidence/android-play-internal-255.json).
+
 Tactical [251](../tactical/251-jstorrent-ci-candidates-and-installed-update.md)
 completes a bounded production-package CI attempt with existing signing inputs.
 The first attempt builds APK/AAB, then exposes an explicit exported-attribute

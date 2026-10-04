@@ -32,6 +32,11 @@ what landed, what validation actually ran, known gaps, and the recommended next
 slice. Completed tacticals remain in place as execution records; living
 direction belongs in `../topics/`.
 
+Latest Android delivery record:
+[`255-android-play-internal-replacement.md`](255-android-play-internal-replacement.md)
+— original-key 1.0.25 replacement available on JSTorrent's Play internal track;
+production and installed migration qualification remain separate.
+
 ## Work Selection And Concurrency
 
 Multiple independent tacticals may be **Active** concurrently. **Active**,

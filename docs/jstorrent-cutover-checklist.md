@@ -12,6 +12,16 @@ certificate/key fingerprints, platform/build, observation and recovery outcome
 for each installed cohort. Keep personal paths, credentials and private keys out
 of the public evidence. No row authorizes publication by itself.
 
+## Internal Android Delivery Checkpoint, 2026-10-04
+
+Tactical [255](tactical/255-android-play-internal-replacement.md) verifies the
+original upload key against Play, corrects the existing CI signing inputs, and
+publishes validated 1.0.25/code 25 to the existing app's internal track. The
+separate managed app-signing certificate is recorded in its evidence. Production
+remains 1.0.23/code 23. This supersedes the signing-input/Play-inspection blockers
+in the historical checkpoint below. D-03 and installed migration rows remain
+open until an actual Play-delivered replacement preserves the selected cohorts.
+
 ## Source Preparation Checkpoint, 2026-10-01
 
 Tactical 250 prepares desktop 0.3.0, Android 1.0.25/code 25 and extension

@@ -8,12 +8,14 @@ The Android Release workflow builds both arm64-v8a and x86_64, runs release
 JVM tests and lint, and verifies signed APK/AAB artifacts before publication.
 Google Play upload and rollout remain manual.
 
-Tactical [250](tactical/250-jstorrent-production-identity-candidates.md) prepares
-this lane but has not provisioned private signing material, built a candidate
-with the production key, submitted to Play or published an update. Follow the
-[full cutover checklist](jstorrent-cutover-checklist.md) before any delivery.
-Check maximum versionCode in every Play track; code 25 exceeds only the pinned
-released 1.0.24 baseline. Minimum API 28 (Android 9) is selected on 2026-10-01.
+Tactical [250](tactical/250-jstorrent-production-identity-candidates.md) prepared
+this lane. Tactical [255](tactical/255-android-play-internal-replacement.md) now
+records the completed original-key internal Play release. On 2026-10-04 the
+supplied key passes a private-key signing proof and matches the authenticated
+Play upload certificate; existing CI secrets are updated. Play accepted and published
+1.0.25/code 25 to internal testers; production remains 1.0.23/code 23. The [full cutover checklist](jstorrent-cutover-checklist.md) still owns
+broader production and installed-upgrade qualification. Minimum API 28
+(Android 9) is selected on 2026-10-01.
 API 26/27 are outside the replacement cohort; those devices keep the old app
 until an OS update permits replacement. Validate unsupported-device guidance.
 
@@ -81,10 +83,10 @@ their contents with the original JSTorrent signing inputs:
 - `ANDROID_UPLOAD_KEY_ALIAS`
 - `ANDROID_UPLOAD_KEY_PASSWORD`
 
-Tactical 251's actual CI certificate proof confirms the current contents still
-identify the former canary signer. Reuse the names, not that signing identity.
-Provision the original key through an authorized secure handoff and verify its
-certificate. CI decodes it
+Tactical 251's historical CI attempt identified the former canary signer.
+On 2026-10-04 Tactical 255 replaces those existing secrets with the verified
+original JSTorrent upload inputs. A local private-key signing proof passes;
+a fresh hosted CI signing run remains separate evidence. CI decodes the key
 into its temporary directory and removes it on normal exit/failure. Local builds
 consume `UPLOAD_KEYSTORE_PATH`, `UPLOAD_KEYSTORE_PASSWORD`, `UPLOAD_KEY_ALIAS`
 and `UPLOAD_KEY_PASSWORD`. Keep keystore/password backups outside Git, with
@@ -97,9 +99,10 @@ The provenance/hash is in `distribution/jstorrent-production.json`.
 `incubation-upload-certificate.pem` retains the former independent canary root.
 Final APK/AAB validation refuses that old key and debug keys.
 
-Confirm that the existing Play app accepts this upload certificate. Record its
-**app-signing certificate separately**. Play may use a different distribution
-key, so a GitHub-signed APK does not prove it can replace an installed Play APK.
+Authenticated Play Console inspection on 2026-10-04 confirms this exact upload
+certificate is registered. Google's separate **app-signing certificate** has
+SHA-256 `b2b421781fc40c632656d17c72c012a40f623d358e29837adad41cd5d835acd5`.
+A locally/GitHub-signed APK does not prove it can replace an installed Play APK.
 Do not create a new Play app or enroll new app signing as part of replacement.
 An intentional upload-key rotation needs a separate enrollment/backup/secrets
 and expected-certificate change.
