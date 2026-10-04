@@ -72,7 +72,7 @@ publisher checks; retain actual skipped or failing lanes explicitly.
 
 The actual Play 1.0.23-to-1.0.25 update preserves package UID and first-install
 time. Independently inspected APKs share the Google-managed app-signing root.
-Two ordinary old-app writers create one completed 256-KiB torrent and one
+The ordinary old standalone app creates one completed 256-KiB torrent and one
 paused partial 4-MiB torrent in an owned picker-granted tree. Both rows, paused
 intent and exact pre-update payload hashes survive. The unmetered-only setting
 also survives. With the independent source offline, the completed file reaches
@@ -81,7 +81,14 @@ starts at zero verified progress while preserving its bytes; after the source
 returns it completes with the independently expected full 4-MiB hash. Both rows
 and full hashes survive force-stop/relaunch. This proves bounded standalone
 read/write grant continuity, not reboot, a second tree or actual upload serving.
-Fixture cleanup qualification is continuing.
+The [sanitized Play receipt](../evidence/android-play-upgrade-257.json) records
+base-APK hashes separately from full split-install identity and lists every
+unqualified cohort. Remove/keep-data preserves both full hashes. Removing the
+owned rows and force-stop/relaunch leaves an empty library without resurrecting
+the legacy source. The original network setting is restored; owned payloads,
+metainfo, seed/tracker and UI dump are removed/stopped. The sole current folder
+has no UI forget action, so its empty picker-granted tree remains explicitly.
+The matching exclusive marker is released and final common doctor passes.
 
 The installed successor exposes an overlooked release resource override:
 `app/src/release/res/values/strings.xml` still names the app RSTorrent Canary,

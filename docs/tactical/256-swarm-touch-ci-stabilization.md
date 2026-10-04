@@ -27,12 +27,20 @@ offset after the reset. The CI trace transitions to the second viewport about
 60 ms after releasing the touch. The manually injected fast gesture can leave
 compositor scrolling in flight across subsequent position changes.
 
-The test helper owns its CDP session and detaches it in finally. Replace the
-manual touch event train with Chromium's completed native touch-scroll gesture,
-explicit touch capability and fling suppression. Restore the desktop context's
-no-touch baseline and detach in nested finally cleanup. Existing signed-distance,
-viewport geometry, real scrolling and UI-effect assertions remain. No product
-task, application boundary, generated code or Android semantics change.
+Hosted runs 37227315607 and 37230272258 reject the experimental synthesized
+route because Linux produces no scrolling, even with explicit touch capability.
+A claimed Ubuntu 24.04 ARM64 testbed reproduces it. An isolated native-overflow
+probe records trusted touch-start/end but no touch-move in both default and
+has-touch contexts. The original native event train does scroll on Linux.
+
+Retain that native train, with explicit [CDP event timestamps](https://chromedevtools.github.io/devtools-protocol/tot/Input/#method-dispatchTouchEvent)
+modeling a 300-ms drag followed by a stationary hold. End at current time with
+zero release velocity, then observe the table's native `scrollend` before the
+next position/viewport change. The completion observer accepts only a released,
+actually scrolled gesture. Its listener and remote handle, plus the CDP session,
+have nested finally cleanup. Every original signed-distance, geometry, real
+scrolling and UI-effect assertion remains. No product behavior, application
+boundary, generated code or Android semantics change.
 
 ## Ordered Work And Validation
 
@@ -46,18 +54,16 @@ task, application boundary, generated code or Android semantics change.
 
 ## Evidence And Result
 
-Local repair passes six eightfold-CPU-throttled repetitions, web typecheck,
-470 web unit tests (two skipped), production build/CSP and the complete
-deterministic browser suite: 46 passed, 14 opt-in live cases skipped. All
-original touch-effect, overflow, column-bounds and accessibility assertions
-remain. Diagnostic instrumentation is removed.
+The final native-event repair passes three ordinary Linux repetitions, three
+twofold-CPU Linux repetitions, six eightfold-CPU macOS repetitions, web typecheck
+and the full deterministic browser suite: 46 passed, 14 opt-in live cases
+skipped. Final nested cleanup also passes a further Linux repetition. Unchanged
+web product gates pass 470 unit tests (two skipped) and production build/CSP.
+See the [input receipt](../evidence/swarm-ci-input-256.json). Exact corrected-source
+hosted qualification remains required.
 
-Commit 24d31b43's hosted run 37227315607 exposes an additional input prerequisite:
-Linux acknowledges the synthesized touch gesture but produces no scrolling in
-the default no-touch desktop context. The existing effect assertion correctly
-rejects it. A raw-event/scrollend diagnostic also records reversed post-release
-momentum under CPU pressure; waiting longer is insufficient. Explicit native
-touch capability fixes the synthesized route, with six new pressured repeats
-and the full 46-test browser suite passing. Hosted corrected-source qualification
-is pending. The other nine product/source jobs are independently tracked;
-their result does not qualify the failing web source.
+The Linux VM is used under a common read-only doctor and exclusive ordinary
+claim, with portable tooling and bundled headless Chromium in one owned scratch
+directory. No installed primary browser or outer UI is used. Owned fixtures/tooling and browser processes are removed; its original powered-off
+state is restored by orderly shutdown and the exclusive claim is released.
+The independent signed-candidate campaign waits for the complete source gate.

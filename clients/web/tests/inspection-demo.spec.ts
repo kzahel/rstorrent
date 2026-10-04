@@ -2038,25 +2038,55 @@ async function swipeTableLeft(page: Page, table: Locator) {
   );
   const session = await page.context().newCDPSession(page);
   try {
-    // Desktop contexts need explicit touch capability for native gestures.
-    // Complete the drag without a fling reaching the next viewport's reset.
-    await session.send("Emulation.setTouchEmulationEnabled", {
-      enabled: true,
-      maxTouchPoints: 1,
+    const completion = await table.evaluateHandle((element) => {
+      const state = { released: false, finished: false };
+      const onScrollEnd = () => {
+        if (state.released && element.scrollLeft > 0) state.finished = true;
+      };
+      element.addEventListener("scrollend", onScrollEnd);
+      return {
+        state,
+        dispose: () => element.removeEventListener("scrollend", onScrollEnd),
+      };
     });
-    await session.send("Input.synthesizeScrollGesture", {
-      x: startX,
-      y,
-      xDistance: endX - startX,
-      gestureSourceType: "touch",
-      preventFling: true,
-    });
-  } finally {
     try {
-      await session.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+      // Native event timestamps model a drag followed by a stationary hold.
+      // Releasing with zero velocity avoids a fling crossing later resets.
+      const startedAt = Date.now() / 1000 - 0.6;
+      await session.send("Input.dispatchTouchEvent", {
+        type: "touchStart",
+        touchPoints: [{ x: startX, y }],
+        timestamp: startedAt,
+      });
+      for (let step = 1; step <= 6; step += 1) {
+        await session.send("Input.dispatchTouchEvent", {
+          type: "touchMove",
+          touchPoints: [
+            { x: Math.round(startX + ((endX - startX) * step) / 6), y },
+          ],
+          timestamp: startedAt + step * 0.05,
+        });
+      }
+      await completion.evaluate(({ state }) => {
+        state.released = true;
+      });
+      await session.send("Input.dispatchTouchEvent", {
+        type: "touchEnd",
+        touchPoints: [],
+        timestamp: Date.now() / 1000,
+      });
+      await expect
+        .poll(() => completion.evaluate(({ state }) => state.finished))
+        .toBe(true);
     } finally {
-      await session.detach();
+      try {
+        await completion.evaluate(({ dispose }) => dispose());
+      } finally {
+        await completion.dispose();
+      }
     }
+  } finally {
+    await session.detach();
   }
 }
 

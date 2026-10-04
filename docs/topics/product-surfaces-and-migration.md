@@ -2,6 +2,14 @@
 
 Topic: `product-surfaces-and-migration`
 
+Tactical [257](../tactical/257-play-upgrade-and-fresh-signed-candidates.md)
+adds bounded physical Play 1.0.23-to-1.0.25 standalone migration evidence.
+The [receipt](../evidence/android-play-upgrade-257.json) records retained rows,
+independent bytes, setting/grant continuity, conservative recheck/resume and
+restart, plus cleanup limits. This leaves the broader installed matrix open.
+Source candidate Android 1.0.26/code 26 corrects the observed internal release
+label; current-source signed candidates and their gates remain separate.
+
 Tactical 253's accepted Linux connection update uses
 `http://jstorrent.localhost:3030` as its primary browser address, avoiding the
 Baguette DNS-registration failure without moving the engine, library or files.
@@ -20,8 +28,8 @@ are corrected. Local source `42a11817` produces validated 1.0.25/code 25 APK/AAB
 with both ABIs, 116 passing release JVM tests and passing lint. Play reports the
 replacement **Available to internal testers** on the existing `com.jstorrent.app`
 property. Production remains 1.0.23. This supersedes the Android signing blocker
-in the historical 251 account below; real Play-installed migration and broader
-production cutover remain open. See the [artifact and publication receipt](../evidence/android-play-internal-255.json).
+in the historical 251 account below; broader Play cohorts and production cutover
+remain open. See the [artifact and publication receipt](../evidence/android-play-internal-255.json).
 
 Tactical 253 is active. Portable pre-connection troubleshooting, manual
 Retry/Cancel, explicit Linux choice and private-context preview pass focused
