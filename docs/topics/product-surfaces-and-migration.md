@@ -2,6 +2,14 @@
 
 Topic: `product-surfaces-and-migration`
 
+Tactical [264](../tactical/264-hosted-website-dependency-qualification.md)
+qualifies sibling hosted website commit `56dc2299` locally. Frozen Astro 7.3.6
+build, eight hosted security/four migration cases, client typecheck/112 cases
+and 18 responsive captures pass. Actual `/app` logo/phone header defects are
+fixed. Version-scoped website advisories are zero; inherited module links,
+other workspace importers and unrelated findings remain intact. Static-image
+cache source-behavior limits remain explicit. No public deployment occurs.
+
 Tactical [258](../tactical/258-cross-surface-branding-and-design-audit.md)
 completes the user-directed cross-surface display-brand audit. JSTorrent copy and
 original assets now cover iOS/system labels, mobile headers, extension/Linux

@@ -529,3 +529,13 @@ cases (14 skipped), 54 extension cases, both byte-identical ZIPs, three-page
 website build, 18 distribution tests and desktop notices pass. Sibling hosted
 website graph qualification continues separately under Tactical 264. Android
 code-26 artifact bytes are unaffected; final desktop packaging remains pending.
+
+### Hosted website final local checkpoint, 2026-10-08
+
+Tactical 264 completes at sibling `56dc2299`: current frozen graph/static build,
+112 shared-client and 12 hosted/migration cases, 18 responsive captures and
+version-scoped zero website registry entries. Actual hosted `/app` broken logo
+and 390-pixel header overflow are corrected with original asset URL imports
+and wrapping controls; before/after evidence is ignored. Other workspace
+importers, inherited modules and unrelated untracked material are intact.
+Whole retired-workspace advisory clearance and public deployment are not claimed.
