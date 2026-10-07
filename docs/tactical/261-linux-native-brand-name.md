@@ -38,5 +38,10 @@ Control, restore owned fixture state, and stop the VM between sessions.
 Restart checkpoint: the toolkit name is set before either desktop or picker
 initialization. Format, macOS desktop clippy and 61 desktop tests pass. Native
 Linux x64 compilation, 70 desktop tests and three GLib integrity regressions
-pass; the linked executable builds. Toolkit/tray observation and final signed
-Linux artifact requalification remain pending.
+pass; the linked executable builds. The actual x64 GNOME tray now reports `JSTorrent` through native AT-SPI,
+with `Show JSTorrent` and `Quit JSTorrent` menu entries. The current native
+window and first-use disclosure render correctly. The probe uses the exact
+linked fixed source with an isolated home/config/data root; it is an unsigned
+native display-name check, not signed package/migration delivery evidence.
+Normal native Quit and owned-fixture cleanup are recorded. Final signed Linux
+artifact requalification remains pending before delivery.

@@ -5,8 +5,8 @@ Topic: `desktop-jstorrent-replacement`
 Tactical [261](../tactical/261-linux-native-brand-name.md) repairs GNOME's
 tray/accessibility fallback to the internal desktop executable name. The pinned
 GTK/GLib binding initializes the human-readable JSTorrent name before desktop
-or picker startup. Native Linux compilation and 73 tests pass; actual native
-name observation and rebuilt final signed Linux artifacts remain open.
+or picker startup. Native Linux compilation, 73 tests and actual GNOME tray-name
+observation pass. Rebuilt final signed Linux artifacts remain open.
 
 Finish-line Tactical [259](../tactical/259-jstorrent-finish-line-checks.md) adds
 current `a35934d2` five-target signed package verification: 23 hashes, 15 updater
