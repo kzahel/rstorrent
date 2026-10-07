@@ -10,17 +10,19 @@ failures and cancellation propagate. Both ABI builds, generated Kotlin and
 engine, mapping leases and background policy are unchanged.
 
 Finish-line Tactical [259](../tactical/259-jstorrent-finish-line-checks.md)
-qualifies current source `a35934d2` Android 1.0.26/code 26 through nonpublishing
-run `37657799144` and independent upload-certificate, launcher/API 28, both-ABI,
-16-KiB and notice checks. Production Play code 23 and internal code 25 remain
-unchanged; final code-26 Play delivery awaits explicit authorization. Both
-physical production installations are preserved. Isolated current-source cohort
-A passes three cold-launch/recovery repetitions and a byte-verified full hour;
-cohort B's hour fails, followed by a byte-verified 600-second diagnostic pass.
-Cohort A additionally passes seven SAF/source-recovery checks. The latest
-cohort B diagnostic passes three repetitions but fails final completion; its
-cause remains unresolved. Further installed and endurance checks continue. These
-foreground/debug results do not qualify Play replacement or detached upload.
+now freezes original-key Android 1.0.26/code 26 at `184dcaba157c4dbd335778b7a70fe1cbd3393932`
+after the shutdown repair. Normal release, 121 JVM tests, lint and independent
+upload-certificate, launcher/API 28, both-ABI, 16-KiB and notice checks pass.
+Authenticated Play reconfirms production 23, internal 25 and uploaded maximum 25;
+code 26 awaits explicit internal-track delivery authorization. Both physical
+production installations are preserved. Earlier isolated cohort A passes a
+foreground hour and seven SAF/source cases. Fixed-source cohort B passes three
+byte/offline-restart repetitions and a full-hash 600-second detached background
+check; the full background hour is in progress. Its failed foreground observation
+is retained: Android stops the activity, the default-off lifecycle joins idle
+shutdown, and read-only ARC power state records a timeout. Device power policy
+is unchanged. These results do not qualify managed Play replacement or completed
+file upload. Final-source cohort A and broader recovery checks continue.
 
 Tactical [257](../tactical/257-play-upgrade-and-fresh-signed-candidates.md)
 qualifies a bounded physical Play 1.0.23-to-1.0.25 standalone upgrade: original

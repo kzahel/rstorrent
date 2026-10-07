@@ -304,3 +304,33 @@ does not rewrite it or imply Play delivery. No product background-policy change
 or synthetic lifecycle intent is introduced. Thirteen existing harness safety
 cases and Python compilation pass. Run a bounded background check before the
 full-hour observation.
+
+### Current signed Linux x64 and Android background checkpoints
+
+The same-attempt `a35934d2` signed Linux x64 AppImage passes eight manual
+installed migration assertions and six refusal routes. SHA-256 is
+`1f74e148c5360d5c76e0a4e03188ec1b18288afe8392aad537459886d1f2af5c`.
+Actual successor pixels render the four controlled rows, verified completion,
+corrupt-file recheck and missing-root attention state. Restart renders the same
+library. The released 0.2.1 Linux window remains blank. Inherited guest state is
+restored, the owned root removed, product writers joined, VM verified off and
+claim released. Automatic HTTPS delivery and the final 261 rebuild remain open.
+
+The Tactical 260 Android APK passes cohort B's three byte/offline-restart
+repetitions and a detached 600-second background observation. The real default-
+off setting is enabled through the UI and persisted; foreground service evidence
+is captured. After releasing the controlled seed limit, the complete 28-MiB
+payload matches SHA-1 `1b90d0a98b5c16a7ced9cb42c13f5c61757d6482`; cleanup passes.
+This is a bounded background pass, separate from the failed foreground hour.
+The full background hour is now running with new receipt paths.
+
+Normal original-upload-key Android release at `184dcaba157c4dbd335778b7a70fe1cbd3393932`
+passes both ABI builds, generated Kotlin, 121 release JVM tests, release lint and
+independent certificate/launcher/API/16-KiB/notices checks. APK SHA-256 is
+`e99bb6f24a43ec54ad63b07a0ccb75e9f2573d554b074fe526076c97bb232758`;
+AAB SHA-256 is
+`121b2124916bc016126df51ce88478d7d5e6fb33706a4469b315e44530b5a963`.
+This supersedes the earlier pre-260 Android candidate. Authenticated Play latest
+releases/bundles reconfirms production 23, internal 25 and maximum uploaded 25.
+The concrete existing-internal-track review is prepared; upload/release requires
+explicit authorization, requested while independent checks continue.

@@ -18,27 +18,28 @@ of the public evidence. No row authorizes publication by itself.
 
 Tactical [259](tactical/259-jstorrent-finish-line-checks.md) owns current
 execution. Source `a35934d2` passes every in-scope CI job; iOS is excluded.
-Exact-source Android 1.0.26/code 26 and production extension 1.1.2 packages
-pass independent package checks. Authenticated Play remains production code 23
-and internal code 25; the existing Web Store item is published/draft 1.1.1.
-Neither candidate is uploaded. Android delivery must be rebuilt after the
-Tactical 260 shutdown fix; the earlier AAB is no longer final. All five fresh
+Original-key Android 1.0.26/code 26 at `184dcaba157c4dbd335778b7a70fe1cbd3393932`
+passes normal release, 121 JVM tests, lint and independent package checks after
+Tactical 260. Production extension 1.1.2 also passes package checks. Authenticated
+Play reconfirms production 23, internal 25 and uploaded maximum 25; the existing
+Web Store item is published/draft 1.1.1. Neither candidate is uploaded.
+All five fresh
 signed desktop packaging legs pass. The collector is canceled during minisign
 installation; independent local assembly validates all 23 asset hashes, 15
 updater selections and ten original-root signatures from the same attempt.
 The current signed macOS arm64 package passes independent signing/notarization
 checks and eight manual installed migration checks. Automatic updating and the
-broader installed matrix remain open. Signed Linux ARM manual migration also
-passes eight assertions and six refusal routes, with restored guest state; black
-native window captures leave visual acceptance open. Physical cohort A passes three
-repetitions,
-a full foreground hour and seven SAF/recovery cases. Cohort B's failed hour
-remains open: its latest short rerun also fails final byte completion despite
-three successful repetitions and corrected notification setup. Its crash buffer
-proves an uncaught typed native shutdown failure. Tactical 260 contains that
-error and passes 121 JVM tests; physical qualification is in progress. Bounded
-physical
-evidence does not close final store/background delivery rows.
+broader installed matrix remain open. Signed Linux ARM and x64 manual migration pass eight assertions and six
+refusal routes, with restored guest state. Current Linux x64 product pixels
+render; ARM black captures and the old x64 blank window retain visual gaps.
+Physical cohort A's earlier source passes a foreground hour and seven SAF cases.
+Fixed-source cohort B passes three byte/offline-restart repetitions and a complete
+600-second detached background check; its full background hour is running.
+The failed foreground run remains failed: Android stops the activity, the
+correct default-off lifecycle joins idle shutdown and ARC power records a timeout.
+Tactical 260 contains the earlier uncaught typed shutdown error; engine and
+device power policy are unchanged. Final-source physical and managed Play
+qualification continue. Bounded debug evidence does not close store/upload gates.
 All owned VMs are stopped between uses and their idle claims released.
 The tactical and ignored local report bind exact results and next actions.
 

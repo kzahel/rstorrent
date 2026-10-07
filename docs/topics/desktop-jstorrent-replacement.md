@@ -12,10 +12,10 @@ Finish-line Tactical [259](../tactical/259-jstorrent-finish-line-checks.md) adds
 current `a35934d2` five-target signed package verification: 23 hashes, 15 updater
 selections and ten original-root signatures pass independently from the same
 CI attempt. All packaging legs pass; the collector is canceled while installing
-minisign. Signed macOS ARM and Linux ARM manual replacement each pass eight
-assertions. Linux additionally verifies six legacy refusal routes and restored
-guest state. Native Linux captures have black application/GTK-alert surfaces,
-so pixel acceptance remains open. Automatic updating and the broader installed
+minisign. Signed macOS ARM, Linux ARM and Linux x64 manual replacement each pass eight
+assertions. Linux verifies six legacy refusal routes and restored guest state.
+Current native Linux x64 product and GTK-alert pixels render correctly; the old
+0.2.1 x64 app remains blank. ARM black captures retain their separate visual gap. Automatic updating and the broader installed
 matrix retain their separate source/artifact limits. Owned VMs are stopped and
 claims released after each session; no publication occurs.
 
