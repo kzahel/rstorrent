@@ -3620,11 +3620,12 @@ def verify_product_upload(
     pure_v2: ModuleType | None = None,
     magnet_only: bool = False,
     expect_hybrid_upgrade: bool = False,
+    device_port: int = 6881,
 ) -> int:
     import libtorrent as lt
 
     forwarded = target.run(
-        ["forward", "tcp:0", "tcp:6881"], timeout=20, check=False
+        ["forward", "tcp:0", f"tcp:{device_port}"], timeout=20, check=False
     )
     if forwarded.returncode != 0:
         raise BootstrapFailure(f"could not forward Android upload listener: {forwarded.stderr}")

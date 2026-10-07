@@ -16,6 +16,9 @@ import shlex
 import subprocess
 import tempfile
 import time
+import sys
+import hashlib
+from types import SimpleNamespace
 from pathlib import Path
 
 import android_reactive_surface as product
@@ -96,13 +99,17 @@ def finish_first_use(adb):
     raise RuntimeError("first-use disclosure did not resolve within its stage budget")
 
 
-def configure_background_observation(adb):
+def unique_observed_control(adb, field, value):
+    nodes = [node for node in product.dump_ui(adb).iter() if node.get(field) == value]
+    if len(nodes) != 1:
+        raise RuntimeError(f"owned control is absent or ambiguous: {value}")
+    return nodes[0]
+
+
+def configure_background_observation(adb, *, keep_seeding=False):
     """Use the real owned app's switches; do not change device power policy."""
     def selected(field, value):
-        nodes = [node for node in product.dump_ui(adb).iter() if node.get(field) == value]
-        if len(nodes) != 1:
-            raise RuntimeError(f"owned background control is absent or ambiguous: {value}")
-        return nodes[0]
+        return unique_observed_control(adb, field, value)
     for field, value in [("content-desc", "More options"), ("text", "Settings"),
                          ("text", "Power Management")]:
         product.tap_bounds(adb, selected(field, value).get("bounds"))
@@ -121,8 +128,103 @@ def configure_background_observation(adb):
     preferences = ET.fromstring(adb.shell("run-as", PACKAGE, "cat", "shared_prefs/product_lifecycle.xml").stdout)
     if not any(n.get("name") == "background_downloads_enabled" and n.get("value") == "true" for n in preferences):
         raise RuntimeError("background preference was not persisted")
+    listener_port = None
+    if keep_seeding:
+        switch = selected("content-desc", "Keep seeding in background")
+        if switch.get("checked") != "false" or switch.get("enabled") != "true":
+            raise RuntimeError("owned seeding policy is not initially default-off and enabled")
+        product.tap_bounds(adb, switch.get("bounds"))
+        selected("text", "Keep seeding in background?")
+        product.tap_bounds(adb, selected("text", "Keep seeding").get("bounds"))
+        if selected("content-desc", "Keep seeding in background").get("checked") != "true":
+            raise RuntimeError("owned seeding switch did not enable")
+        preferences = ET.fromstring(adb.shell("run-as", PACKAGE, "cat", "shared_prefs/product_lifecycle.xml").stdout)
+        if not any(n.get("name") == "background_completion_policy" and n.text == "keep_seeding" for n in preferences):
+            raise RuntimeError("owned seeding preference did not persist")
+        adb.shell("input", "keyevent", "KEYCODE_BACK")
+        product.tap_bounds(adb, selected("text", "Network & Privacy").get("bounds"))
+        switch = selected("content-desc", "Incoming connections")
+        if switch.get("checked") not in ("false", "true") or switch.get("enabled") != "true":
+            raise RuntimeError("owned listener control is not observed and eligible")
+        if switch.get("checked") == "false":
+            product.tap_bounds(adb, switch.get("bounds"))
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            nodes = list(product.dump_ui(adb).iter())
+            ports = {int(match.group(1)) for node in nodes
+                     for match in re.finditer(r"Listening\([^)]*\bport=(\d+)", node.get("text", ""))}
+            if len(ports) == 1 and all(0 < port < 65536 for port in ports):
+                listener_port = ports.pop()
+                break
+            time.sleep(.5)
+        else:
+            raise RuntimeError("actual owned listener port was not observed")
     # Detach the actual view. The existing foreground service owns the transfer.
     adb.shell("input", "keyevent", "KEYCODE_HOME")
+    return listener_port
+
+
+def verify_completed_upload(adb, fixture, registry, target, listener_port):
+    """Reuse the existing controlled leecher and its bounded forward cleanup."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "clients/android"))
+    import run_bootstrap as bootstrap
+    host = json.loads(registry.read_text())["targets"][target]["environment"]["CHROMEBOOK_HOST"]
+    class ForwardedAdb:
+        def __init__(self):
+            self.host = host
+        def run(self, arguments, **options):
+            return adb.run(*arguments, **options)
+    root = fixture.payload_path.parent
+    upload_fixture = SimpleNamespace(
+        torrent_path=fixture.torrent_path,
+        name=root.name,
+        expected_file_hashes={str(path.relative_to(root)): hashlib.sha1(path.read_bytes()).hexdigest()
+                              for path in root.rglob("*") if path.is_file()},
+    )
+    return bootstrap.verify_product_upload(ForwardedAdb(), upload_fixture, device_port=listener_port)
+
+
+def disable_seeding_and_verify_joined_restart(adb, destination, expected_hash):
+    uid = re.search(r"\buserId=(\d+)\b", adb.shell("dumpsys", "package", PACKAGE).stdout)
+    if uid is None:
+        raise RuntimeError("owned restart package UID is unavailable")
+    log_args = ("logcat", "-d", "-v", "threadtime", f"--uid={uid[1]}", "-t", "1000")
+    baseline = set(adb.run(*log_args).stdout.splitlines())
+    def saf_registry():
+        preferences = ET.fromstring(adb.shell("run-as", PACKAGE, "cat", "shared_prefs/product-saf.xml").stdout)
+        values = [node.text for node in preferences if node.get("name") == "root-registry-v1"]
+        if len(values) != 1 or not values[0]:
+            raise RuntimeError("owned retained SAF registry is absent or ambiguous")
+        return values[0]
+    registry_before = saf_registry()
+    adb.shell("am", "start", "-W", "-n", ACTIVITY)
+    for field, value in [("content-desc", "More options"), ("text", "Settings"), ("text", "Power Management")]:
+        product.tap_bounds(adb, unique_observed_control(adb, field, value).get("bounds"))
+    switch = unique_observed_control(adb, "content-desc", "Keep seeding in background")
+    if switch.get("checked") != "true":
+        raise RuntimeError("owned seeding switch was not retained")
+    product.tap_bounds(adb, switch.get("bounds"))
+    if unique_observed_control(adb, "content-desc", "Keep seeding in background").get("checked") != "false":
+        raise RuntimeError("owned seeding switch did not disable")
+    adb.shell("input", "keyevent", "KEYCODE_HOME")
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        logs = adb.run(*log_args).stdout.splitlines()
+        joined = [line for line in logs if line not in baseline and "product_shutdown_complete" in line]
+        services = adb.shell("dumpsys", "activity", "services", PACKAGE).stdout
+        if joined and "ServiceRecord{" not in services:
+            break
+        time.sleep(1)
+    else:
+        raise RuntimeError("owned completed-file service did not join shutdown")
+    adb.shell("am", "start", "-W", "-n", ACTIVITY)
+    actual = adb.shell("sha1sum", destination).stdout.split(" ", 1)[0].strip()
+    if actual != expected_hash:
+        raise RuntimeError("joined restart changed completed payload bytes")
+    if saf_registry() != registry_before:
+        raise RuntimeError("joined restart changed the retained SAF registry")
+    return {"shutdown": joined[-1], "service_absent_after_join": True,
+            "reopen_sha1": actual, "retained_saf_registry": "unchanged"}
 
 
 def native_maximize_arguments(result):
@@ -205,11 +307,15 @@ def main():
     parser.add_argument("--observation-lifetime", choices=("foreground", "background"), default="foreground",
                         help="background uses the actual app setting and detaches the Android view")
     parser.add_argument("--diagnostics", type=Path, help="new owned directory for bounded, package-scoped failure/observation logs")
+    parser.add_argument("--completed-upload", action="store_true",
+                        help="real seeding/listener UI, independent background leecher and joined restart")
     args = parser.parse_args()
     if not 0 <= args.seed_port <= 65535:
         parser.error("seed port must be 0..65535")
     if not 0 <= args.observe_seconds <= 3600:
         parser.error("observation is bounded to 0..3600 seconds; short runs do not close endurance")
+    if args.completed_upload and (args.observation_lifetime != "background" or not args.observe_seconds):
+        parser.error("completed upload requires a nonzero background observation")
     command = [str(args.machine_control), "--registry", str(args.registry), "--target", args.target]
     adb = RemoteAdb(command)
     package_uid = None
@@ -238,6 +344,7 @@ def main():
               "delivery": "isolated_debug_sideload", "play_installation": "unrun",
               "notification_setup": "granted_after_each_owned_profile_reset",
               "observation_lifetime": args.observation_lifetime,
+              "completed_upload_requested": args.completed_upload,
               "repetitions": records, "result": "fail", "cleanup": "pending"}
     if args.screenshots:
         args.screenshots.mkdir(parents=True, exist_ok=False)
@@ -345,7 +452,7 @@ def main():
                     time.sleep(1)
                 else: raise RuntimeError("observation intake confirmation timed out")
                 if args.observation_lifetime == "background":
-                    configure_background_observation(adb)
+                    listener_port = configure_background_observation(adb, keep_seeding=args.completed_upload)
                     capture("05-background-view-detached")
                 beginning = time.monotonic()
                 samples = []
@@ -378,6 +485,17 @@ def main():
                     capture("06-observation-verified")
                 if not verified:
                     raise RuntimeError("observation completion did not verify within the recovery budget")
+                if args.completed_upload:
+                    handle.pause()
+                    uploaded = verify_completed_upload(adb, fixture, args.registry, args.target, listener_port)
+                    report["completed_background_upload"] = {"payload_bytes": uploaded, "sha1": fixture.payload_hash,
+                                                             "actual_listener_port": listener_port}
+                    diagnostic("completed-background-upload")
+                    capture("07-completed-background-upload")
+                    report["joined_completion_restart"] = disable_seeding_and_verify_joined_restart(
+                        adb, f"{ROOT}/qualification253-observation/payload.bin", fixture.payload_hash)
+                    diagnostic("joined-restart")
+                    capture("08-joined-completion-restart")
     except BaseException:
         report["result"] = "fail"
         if report.get("observation", {}).get("status") == "running":

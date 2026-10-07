@@ -373,3 +373,29 @@ passes 46 cases with 14 existing fixture/live-service skips. CI=1 selects the
 bundled headless Chromium rather than the primary installed browser; the browser
 and owned dev server are reaped. Website check/build pass with three static pages.
 No historical live-service skip is reported as a current pass.
+
+### Completed-file background upload and joined restart scope
+
+Extend only the controlled physical qualification harness with an optional
+completed-file upload check. Use actual Power Management and Incoming connections
+UI controls on the isolated profile; enable/persist the already supported seeding
+policy, observe the real listener port, detach the view and verify an independent
+libtorrent leecher's complete payload hashes. Reuse the existing bootstrap upload
+helper and ChromeOS SSH/ADB forwarding cleanup, adding an optional actual device
+port rather than assuming 6881. No synthetic policy intent, product gateway,
+public swarm, inherited installation, mapping lease or network policy change.
+
+After upload, disable seeding through its real switch, observe joined native
+shutdown and absent owned service, reopen with the controlled source paused,
+and verify unchanged payload bytes and retained SAF registry. Existing time and
+allocation budgets remain bounded; forwards, leecher state and owned app/fixture
+cleanup remain in finally. Preserve diagnostics before cleanup and report this
+flow separately from the earlier default-completion background hour.
+
+The full local Rust baseline now passes `cargo clippy --workspace -- -D warnings`
+and `cargo test --workspace`: 1,574 passing cases, zero failures and 18 explicitly
+ignored cases across the recorded result lines. Eighteen release configuration/
+input/nightly selection tests also pass. The optional upload harness compiles,
+keeps all 14 safety tests passing, and rejects incompatible modes before any
+machine operation. Its actual physical upload/restart evidence is pending while
+the two background observations own those devices.
