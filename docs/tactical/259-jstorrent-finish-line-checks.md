@@ -503,3 +503,8 @@ The recovery runner accepts an optional runtime-private Machine Control registry
 through the public CLI, avoiding copied private target inventory. Existing
 default resolution is unchanged; all seven recovery cases and owned cleanup
 remain the same.
+
+Concurrent physical recovery fixtures also need distinct infohashes. The first
+fresh pair is intentionally interrupted before adjudication so another owned
+source cannot invalidate the source-offline check. Finally cleanup is required
+before retrying with unique metainfo names. No interrupted run is counted passed.

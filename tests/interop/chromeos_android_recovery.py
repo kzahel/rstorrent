@@ -10,6 +10,7 @@ import struct
 import subprocess
 import tempfile
 import time
+import uuid
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -120,7 +121,7 @@ def main():
         original = roots()[0]
         with tempfile.TemporaryDirectory(prefix='rstorrent-253-recovery-') as directory:
             seed = Path(directory) / 'seed'
-            name = 'qualification253-recovery'
+            name = 'qualification253-recovery-' + uuid.uuid4().hex
             (seed / name).mkdir(parents=True)
             expected = write_deterministic_payload(seed / name / 'payload.bin', 4 * 1024 * 1024)
             files = lt.file_storage()
