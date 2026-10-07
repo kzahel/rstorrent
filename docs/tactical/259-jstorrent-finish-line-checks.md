@@ -399,3 +399,18 @@ input/nightly selection tests also pass. The optional upload harness compiles,
 keeps all 14 safety tests passing, and rejects incompatible modes before any
 machine operation. Its actual physical upload/restart evidence is pending while
 the two background observations own those devices.
+
+
+### Background intake checkpoint, 2026-10-08
+
+Cohort B attempt 14 passes all three cold verified-byte/offline restart
+repetitions (130.86, 79.23 and 127.59 seconds), then fails intake before its
+background observation. Scoped logs show accepted metadata intake followed by
+normal default-off visibility settling and joined idle shutdown; the hour is
+unrun. Cleanup succeeds. The runner now selects/persists the real background
+setting before observation intake, so an ARC view detach during metadata
+acquisition can exercise that policy. It detaches again after confirmation.
+Device power policy remains unchanged. Fourteen qualification safety cases and
+Python compilation pass; attempt 15 is active. The listener observation also
+accepts Tactical 262's human-readable address/port label, retaining the earlier
+APK label for exact historical test artifacts. All Machine Control VMs are off.

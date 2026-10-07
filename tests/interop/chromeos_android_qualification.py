@@ -152,7 +152,7 @@ def configure_background_observation(adb, *, keep_seeding=False):
         while time.monotonic() < deadline:
             nodes = list(product.dump_ui(adb).iter())
             ports = {int(match.group(1)) for node in nodes
-                     for match in re.finditer(r"Listening\([^)]*\bport=(\d+)", node.get("text", ""))}
+                     for match in re.finditer(r"(?:Listening\([^)]*\bport=|Listening on [^\n]*, port )(\d+)", node.get("text", ""))}
             if len(ports) == 1 and all(0 < port < 65536 for port in ports):
                 listener_port = ports.pop()
                 break
@@ -444,6 +444,11 @@ def main():
                 fixture = create_fixture(directory / "observation", payload_size=28*1024*1024, root_name="qualification253-observation")
                 handle = add_seed(session, fixture.torrent_info, fixture.seed_directory, [])
                 handles.append(handle)
+                # Qualify the real background policy before intake. ARC can
+                # detach the view during metadata acquisition; default-off
+                # shutdown during that wait is not background-mode evidence.
+                if args.observation_lifetime == "background":
+                    listener_port = configure_background_observation(adb, keep_seeding=args.completed_upload)
                 adb.shell("am", "start", "-W", "-n", ACTIVITY, "-a", "android.intent.action.VIEW", "-d", magnet_uri(fixture.info_hash, f"{args.seed_address}:{port}"))
                 deadline = time.monotonic()+300
                 while time.monotonic() < deadline:
@@ -452,7 +457,7 @@ def main():
                     time.sleep(1)
                 else: raise RuntimeError("observation intake confirmation timed out")
                 if args.observation_lifetime == "background":
-                    listener_port = configure_background_observation(adb, keep_seeding=args.completed_upload)
+                    adb.shell("input", "keyevent", "KEYCODE_HOME")
                     capture("05-background-view-detached")
                 beginning = time.monotonic()
                 samples = []
