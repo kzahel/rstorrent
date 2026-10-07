@@ -4,19 +4,26 @@ Topic: `beta-release-readiness`
 
 Finish-line Tactical [259](../tactical/259-jstorrent-finish-line-checks.md)
 owns the current source/artifact and installed gate execution, excluding iOS.
-Source `a35934d2` passes all in-scope CI jobs; Android and extension candidates
-pass independent package checks. All five desktop packaging legs pass; local
-same-attempt assembly independently verifies 23 hashes and ten original-root
-signatures after the collector is canceled during minisign installation. Signed
-macOS ARM and Linux ARM manual migration each pass eight assertions; Linux
-black-window captures leave visual acceptance open. Automatic
-updating and the wider installed matrix remain unqualified. Bounded physical
-Android results cannot replace final store/background evidence.
-The second physical cohort's failed hour remains open. Its typed native shutdown
-crash triggers Tactical 260, which passes 121 JVM tests and awaits physical
-qualification. Rebuild the final Android signed capsule after that repair. No publication
-occurred;
-owned VMs are stopped between uses instead of waiting idle for builds/approval.
+The `a35934d2` desktop capsule independently verifies 23 hashes, 15 updater
+selections and ten original-root signatures; all five packaging legs pass.
+Signed macOS ARM, Linux ARM and Linux x64 manual migration pass eight assertions;
+current Linux x64 pixels render, while ARM black captures and the old x64 blank
+window retain visual gaps. Tactical 261's exact fixed source passes 73 native
+Linux tests and GNOME tray-name observation; final signed packages need a rebuild.
+Original-key Android 1.0.26/code 26 is rebuilt at `184dcaba157c4dbd335778b7a70fe1cbd3393932`
+with 121 passing JVM tests, lint and independent package validation. Fixed-source
+physical B passes a full-hash 600-second detached background check. Full background
+hours and broader physical/store gates remain open. Latest local checks pass
+branding (2,013 display values / 40 assets), localization, extension tests/CSP/ZIP,
+shared-web typecheck / 470 tests (two skipped), 46 browser E2E tests (14 skipped),
+and website check/build. These use bundled Chromium and reap owned processes.
+Authenticated Play remains production 23/internal 25/max uploaded 25. Explicit
+internal upload and source push/nonpublishing candidate-build decisions are
+pending. The prepared push also deploys the preview website update guide through
+its existing workflow; production feeds/stores remain unchanged. No publication
+has occurred. Native Windows x64 reaches its protected login route, but its stored
+password fails verification; no product test starts. The guest is stopped and
+claim released. Owned VMs remain off between ready checks.
 
 Tactical [257](../tactical/257-play-upgrade-and-fresh-signed-candidates.md)
 completes bounded current-source qualification at f5860c99: all ten executed

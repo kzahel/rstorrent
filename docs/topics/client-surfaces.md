@@ -1402,3 +1402,8 @@ separates companion-extension packaging and release-tool checks from the shared
 web job so a packaging rejection cannot suppress contract/type/unit/E2E signal.
 Its companion validator admits reviewed FormatJS diagnostic links using exact
 host matching; the manifest permissions and exact ARC-only CSP are unchanged.
+
+Finish-line 259's physical picker harness now confirms the observed owned-folder
+breadcrumb after an entry tap. A refused/ineffective folder tap cannot authorize
+acceptance of the Downloads parent. Fourteen focused harness safety cases pass;
+physical retry remains in progress. No product SAF or lifecycle policy changes.

@@ -334,3 +334,42 @@ This supersedes the earlier pre-260 Android candidate. Authenticated Play latest
 releases/bundles reconfirms production 23, internal 25 and maximum uploaded 25.
 The concrete existing-internal-track review is prepared; upload/release requires
 explicit authorization, requested while independent checks continue.
+
+### Observed-folder confirmation repair
+
+Cohort B's background-hour attempt 13 fails during the third SAF setup,
+before the hour begins; two verified repetitions and successful cleanup are
+retained. Actual final picker XML shows the owned folder entry at Downloads,
+with the parent confirmation disabled. The shared helper marked entry on an
+attempted tap and kept that boolean without observing the resulting breadcrumb.
+Repair only this harness state: derive folder entry from each fresh observed
+owned breadcrumb, retry only the owned visible entry within the existing budget,
+and never accept the parent or disabled confirmation. Add a focused transition
+regression, run the existing safety cases, then repeat the physical setup/hour.
+No folder grants, engine, platform policy or inherited data change is introduced.
+
+The owned-folder transition regression and all 14 safety cases pass; affected
+Python modules compile. A new physical B background-hour attempt uses the fix
+and fresh paths. Cohort A's final-source run has passed all three repetitions
+and entered its background observation independently.
+
+### Native Windows x64 credential boundary
+
+The alternate native x64 controller resolves exact target identity and a
+ready, mode-0600 stored credential. Cold boot reaches the supported protected
+resident and lock screen. One supported stored-password submission has no
+independently established login effect; the subsequent documented credential
+verification rejects that stored password. No alternate password is guessed,
+credential changed, VM reset or inherited profile modified. The signed installer
+and harness are prepared, but no product test begins on this cohort. The VM is
+cleanly stopped and its claim released while the canonical credential handoff
+is repaired. This is a machine authentication gap, not a product failure or pass.
+
+Fresh local final-source validation passes format, branding (2,013 display values
+and 40 original assets), localization, desktop release configuration, extension
+unit/manifest checks and production ZIP/CSP. Shared-web typecheck and 470 unit
+tests pass (two existing skipped tests); the complete configured browser suite
+passes 46 cases with 14 existing fixture/live-service skips. CI=1 selects the
+bundled headless Chromium rather than the primary installed browser; the browser
+and owned dev server are reaped. Website check/build pass with three static pages.
+No historical live-service skip is reported as a current pass.

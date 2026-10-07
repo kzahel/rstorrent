@@ -12,6 +12,29 @@ from chromeos_android_qualification import observation_result, PACKAGE, RemoteAd
 
 
 class QualificationSafety(unittest.TestCase):
+    def test_folder_tap_must_be_confirmed_by_the_owned_breadcrumb(self):
+        snapshots = iter([
+            '<hierarchy><node text="Select folder" clickable="true" bounds="[1,1][2,2]"/></hierarchy>',
+            f'<hierarchy><node text="{product.GRANT_FOLDER}" resource-id="android:id/title" bounds="[3,3][4,4]"/>'
+            '<node text="Use this folder" clickable="true" enabled="false" bounds="[5,5][6,6]"/></hierarchy>',
+            f'<hierarchy><node text="{product.GRANT_FOLDER}" resource-id="android:id/title" bounds="[7,7][8,8]"/>'
+            '<node text="Use this folder" clickable="true" enabled="false" bounds="[5,5][6,6]"/></hierarchy>',
+            f'<hierarchy><node text="{product.GRANT_FOLDER}" resource-id="picker:id/breadcrumb_text"/>'
+            '<node text="Use this folder" clickable="true" enabled="false" bounds="[5,5][6,6]"/></hierarchy>',
+            f'<hierarchy><node text="{product.GRANT_FOLDER}" resource-id="picker:id/breadcrumb_text"/>'
+            '<node text="Use this folder" clickable="true" enabled="true" bounds="[9,9][10,10]"/></hierarchy>',
+            '<hierarchy><node package="org.rstorrent.bootstrap"/></hierarchy>',
+        ])
+        taps = []
+        with patch.object(product, 'dump_ui', side_effect=lambda _: ET.fromstring(next(snapshots))), \
+             patch.object(product, 'tap_bounds', side_effect=lambda _, bounds: taps.append(bounds)), \
+             patch.object(product.time, 'sleep'):
+            adb = Mock()
+            adb.shell.return_value.stdout = product.GRANT_FOLDER
+            product.select_controlled_tree(adb)
+        self.assertEqual(taps, ['[1,1][2,2]', '[3,3][4,4]', '[7,7][8,8]', '[9,9][10,10]'])
+        self.assertEqual(list(snapshots), [])
+
     def test_repetition_reset_restores_permission_and_never_touches_production(self):
         class Adb:
             permission = True

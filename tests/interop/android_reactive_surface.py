@@ -235,12 +235,11 @@ def select_controlled_tree(adb: Adb, *, recover_picker=None) -> None:
                 tap_bounds(adb, retry.attrib["bounds"])
                 time.sleep(0.4)
                 continue
-        if any(
+        entered = any(
             node.attrib.get("text") == GRANT_FOLDER
             and node.attrib.get("resource-id", "").endswith(":id/breadcrumb_text")
             for node in nodes
-        ):
-            entered = True
+        )
         if not entered:
             entries = [
                 node
@@ -250,11 +249,13 @@ def select_controlled_tree(adb: Adb, *, recover_picker=None) -> None:
             ]
             if entries:
                 tap_bounds(adb, entries[0].attrib["bounds"])
-                entered = True
                 time.sleep(0.4)
                 continue
         if entered and not accepted:
-            use = click_labeled(nodes, {"Use this folder", "Select"})
+            use = click_labeled(
+                [node for node in nodes if node.attrib.get("enabled") != "false"],
+                {"Use this folder", "Select"},
+            )
             if use is not None:
                 if bounds_area(use.attrib["bounds"]) == 0:
                     if recover_picker is None:
