@@ -692,6 +692,7 @@ private fun ProductNavHost(
     var feedbackBusy by remember { mutableStateOf(false) }
     var feedbackError by remember { mutableStateOf<String?>(null) }
     val productPrivacyScope = rememberCoroutineScope()
+    val feedbackPreviewFailedMessage = stringResource(R.string.feedback_preview_failed)
     val torrentMissingMessage = stringResource(R.string.notification_torrent_missing)
     val folderMissingMessage = stringResource(R.string.notification_folder_missing)
     val backgroundDownloadsDescription =
@@ -1278,7 +1279,7 @@ private fun ProductNavHost(
                                 ?: service?.productFeedbackPreview(include)
                         }
                             .onSuccess { feedbackPreview = it }
-                            .onFailure { feedbackError = it.message ?: it.toString() }
+                            .onFailure { feedbackError = it.message ?: feedbackPreviewFailedMessage }
                         feedbackBusy = false
                     }
                 }
@@ -1382,7 +1383,7 @@ private fun ProductNavHost(
                                         }
                                             .onSuccess { feedbackPreview = it }
                                             .onFailure {
-                                                feedbackError = it.message ?: it.toString()
+                                                feedbackError = it.message ?: feedbackPreviewFailedMessage
                                             }
                                         feedbackBusy = false
                                     }

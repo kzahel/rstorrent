@@ -29,7 +29,11 @@ import org.rstorrent.bootstrap.R
 import org.rstorrent.session.uniffi.ActiveSeedLimit
 import org.rstorrent.session.uniffi.ClientSettingsRuntimeView
 import org.rstorrent.session.uniffi.EncryptionPolicy
+import org.rstorrent.session.uniffi.ListenerBindFailureReason
+import org.rstorrent.session.uniffi.ListenerStatus
 import org.rstorrent.session.uniffi.ListenerPolicy
+import org.rstorrent.session.uniffi.PortMappingFailureStage
+import org.rstorrent.session.uniffi.PortMappingStatus
 import org.rstorrent.session.uniffi.PortMappingPolicy
 import org.rstorrent.session.uniffi.TransferRateLimit
 
@@ -353,13 +357,13 @@ internal fun NetworkSettings(
     }
     ToggleSetting(
         title = stringResource(R.string.setting_incoming_connections),
-        detail = settings.listenerStatus.toString(),
+        detail = listenerStatusText(settings.listenerStatus),
         checked = settings.configured.listener !is ListenerPolicy.Disabled,
         onChecked = onListener,
     )
     ToggleSetting(
         title = stringResource(R.string.setting_upnp),
-        detail = settings.portMappingStatus.toString(),
+        detail = portMappingStatusText(settings.portMappingStatus),
         checked = settings.configured.portMapping == PortMappingPolicy.UPNP,
         onChecked = onPortMapping,
     )
@@ -551,3 +555,72 @@ internal fun DisabledSetting(title: String) {
     )
     HorizontalDivider()
 }
+
+@Composable
+internal fun listenerStatusText(status: ListenerStatus): String =
+    when (status) {
+        ListenerStatus.Disabled -> stringResource(R.string.listener_disabled)
+        is ListenerStatus.Listening ->
+            stringResource(R.string.listener_listening, status.address, status.port.toInt())
+        is ListenerStatus.BindFailed -> {
+            val reason =
+                stringResource(
+                    when (status.reason) {
+                        ListenerBindFailureReason.ADDRESS_IN_USE -> R.string.listener_address_in_use
+                        ListenerBindFailureReason.PERMISSION_DENIED -> R.string.listener_permission_denied
+                        ListenerBindFailureReason.ADDRESS_UNAVAILABLE -> R.string.listener_address_unavailable
+                        ListenerBindFailureReason.OTHER -> R.string.listener_bind_failed
+                    },
+                )
+            stringResource(R.string.listener_failure_detail, reason, status.detail)
+        }
+    }
+
+@Composable
+internal fun portMappingStatusText(status: PortMappingStatus): String =
+    when (status) {
+        PortMappingStatus.Disabled -> stringResource(R.string.port_mapping_disabled)
+        PortMappingStatus.Ineligible -> stringResource(R.string.port_mapping_ineligible)
+        PortMappingStatus.Discovering -> stringResource(R.string.port_mapping_discovering)
+        PortMappingStatus.Mapping -> stringResource(R.string.port_mapping_requesting)
+        PortMappingStatus.Stopping -> stringResource(R.string.port_mapping_stopping)
+        is PortMappingStatus.Mapped ->
+            stringResource(
+                R.string.port_mapping_mapped,
+                status.externalAddress,
+                status.externalPort.toInt(),
+                status.localAddress,
+                status.localPort.toInt(),
+                status.leaseSeconds.toLong(),
+            )
+        is PortMappingStatus.Failed -> {
+            val stage =
+                stringResource(
+                    when (status.stage) {
+                        PortMappingFailureStage.DISCOVERY -> R.string.port_mapping_stage_discovery
+                        PortMappingFailureStage.DESCRIPTION -> R.string.port_mapping_stage_description
+                        PortMappingFailureStage.EXTERNAL_ADDRESS -> R.string.port_mapping_stage_address
+                        PortMappingFailureStage.ADD -> R.string.port_mapping_stage_add
+                        PortMappingFailureStage.VERIFY -> R.string.port_mapping_stage_verify
+                        PortMappingFailureStage.RENEWAL -> R.string.port_mapping_stage_renewal
+                        PortMappingFailureStage.DELETE -> R.string.port_mapping_stage_delete
+                    },
+                )
+            stringResource(R.string.port_mapping_failure_detail, stage, status.detail)
+        }
+        is PortMappingStatus.RenewalFailed ->
+            stringResource(
+                R.string.port_mapping_renewal_failed,
+                status.externalAddress,
+                status.externalPort.toInt(),
+                status.detail,
+            )
+        is PortMappingStatus.CleanupFailed ->
+            stringResource(
+                R.string.port_mapping_cleanup_failed,
+                status.externalAddress,
+                status.externalPort.toInt(),
+                status.remainingLeaseSeconds.toLong(),
+                status.detail,
+            )
+    }

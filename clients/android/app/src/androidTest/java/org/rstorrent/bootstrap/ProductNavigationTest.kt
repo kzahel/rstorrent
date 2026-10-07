@@ -58,6 +58,7 @@ import org.rstorrent.session.uniffi.FileSelectionView
 import org.rstorrent.session.uniffi.FileView
 import org.rstorrent.session.uniffi.HttpsServerAuthenticationPolicy
 import org.rstorrent.session.uniffi.Ipv6PinholeStatus
+import org.rstorrent.session.uniffi.ListenerBindFailureReason
 import org.rstorrent.session.uniffi.ListenerPolicy
 import org.rstorrent.session.uniffi.ListenerStatus
 import org.rstorrent.session.uniffi.MediaFileAvailability
@@ -315,6 +316,7 @@ class ProductNavigationTest {
                     ProductState(
                         ready = true,
                         storageRootReady = true,
+                        storageRootChecking = false,
                         torrents = mapOf(torrent.torrentId to torrent),
                     ),
             )
@@ -415,6 +417,7 @@ class ProductNavigationTest {
                 ProductState(
                     ready = true,
                     storageRootReady = true,
+                    storageRootChecking = false,
                     torrents = mapOf(initial.torrentId to initial),
                 ),
             )
@@ -619,6 +622,63 @@ class ProductNavigationTest {
         assertNull(patches[0].peerExchangeEnabled)
         assertNull(patches[1].dhtEnabled)
         assertEquals(false, patches[1].peerExchangeEnabled)
+    }
+
+    @Test
+    fun networkStatusUsesProductCopyAndPreservesFailureAndLeaseFacts() {
+        var settings by mutableStateOf(clientSettings())
+        compose.setContent {
+            ProductApp(
+                service = null,
+                onSelectStorage = {},
+                onBrowseTorrent = {},
+                notificationsGranted = true,
+                onRequestNotifications = {},
+                onOpenNotificationSettings = {},
+                themeMode = ProductThemeMode.LIGHT,
+                dynamicColor = false,
+                onThemeMode = {},
+                onDynamicColor = {},
+                stateOverride =
+                    ProductState(
+                        ready = true,
+                        storageRootReady = true,
+                        clientSettings = settings,
+                    ),
+            )
+        }
+        compose.onNodeWithContentDescription("More options")
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Settings").performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Network & Privacy")
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Incoming connections are disabled.").assertIsDisplayed()
+        compose.onNodeWithText("Port mapping is disabled.").assertIsDisplayed()
+        compose.onAllNodesWithText("org.rstorrent", substring = true).assertCountEquals(0)
+
+        compose.runOnIdle {
+            settings = settings.copy(
+                listenerStatus = ListenerStatus.Listening("::1", 6881u),
+                portMappingStatus = PortMappingStatus.CleanupFailed(
+                    "203.0.113.9", 4567u, 120u, "Router refused deletion",
+                ),
+            )
+        }
+        compose.onNodeWithText("Listening on ::1, port 6881").assertIsDisplayed()
+        compose.onNodeWithText(
+            "Router address 203.0.113.9, port 4567 may remain open for 120 seconds. " +
+                "Cleanup failed: Router refused deletion",
+        ).assertIsDisplayed()
+        compose.runOnIdle {
+            settings = settings.copy(
+                listenerStatus = ListenerStatus.BindFailed(
+                    ListenerBindFailureReason.ADDRESS_IN_USE, "Port 6881 is occupied",
+                ),
+            )
+        }
+        compose.onNodeWithText("The incoming port is already in use: Port 6881 is occupied")
+            .assertIsDisplayed()
+        compose.onAllNodesWithText("org.rstorrent", substring = true).assertCountEquals(0)
     }
 
     @Test

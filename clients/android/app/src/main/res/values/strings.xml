@@ -498,4 +498,27 @@
     <string name="seed_goal_unmet">Unmet</string>
     <string name="seed_goal_met">Met</string>
     <string name="seed_goal_summary">%1$s · met: %2$s</string>
+    <string name="listener_disabled">Incoming connections are disabled.</string>
+    <string name="listener_listening">Listening on %1$s, port %2$d</string>
+    <string name="listener_address_in_use">The incoming port is already in use</string>
+    <string name="listener_permission_denied">Permission to accept incoming connections was denied</string>
+    <string name="listener_address_unavailable">The incoming address is unavailable</string>
+    <string name="listener_bind_failed">Incoming connections could not be started</string>
+    <string name="listener_failure_detail">%1$s: %2$s</string>
+    <string name="port_mapping_disabled">Port mapping is disabled.</string>
+    <string name="port_mapping_ineligible">Port mapping requires incoming connections on the local network.</string>
+    <string name="port_mapping_discovering">Looking for a router…</string>
+    <string name="port_mapping_requesting">Requesting a router port…</string>
+    <string name="port_mapping_stopping">Closing the router port…</string>
+    <string name="port_mapping_mapped">Router address %1$s, port %2$d → local address %3$s, port %4$d. Lease: %5$d seconds.</string>
+    <string name="port_mapping_stage_discovery">Router discovery failed</string>
+    <string name="port_mapping_stage_description">The router description could not be read</string>
+    <string name="port_mapping_stage_address">The router address could not be read</string>
+    <string name="port_mapping_stage_add">The router port could not be opened</string>
+    <string name="port_mapping_stage_verify">The router port could not be verified</string>
+    <string name="port_mapping_stage_renewal">The router port lease could not be renewed</string>
+    <string name="port_mapping_stage_delete">The router port could not be closed</string>
+    <string name="port_mapping_failure_detail">%1$s: %2$s</string>
+    <string name="port_mapping_renewal_failed">Lease renewal failed for router address %1$s, port %2$d: %3$s</string>
+    <string name="port_mapping_cleanup_failed">Router address %1$s, port %2$d may remain open for %3$d seconds. Cleanup failed: %4$s</string>
 </resources>

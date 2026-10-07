@@ -10,6 +10,7 @@
 
 # Android and Gradle
 .gradle/
+.kotlin/
 **/build/
 /clients/desktop/src-tauri/gen/
 /clients/desktop/src-tauri/binaries/

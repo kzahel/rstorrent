@@ -2,6 +2,15 @@
 
 Topic: `web-ui-design`
 
+Tactical [262](../tactical/262-android-network-status-presentation.md) removes
+actual Android Network Settings class-name leaks through exhaustive localized
+listener/router descriptions, retaining endpoints, ports, failure and uncertain
+lease facts. Message-less feedback failures use product copy. Actual owned
+API-35 before/after captures and all 24 navigation cases pass, including the new
+status regression. Internal namespaces, generated ABI and network policy remain
+unchanged. Normal final signed release rebuild remains pending; source-184's
+Android capsule is superseded for final delivery.
+
 Tactical [261](../tactical/261-linux-native-brand-name.md) repairs GNOME's
 tray/accessibility fallback to the internal desktop executable name. The pinned
 GTK/GLib binding initializes the human-readable JSTorrent name before desktop

@@ -20,7 +20,8 @@ Tactical [259](tactical/259-jstorrent-finish-line-checks.md) owns current
 execution. Source `a35934d2` passes every in-scope CI job; iOS is excluded.
 Original-key Android 1.0.26/code 26 at `184dcaba157c4dbd335778b7a70fe1cbd3393932`
 passes normal release, 121 JVM tests, lint and independent package checks after
-Tactical 260. Production extension 1.1.2 also passes package checks. Authenticated
+Tactical 260. This capsule is superseded for final delivery by Tactical 262
+Android status presentation; its final original-key rebuild is pending. Production extension 1.1.2 also passes package checks. Authenticated
 Play reconfirms production 23, internal 25 and uploaded maximum 25; the existing
 Web Store item is published/draft 1.1.1. Neither candidate is uploaded.
 All five fresh
@@ -34,7 +35,9 @@ refusal routes, with restored guest state. Current Linux x64 product pixels
 render; ARM black captures and the old x64 blank window retain visual gaps.
 Physical cohort A's earlier source passes a foreground hour and seven SAF cases.
 Fixed-source cohort B passes three byte/offline-restart repetitions and a complete
-600-second detached background check; its full background hour is running.
+600-second detached background check. Later setup/intake attempts fail before
+the hour; a fresh run enables real background policy before observation intake.
+Cohort A's fixed-source background hour is running.
 The failed foreground run remains failed: Android stops the activity, the
 correct default-off lifecycle joins idle shutdown and ARC power records a timeout.
 Tactical 260 contains the earlier uncaught typed shutdown error; engine and

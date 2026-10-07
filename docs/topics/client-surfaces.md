@@ -2,6 +2,15 @@
 
 Topic: `client-surfaces`
 
+Tactical [262](../tactical/262-android-network-status-presentation.md) removes
+actual Android Network Settings class-name leaks through exhaustive localized
+listener/router descriptions, retaining endpoints, ports, failure and uncertain
+lease facts. Message-less feedback failures use product copy. Actual owned
+API-35 before/after captures and all 24 navigation cases pass, including the new
+status regression. Internal namespaces, generated ABI and network policy remain
+unchanged. Normal final signed release rebuild remains pending; source-184's
+Android capsule is superseded for final delivery.
+
 Tactical [260](../tactical/260-android-shutdown-failure-containment.md) contains
 an observed physical Android shutdown exception at the client adapter boundary.
 Typed native cleanup errors remain visible after releasing the client; other
