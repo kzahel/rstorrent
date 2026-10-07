@@ -8,10 +8,15 @@ import { chromium } from "../../web/node_modules/playwright-core/index.mjs";
 const [profile, oldExtension, newExtension, oldPort, newPort, ioPort, streamingPort] = process.argv.slice(2);
 const allowed = new Map([[7800, Number(oldPort)], [3030, Number(newPort)], [7801, Number(ioPort)], [7802, Number(streamingPort)]]);
 const requests = [];
+const rejected = [];
 const sockets = new Set();
 function destination(raw) {
   const url = new URL(raw);
-  if (url.hostname !== "100.115.92.2" || !allowed.has(Number(url.port))) throw new Error("outside owned ARC route");
+  if (url.hostname !== "100.115.92.2" || !allowed.has(Number(url.port))) {
+    rejected.push({ host: url.hostname, port: url.port, path: url.pathname });
+    if (rejected.length > 32) rejected.shift();
+    throw new Error("outside owned ARC route");
+  }
   return { port: allowed.get(Number(url.port)), path: url.pathname + url.search };
 }
 const proxy = http.createServer((req, res) => {
@@ -41,6 +46,7 @@ proxy.on("connect", (req, socket, head) => {
 });
 proxy.on("upgrade", (req, socket, head) => {
   try {
+    requests.push("websocket " + new URL(req.url).pathname); if (requests.length > 32) requests.shift();
     const target = destination(req.url);
     const remote = net.connect(target.port, "127.0.0.1", () => {
       remote.write(`${req.method} ${target.path} HTTP/1.1\r\n` + Object.entries(req.headers).map(([key, value]) => `${key}: ${value}\r\n`).join("") + "\r\n");
@@ -148,7 +154,7 @@ try {
   for await (const line of createInterface({ input: process.stdin })) {
     const request = JSON.parse(line);
     try { process.stdout.write(JSON.stringify({ ok: true, result: await command(request) }) + "\n"); }
-    catch (error) { process.stdout.write(JSON.stringify({ ok: false, error: String(error), routes: requests, ui: (newPage ?? oldPage) ? (await (newPage ?? oldPage).locator("body").innerText().catch(() => "")).slice(0, 4096) : "" }) + "\n"); }
+    catch (error) { process.stdout.write(JSON.stringify({ ok: false, error: String(error), routes: requests, rejected, trackers: oldPage ? await oldPage.evaluate(() => window.engineManager?.engine?.torrents.map(torrent => ({ name: torrent.name, userState: torrent.userState, trackers: torrent.getTrackerStats(), tick: torrent.getTickStats() }))).catch(() => []) : [], ui: (newPage ?? oldPage) ? (await (newPage ?? oldPage).locator("body").innerText().catch(() => "")).slice(0, 4096) : "" }) + "\n"); }
     if (request.op === "close") break;
   }
 } finally {

@@ -1455,7 +1455,13 @@ The platform-only `legacy-upgrade-fixture` module exists because the minified
 released APK cannot provide the current test runner's Kotlin dependencies.
 Only the source seed uses it; successor assertions use ordinary instrumentation.
 This qualifies the controlled old APK/source format, not Play signing or every
-historical profile. The replacement topic owns cutover gaps and wider gates.
+historical profile. Optional `--evidence-dir <new-owned-directory>` retains
+actual before/after/failure emulator captures, UI attributes and bounded scoped
+logs; it refuses an existing output directory. The owned emulator and all
+temporary keys/APKs/fixtures are still removed after the run. Capture output is
+an intentional local review artifact, not a store-qualified screenshot. Capture
+waits for the actual Live imported library and retains first-use disclosure
+separately. The replacement topic owns cutover gaps and wider gates.
 
 Extension-driven mode uses the pinned released extension in owned Playwright
 Chromium, its actual settings/intake/session writers, real old Android pairing

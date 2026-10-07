@@ -140,7 +140,8 @@ def prepare(target, probe, directory, oracle):
         print(f"ordinary_writer phase=grant folder={folder}", flush=True)
         target.shell(["mkdir", "-p", f"/sdcard/Download/JSTorrent/{folder}"])
         target.shell(["logcat", "-c"])
-        target.shell(["am", "start", "-n", PACKAGE + "/com.jstorrent.app.AddRootActivity"])
+        started = target.shell(["am", "start", "-W", "-n", PACKAGE + "/com.jstorrent.app.AddRootActivity"])
+        print("ordinary_writer root_activity=" + started.stdout.strip(), flush=True)
         try:
             probe.automate_tree_grant(target, "internal", folder)
         except BaseException:

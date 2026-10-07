@@ -28,6 +28,15 @@ shutdown, and read-only ARC power state records a timeout. Device power policy
 is unchanged. These results do not qualify managed Play replacement or completed
 file upload. Final-source cohort A and broader recovery checks continue.
 
+Current-source controlled ordinary and companion writer upgrades pass on API
+28/35, including actual old writers, two SAF roots, running replacement,
+verified partial completion and restart. Ordinary mode also passes emulator
+reboot. Companion mode exercises both mixed-version refusals and fresh successor
+pairing/control. Settled Live library captures are retained separately from
+first-use disclosure. Old-picker and old-download setup failures remain recorded;
+no production-store identity or managed signer is inferred from disposable
+certificates and the unpacked beta extension. Tactical 259 owns exact receipts.
+
 Tactical [257](../tactical/257-play-upgrade-and-fresh-signed-candidates.md)
 qualifies a bounded physical Play 1.0.23-to-1.0.25 standalone upgrade: original
 managed signer, unchanged installation identity, two retained paused rows and

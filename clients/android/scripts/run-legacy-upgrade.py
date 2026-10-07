@@ -57,7 +57,40 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--api", choices=["28", "35"], default="35")
     parser.add_argument("--source", choices=["seeded", "ordinary", "companion"], default="seeded")
+    parser.add_argument("--evidence-dir", type=Path, help="retain owned-AVD before/after/failure captures and scoped logs")
     args = parser.parse_args()
+    if args.evidence_dir:
+        args.evidence_dir.mkdir(parents=True, exist_ok=False)
+    def capture(label):
+        if not args.evidence_dir or session is None:
+            return
+        target = session.target
+        nodes = probe.ui_nodes(target)
+        image = subprocess.run([*target.prefix, "exec-out", "screencap", "-p"], capture_output=True, check=True, timeout=30)
+        (args.evidence_dir / f"{label}.png").write_bytes(image.stdout)
+        (args.evidence_dir / f"{label}-ui.json").write_text(json.dumps([node.attrib for node in nodes], indent=2) + "\n")
+        logs = target.shell(["logcat", "-d", "-v", "threadtime", "-s", "AddRootActivity:I", "RSTorrentProduct:I", "AndroidRuntime:E"], check=False).stdout
+        (args.evidence_dir / f"{label}-logcat.txt").write_text(logs[-64000:])
+
+    def prepare_successor_capture(target, names):
+        # Choose the local disclosure only in this owned disposable profile.
+        # Do not confuse a delivered launch/animated overlay with a live library.
+        deadline = time.monotonic() + 90
+        while time.monotonic() < deadline:
+            nodes = probe.ui_nodes(target)
+            labels = {node.get("text", "") for node in nodes}
+            if "Save and continue" in labels:
+                checked = next((node for node in nodes if node.get("checkable") == "true" and node.get("checked") == "true"), None)
+                if checked is not None:
+                    x, y = probe.parse_bounds(checked.get("bounds", ""))
+                    target.shell(["input", "tap", str(x), str(y)])
+                else:
+                    probe.click_from_nodes(target, nodes, ["Save and continue"])
+            elif "Live" in labels and all(name in labels for name in names):
+                return
+            time.sleep(.3)
+        raise RuntimeError("successor capture did not reach the actual live imported library")
+
     matrix = load_matrix()
     avdmanager = matrix.sdk_tool("avdmanager")
     name = f"rstorrent-legacy-upgrade-api{args.api}"
@@ -110,6 +143,7 @@ def main():
                     print([(n.attrib.get("text"), n.attrib.get("content-desc")) for n in probe.ui_nodes(target) if n.attrib.get("text") or n.attrib.get("content-desc")], flush=True)
                     print(target.shell(["logcat", "-d", "-t", "500"], check=False).stdout[-24000:], flush=True)
                     raise
+                capture("before-replacement")
                 # Android itself quiesces the running old package during install.
                 target.run(["install", "-r", str(apks["new"])], timeout=120)
                 target.run(["install", str(apks["test"])], timeout=120)
@@ -119,6 +153,11 @@ def main():
                 if browser:
                     browser.command("old-retired")
                 instrument(target, "verifyOrdinaryWriterUpgrade", spec)
+                if args.evidence_dir:
+                    target.shell(["am", "start", "-W", "-n", PACKAGE + "/org.rstorrent.bootstrap.MainActivity"])
+                    capture("after-replacement-first-use")
+                    prepare_successor_capture(target, [case["name"] for case in spec["cases"]])
+                    capture("after-replacement-settled")
                 target.shell(["am", "force-stop", PACKAGE])
                 instrument(target, "verifyOrdinaryWriterUpgrade", spec)
                 if browser:
@@ -179,6 +218,12 @@ def main():
             target.shell(["am", "force-stop", PACKAGE])
             instrument(target, "verifyFreshInstall")
             print(json.dumps({"legacy_upgrade": {"api": int(args.api), "source": "android-v1.0.24", "source_apk_sha256": SHA256, "package": PACKAGE, "seed": "independently authored source-format data; released picker writes root/grant", "upgrade": "passed", "restart": "passed", "revoked_grant": "passed", "regrant": "passed", "clear_no_resurrection": "passed", "roots_only": "passed", "fresh_install": "passed"}}, indent=2))
+    except BaseException:
+        try:
+            capture("failure")
+        except Exception as capture_error:
+            print(f"bounded owned-AVD failure capture unavailable: {capture_error}", flush=True)
+        raise
     finally:
         if session is not None: session.close()
         if created: matrix.delete_avd(avdmanager, name)

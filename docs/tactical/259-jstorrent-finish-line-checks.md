@@ -447,3 +447,34 @@ settings/intake/two-root/running-replacement, verified partial resume, process
 restart and device reboot assertions. It uses a disposable certificate and
 owned AVD, so the managed Play and physical delivery rows remain open. API-28
 and both companion rehearsals continue serially with owned cleanup.
+
+
+### Current controlled installed upgrades, 2026-10-08
+
+Current Android ordinary-writer rehearsals pass on both API 28 and 35: actual
+released 1.0.24 settings/intake writers, two SAF roots, running replacement,
+independent completed/partial payload verification, process restart and emulator
+reboot. API-28's initial picker setup failure precedes replacement and remains
+failed; waiting for the old folder activity with `am start -W` fixes the setup.
+
+Current companion-writer rehearsals also pass on API 28 and 35: the pinned
+released extension 1.1.1 writes two torrents/settings into old Android SQLite;
+new-extension/old-Android refuses with update-required, old-extension/new-Android
+loses control, and fresh successor pairing controls the verified migrated library.
+Partial completion and restart pass. The first API-35 attempt fails its old
+released download before Android replacement; it supplies no migration failure
+or pass. A fresh beta package and rerun pass without changing proxy admission,
+tracker transport or product behavior. The precise initial cause is unproven.
+
+The fresh beta 0.4.0 ZIP has SHA-256
+`e045c560614115e3d4674774b9c8abbe4a3b0d30d814f996574d6a86603eaa29`.
+Its 19-entry inventory matches production 1.1.2; only the manifest differs.
+Earlier stale beta bytes are not used as current payload qualification.
+The optional runner capture path refuses existing directories and retains actual
+before, first-use and settled Live library screenshots plus bounded scoped logs.
+Both companion runs exercise it successfully. Failure diagnostics now expose
+bounded rejected routes and old tracker/tick state without widening the proxy.
+Python compilation, JavaScript syntax and whitespace checks pass. Owned AVDs,
+browsers, keys, APKs, forwards and fixtures are removed; normal debug build
+identity is restored. Disposable signatures and an unpacked beta extension do
+not qualify managed Play delivery or the preserved-profile production store ID.

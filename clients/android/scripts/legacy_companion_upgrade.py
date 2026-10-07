@@ -81,7 +81,7 @@ def prepare(target, probe, directory, oracle, browser):
     for folder in FOLDERS:
         target.shell(['mkdir', '-p', f'/sdcard/Download/JSTorrent/{folder}'])
         target.shell(['logcat', '-c'])
-        target.shell(['am', 'start', '-n', PACKAGE + '/com.jstorrent.app.AddRootActivity'])
+        target.shell(['am', 'start', '-W', '-n', PACKAGE + '/com.jstorrent.app.AddRootActivity'])
         probe.automate_tree_grant(target, 'internal', folder)
         deadline = time.monotonic() + 30
         while 'Added root: key=' not in target.shell(['logcat', '-d', '-s', 'AddRootActivity:I']).stdout:
