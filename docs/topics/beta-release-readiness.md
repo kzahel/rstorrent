@@ -2,6 +2,17 @@
 
 Topic: `beta-release-readiness`
 
+Tactical [263](../tactical/263-finish-line-web-dependency-patches.md) updates
+compatible web/website transitive dependencies after fresh npm advisories.
+Web type/unit/build/CSP, 46 configured E2E cases (14 existing skips), 54 extension
+cases, both byte-identical ZIP lanes and website static build pass. Fresh Cargo,
+web and website reports pass strict release review with unchanged warning policy
+and verified GLib provenance. Desktop notice generation passes. The cache
+library's upstream max-stale behavior still reproduces in 4.3.0 despite registry
+range clearance; exact Astro static-image call-path assessment and limits remain
+explicit. Final signed desktop rebuilding/publication gates remain open.
+
+
 Finish-line Tactical [259](../tactical/259-jstorrent-finish-line-checks.md)
 owns the current source/artifact and installed gate execution, excluding iOS.
 The `a35934d2` desktop capsule independently verifies 23 hashes, 15 updater
