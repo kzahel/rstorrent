@@ -124,10 +124,15 @@ These completed checks show progress within the broader acceptance rows above;
 they do not close those rows' remaining delivery, platform or recovery cases.
 
 - [x] Candidate `a35934d2`: every in-scope source CI job and website CI pass.
-- [x] Android 1.0.26/code 26: independent signed APK/AAB identity, upload
-  certificate, minimum API, dual ABI, alignment and notices checks pass.
+- [x] Source `a35934d2` Android 1.0.26/code 26: signed APK/AAB identity,
+  upload certificate, minimum API, dual ABI, alignment and notices pass. This
+  capsule is superseded for final Android delivery by the Tactical 260 fix.
 - [x] Existing Web Store authentication/item inspection and candidate 1.1.2
   production ZIP, permissions and CSP checks pass; no store update performed.
+- [x] Current five-target desktop capsule: all 23 asset hashes, 15 updater
+  selections and ten original-root payload signatures independently pass.
+- [x] Current signed Linux ARM manual migration: eight assertions, six old-host
+  refusal routes and inherited-state restoration pass; pixel review remains open.
 - [x] Current signed macOS ARM package: original-root signature, Developer ID,
   notarization/stapling/inventory and eight manual installed migration checks pass.
 - [x] Physical cohort A: three cold/recovery repetitions, 60-minute foreground
@@ -145,16 +150,19 @@ the Rust toolchain. Website source CI passes. Nonpublishing Android candidate
 `37657799144` passes independent upload-certificate, package/launcher, minimum
 API 28, both-ABI and 16-KiB bundle checks: version 1.0.26/code 26, AAB SHA-256
 `446b46f1d853ff9dc46dba9dc0f95fbc87c1590f37f870a3f913edeebffc0411`.
-Authenticated Play shows production code 23 and internal code 25. Internal
-code 26 upload/release has a concrete local review and awaits an explicit
-instruction. Production extension item remains published/draft 1.1.1; candidate
+Authenticated Play shows production code 23 and internal code 25. The earlier code-26 internal review is superseded by Tactical 260: rebuild
+and reverify the final Android APK/AAB after its physical qualification. No
+code-26 upload/release is authorized. Production extension item remains published/draft 1.1.1; candidate
 1.1.2 ZIP passes packaging/CSP with SHA-256
 `979a0f136ce0a219bca8428b1b5afef2c11a1b98ac1a9fc75e5b61abc67cc4aa`.
 
 Desktop nonpublishing run `37657795184` attempt 1 timed out in Linux dependency
-installation before signing. Attempt 2 is running; its fresh original-root
-signing-identity proof passes. All five packaging legs now pass; the
-combined collector validation is running. The current macOS ARM archive independently passes original-root
+installation before signing. Attempt 2 passes every packaging leg and the original-root identity proof.
+The collector is canceled during `apt` installation of minisign, after its
+assembly/descriptor checks pass. Independent local assembly from all five
+same-attempt lanes passes the exact 23-asset inventory/hashes, 15 updater
+selections and all ten original-root payload signatures. Do not describe the
+canceled workflow as a complete CI pass. The current macOS ARM archive independently passes original-root
 updater signature, Developer ID, notarization, stapling and file inventory
 checks. Its installed old-to-new fixture rehearsal passes all eight checks. The
 older `f5860c99` signed capsule is historical.
@@ -178,21 +186,31 @@ After repairing notification setup following every isolated reset, attempt
 10 passes three repetitions but stalls again in its short observation. The
 completion did not verify within the 300-second recovery budget. Its raw
 receipt and explicit failed-observation adjudication are retained; cleanup
-passes. Do not infer a product cause from the notification setup repair. No completed-file upload or Play delivery is inferred.
+passes. The separate crash buffer proves an uncaught typed native shutdown
+error for an uncertain router lease. Tactical 260 contains the adapter failure
+without changing reachability policy; all 121 JVM tests and both-ABI build pass.
+A bounded physical run of its isolated APK is active. The original shutdown
+trigger remains unresolved; notification setup repair does not explain it. No completed-file upload or Play delivery is inferred.
 
 All three VMs started for this session are verified stopped and their exact
 claims released after the maintainer's idle-power correction. Only the Mac
 was subsequently booted for its ready signed rehearsal, then its state was
-restored, owned fixtures removed, VM stopped and claim released again. Boot only the
+restored, owned fixtures removed, VM stopped and claim released again. Linux
+ARM then passes all eight current signed manual-replacement assertions, including
+four imported records, six refusal routes and unchanged source/payload bytes.
+Its fixture restoration passes, owned scratch is removed, product writers stop,
+and the VM is verified stopped with its exact claim released. Native accessible
+controls are populated but captured application and GTK-alert surfaces are
+black. Pixel review and the cause remain open; accessible DOM is not a visual pass. Boot only the
 cohort whose artifact/check is ready; shut it down between uses. Windows UI
 unlock and native Windows x64/macOS x64 cohorts remain external availability
 gaps. No push, tag, publication, store upload, or hosted-context enablement has
 occurred. Local hosted-page security/copy preparation is independently checked;
 public deployment remains unqualified.
 
-Next action: collect the same-attempt fresh signed desktop capsule, finish the
-physical recovery/diagnostic runs, and test available native cohorts one at a
-time. Resume internal Play delivery only on explicit authorization; retain all
+Next action: finish physical shutdown/recovery diagnostics on the fixed Android
+APK, investigate Linux pixel capture/presentation, and test available native
+cohorts one at a time. Rebuild final signed Android artifacts after qualification. Resume internal Play delivery only on explicit authorization; retain all
 unqualified gates and the exact failures in the ignored finish-line report.
 
 ### Physical runner repair scope

@@ -5,11 +5,17 @@ Topic: `beta-release-readiness`
 Finish-line Tactical [259](../tactical/259-jstorrent-finish-line-checks.md)
 owns the current source/artifact and installed gate execution, excluding iOS.
 Source `a35934d2` passes all in-scope CI jobs; Android and extension candidates
-pass independent package checks. Complete signed desktop collection is running
-after dependency-installation timeouts. Current signed macOS ARM manual migration passes eight checks; automatic
+pass independent package checks. All five desktop packaging legs pass; local
+same-attempt assembly independently verifies 23 hashes and ten original-root
+signatures after the collector is canceled during minisign installation. Signed
+macOS ARM and Linux ARM manual migration each pass eight assertions; Linux
+black-window captures leave visual acceptance open. Automatic
 updating and the wider installed matrix remain unqualified. Bounded physical
 Android results cannot replace final store/background evidence.
-The second physical cohort's failed hour remains open. No publication occurred;
+The second physical cohort's failed hour remains open. Its typed native shutdown
+crash triggers Tactical 260, which passes 121 JVM tests and awaits physical
+qualification. Rebuild the final Android signed capsule after that repair. No publication
+occurred;
 owned VMs are stopped between uses instead of waiting idle for builds/approval.
 
 Tactical [257](../tactical/257-play-upgrade-and-fresh-signed-candidates.md)

@@ -2,6 +2,17 @@
 
 Topic: `desktop-jstorrent-replacement`
 
+Finish-line Tactical [259](../tactical/259-jstorrent-finish-line-checks.md) adds
+current `a35934d2` five-target signed package verification: 23 hashes, 15 updater
+selections and ten original-root signatures pass independently from the same
+CI attempt. All packaging legs pass; the collector is canceled while installing
+minisign. Signed macOS ARM and Linux ARM manual replacement each pass eight
+assertions. Linux additionally verifies six legacy refusal routes and restored
+guest state. Native Linux captures have black application/GTK-alert surfaces,
+so pixel acceptance remains open. Automatic updating and the broader installed
+matrix retain their separate source/artifact limits. Owned VMs are stopped and
+claims released after each session; no publication occurs.
+
 Tactical [251](../tactical/251-jstorrent-ci-candidates-and-installed-update.md)
 completes bounded production-identity CI attempts using existing signing inputs,
 with nonce identity proof, exact product receipts and retained-public-root

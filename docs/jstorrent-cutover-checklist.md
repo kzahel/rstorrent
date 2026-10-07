@@ -21,14 +21,23 @@ execution. Source `a35934d2` passes every in-scope CI job; iOS is excluded.
 Exact-source Android 1.0.26/code 26 and production extension 1.1.2 packages
 pass independent package checks. Authenticated Play remains production code 23
 and internal code 25; the existing Web Store item is published/draft 1.1.1.
-Neither candidate is uploaded. All five fresh signed desktop packaging legs
-pass; combined collector validation is running after an infrastructure timeout.
+Neither candidate is uploaded. Android delivery must be rebuilt after the
+Tactical 260 shutdown fix; the earlier AAB is no longer final. All five fresh
+signed desktop packaging legs pass. The collector is canceled during minisign
+installation; independent local assembly validates all 23 asset hashes, 15
+updater selections and ten original-root signatures from the same attempt.
 The current signed macOS arm64 package passes independent signing/notarization
 checks and eight manual installed migration checks. Automatic updating and the
-broader installed matrix remain open. Physical cohort A passes three repetitions,
+broader installed matrix remain open. Signed Linux ARM manual migration also
+passes eight assertions and six refusal routes, with restored guest state; black
+native window captures leave visual acceptance open. Physical cohort A passes three
+repetitions,
 a full foreground hour and seven SAF/recovery cases. Cohort B's failed hour
 remains open: its latest short rerun also fails final byte completion despite
-three successful repetitions and corrected notification setup. Bounded physical
+three successful repetitions and corrected notification setup. Its crash buffer
+proves an uncaught typed native shutdown failure. Tactical 260 contains that
+error and passes 121 JVM tests; physical qualification is in progress. Bounded
+physical
 evidence does not close final store/background delivery rows.
 All owned VMs are stopped between uses and their idle claims released.
 The tactical and ignored local report bind exact results and next actions.
