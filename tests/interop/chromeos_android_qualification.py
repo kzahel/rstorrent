@@ -96,6 +96,35 @@ def finish_first_use(adb):
     raise RuntimeError("first-use disclosure did not resolve within its stage budget")
 
 
+def configure_background_observation(adb):
+    """Use the real owned app's switches; do not change device power policy."""
+    def selected(field, value):
+        nodes = [node for node in product.dump_ui(adb).iter() if node.get(field) == value]
+        if len(nodes) != 1:
+            raise RuntimeError(f"owned background control is absent or ambiguous: {value}")
+        return nodes[0]
+    for field, value in [("content-desc", "More options"), ("text", "Settings"),
+                         ("text", "Power Management")]:
+        product.tap_bounds(adb, selected(field, value).get("bounds"))
+    description = "Continue downloads in background"
+    switch = selected("content-desc", description)
+    if switch.get("checked") != "false" or switch.get("enabled") != "true":
+        raise RuntimeError("background qualification requires the observed default-off switch")
+    product.tap_bounds(adb, switch.get("bounds"))
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        if selected("content-desc", description).get("checked") == "true":
+            break
+        time.sleep(.5)
+    else:
+        raise RuntimeError("background preference did not become enabled")
+    preferences = ET.fromstring(adb.shell("run-as", PACKAGE, "cat", "shared_prefs/product_lifecycle.xml").stdout)
+    if not any(n.get("name") == "background_downloads_enabled" and n.get("value") == "true" for n in preferences):
+        raise RuntimeError("background preference was not persisted")
+    # Detach the actual view. The existing foreground service owns the transfer.
+    adb.shell("input", "keyevent", "KEYCODE_HOME")
+
+
 def native_maximize_arguments(result):
     # The platform adapter writes human-readable queries to stderr. Duplicate
     # ARC accessibility roots may describe the very same native caption button.
@@ -173,6 +202,8 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--screenshots", type=Path, help="retain actual ChromeOS captures at product checkpoints")
     parser.add_argument("--observe-seconds", type=int, default=3600)
+    parser.add_argument("--observation-lifetime", choices=("foreground", "background"), default="foreground",
+                        help="background uses the actual app setting and detaches the Android view")
     parser.add_argument("--diagnostics", type=Path, help="new owned directory for bounded, package-scoped failure/observation logs")
     args = parser.parse_args()
     if not 0 <= args.seed_port <= 65535:
@@ -206,6 +237,7 @@ def main():
     report = {"schema": "chromeos-android-qualification/v1", "cohort": args.target,
               "delivery": "isolated_debug_sideload", "play_installation": "unrun",
               "notification_setup": "granted_after_each_owned_profile_reset",
+              "observation_lifetime": args.observation_lifetime,
               "repetitions": records, "result": "fail", "cleanup": "pending"}
     if args.screenshots:
         args.screenshots.mkdir(parents=True, exist_ok=False)
@@ -312,6 +344,9 @@ def main():
                         break
                     time.sleep(1)
                 else: raise RuntimeError("observation intake confirmation timed out")
+                if args.observation_lifetime == "background":
+                    configure_background_observation(adb)
+                    capture("05-background-view-detached")
                 beginning = time.monotonic()
                 samples = []
                 while time.monotonic()-beginning < args.observe_seconds:

@@ -284,3 +284,23 @@ The short observation completion rule now also fails explicitly when final
 bytes do not verify; the previous short label did not qualify that outcome.
 Attempt 10 is preserved without rewriting its raw receipt. Thirteen runner
 safety tests and Python compilation pass after the correction.
+
+### Default-off physical lifetime diagnosis
+
+Attempt 11 uses the Tactical 260 APK. Three cold-launch/offline-restart byte
+checks pass (128.9, 61.39 and 61.65 seconds). Its observation stops advancing
+and fails at 555 seconds; cleanup passes. Before cleanup, package-scoped
+activity state proves Android stops the activity. The lifecycle enters
+visibility settling, then `stop_idle`, and joins native/client cleanup with
+`cleanup_failed=false`. Read-only Android power state records a timeout sleep;
+Machine Control's existing lid/idle suspend policy remains intact. No device
+power settings are changed and no passing hour is inferred.
+
+Qualify the actual supported background policy separately: an optional runner
+mode navigates the owned app's real Settings/Power Management UI, verifies the
+default-off switch, enables/persists it and detaches the Android view. Name the
+lifetime in the receipt. Preserve the failed foreground run; background evidence
+does not rewrite it or imply Play delivery. No product background-policy change
+or synthetic lifecycle intent is introduced. Thirteen existing harness safety
+cases and Python compilation pass. Run a bounded background check before the
+full-hour observation.
