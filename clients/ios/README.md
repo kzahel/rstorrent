@@ -30,9 +30,10 @@ simulators.
 The project deliberately contains no development team, provisioning profile,
 device identifier, or Apple account. Pass signing settings to `xcodebuild` or
 select a local team in Xcode. The development bundle identifier is
-`org.rstorrent.ios.dev`, distinct from JSTorrent. The AppIcon is provisional
-repository-owned RSTorrent artwork; public identity and final store art remain
-release blockers in
+`org.rstorrent.ios.dev`, distinct from JSTorrent. The AppIcon and header use
+original MIT-licensed JSTorrent blue-box artwork,
+with provenance in `distribution/branding/jstorrent-assets.json`. System display
+names use JSTorrent; public identity and store delivery remain release blockers in
 [`../../docs/topics/beta-release-readiness.md`](../../docs/topics/beta-release-readiness.md).
 
 Create a reproducible unsigned archive without local signing state:

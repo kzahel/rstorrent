@@ -1030,6 +1030,8 @@ impl GatewayServer {
                     Router::new()
                         .route("/launch-chromeos", get(chromeos_launch_page))
                         .route("/launch-chromeos.js", get(chromeos_launch_script))
+                        .route("/launch-chromeos.css", get(chromeos_launch_style))
+                        .route("/launch-chromeos.png", get(chromeos_launch_icon))
                         .with_state(self.state.clone()),
                 );
             }
@@ -1162,7 +1164,7 @@ fn basic_auth_rejection() -> Response {
     );
     response.headers_mut().insert(
         header::WWW_AUTHENTICATE,
-        HeaderValue::from_static("Basic realm=\"RSTorrent\", charset=\"UTF-8\""),
+        HeaderValue::from_static("Basic realm=\"JSTorrent\", charset=\"UTF-8\""),
     );
     response
 }
@@ -1261,12 +1263,16 @@ async fn chromeos_launch_page(State(state): State<GatewayState>) -> Response {
         "<!doctype html>\n\
          <html lang=\"en\"><head><meta charset=\"utf-8\">\
          <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
-         <title>Opening RSTorrent</title></head>\
+         <meta name=\"color-scheme\" content=\"light dark\">\
+         <link rel=\"stylesheet\" href=\"/launch-chromeos.css\">\
+         <link rel=\"icon\" href=\"/launch-chromeos.png\">\
+         <title>Opening JSTorrent</title></head>\
          <body data-extension-id=\"{}\" data-protocol-version=\"{}\">\
-         <main><h1>Opening RSTorrent…</h1>\
+         <main><img src=\"/launch-chromeos.png\" width=\"64\" height=\"64\" alt=\"\">\
+         <h1>Opening JSTorrent…</h1>\
          <p id=\"status\" role=\"status\">Connecting to JSTorrent Beta.</p>\
          <p>If this page stays open, install or enable JSTorrent Beta, then choose \
-         RSTorrent for ChromeOS Linux from the Launcher again.</p></main>\
+         JSTorrent for ChromeOS Linux from the Launcher again.</p></main>\
          <script src=\"/launch-chromeos.js\"></script></body></html>",
         handoff.extension_id, CROSTINI_LAUNCH_PROTOCOL_VERSION
     );
@@ -1274,13 +1280,29 @@ async fn chromeos_launch_page(State(state): State<GatewayState>) -> Response {
     response.headers_mut().insert(
         header::CONTENT_SECURITY_POLICY,
         HeaderValue::from_static(
-            "default-src 'none'; script-src 'self'; style-src 'none'; img-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'",
+            "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'",
         ),
     );
     response
         .headers_mut()
         .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     response
+}
+
+async fn chromeos_launch_style() -> Response {
+    (
+        [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
+        include_str!("../resources/launch-chromeos.css"),
+    )
+        .into_response()
+}
+
+async fn chromeos_launch_icon() -> Response {
+    (
+        [(header::CONTENT_TYPE, "image/png")],
+        include_bytes!("../resources/jstorrent.png").as_slice(),
+    )
+        .into_response()
 }
 
 async fn chromeos_launch_script() -> Response {
@@ -1290,7 +1312,7 @@ async fn chromeos_launch_script() -> Response {
   const extensionId = body?.dataset.extensionId;
   const protocolVersion = Number(body?.dataset.protocolVersion);
   const fail = () => {
-    if (status) status.textContent = "JSTorrent Beta is unavailable. Enable it and launch RSTorrent for ChromeOS Linux again.";
+    if (status) status.textContent = "JSTorrent Beta is unavailable. Enable it and launch JSTorrent for ChromeOS Linux again.";
   };
   if (!extensionId || protocolVersion !== 1 || !globalThis.chrome?.runtime?.sendMessage) {
     fail();
@@ -1303,7 +1325,7 @@ async fn chromeos_launch_script() -> Response {
       if (chrome.runtime.lastError || response?.ok !== true) {
         fail();
       } else if (status) {
-        status.textContent = "RSTorrent is opening.";
+        status.textContent = "JSTorrent is opening.";
       }
     },
   );
@@ -2826,7 +2848,7 @@ mod tests {
         )
         .await;
         assert_eq!(status, 401);
-        assert!(headers.contains("www-authenticate: Basic realm=\"RSTorrent\""));
+        assert!(headers.contains("www-authenticate: Basic realm=\"JSTorrent\""));
         assert_eq!(
             raw_http_request_with_host(
                 address,
@@ -4127,6 +4149,23 @@ mod tests {
         let body = String::from_utf8(body).expect("handoff HTML");
         assert!(body.contains(JSTORRENT_BETA_EXTENSION_ID));
         assert!(body.contains("data-protocol-version=\"1\""));
+        assert!(body.contains("Opening JSTorrent"));
+        assert!(!body.contains("RSTorrent"));
+        assert!(headers.contains("style-src 'self'; img-src 'self'"));
+        let (style_status, style_headers, style) =
+            raw_get_with_host(address, &host, "/launch-chromeos.css").await;
+        assert_eq!(style_status, 200);
+        assert!(style_headers.contains("text/css"));
+        assert!(
+            String::from_utf8(style)
+                .unwrap()
+                .contains("prefers-color-scheme")
+        );
+        let (icon_status, icon_headers, icon) =
+            raw_get_with_host(address, &host, "/launch-chromeos.png").await;
+        assert_eq!(icon_status, 200);
+        assert!(icon_headers.contains("image/png"));
+        assert!(icon.starts_with(b"\x89PNG"));
         assert!(!body.contains("chrome-extension://"));
         let (status, _, script) = raw_get_with_host(address, &host, "/launch-chromeos.js").await;
         assert_eq!(status, 200);

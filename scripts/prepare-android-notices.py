@@ -202,7 +202,7 @@ def generate(graph, output):
     catalog = json.loads((ROOT / 'distribution/licenses/android-sources.json').read_text())
     maven, maven_inventory = maven_notices(graph, catalog)
     rust_texts, rust_inventory, generator = rust.generate_rust_notices(TARGETS, ROOT / 'crates/rstorrent-android/Cargo.toml')
-    text = ('# RSTorrent Android third-party notices\n\n'
+    text = ('# JSTorrent Android third-party notices\n\n'
             f"Variant: {graph['variant']}\n"
             'Scope: resolved Maven/AAR runtime artifacts and the locked default-feature Rust graph for both shipped ABIs, including build dependencies.\n'
             'Original notices and manifest-only declarations are distinguished below.\n'

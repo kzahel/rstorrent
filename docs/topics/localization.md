@@ -2,6 +2,16 @@
 
 Topic: `localization`
 
+Tactical [258](../tactical/258-cross-surface-branding-and-design-audit.md)
+finishes remaining iOS product/system display names and auxiliary first-party
+labels as JSTorrent. The iOS lifecycle label becomes **App is active**, replacing
+Android-specific foreground-service wording. Three cataloged headless command-copy
+messages are added; semantic IDs, placeholders, internal identities and supported
+locale policy remain. All four catalog checks pass (1,331 web, 17 desktop, 445
+Android, 172 iOS product and six Info.plist values). A separate CI branding guard
+checks 2,013 display values and 40 original asset checksums. See the
+[audit execution record](../tactical/258-cross-surface-branding-and-design-audit.md) for source/rendered/native limits.
+
 Tactical 253 adds twelve cataloged shared connection/recovery messages, preserving
 English-only shipping and the unchanged native catalogs. All four catalog
 checks pass. Static extension setup remains an offline English document under

@@ -260,7 +260,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "RSTorrent Documents"
+            "value": "JSTorrent Documents"
           }
         }
       }
@@ -320,7 +320,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "iOS grants finite background time. RSTorrent saves durable progress and resumes safely; it does not promise indefinite background downloading or seeding."
+            "value": "iOS grants finite background time. JSTorrent saves durable progress and resumes safely; it does not promise indefinite background downloading or seeding."
           }
         }
       }
@@ -332,7 +332,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Foreground service"
+            "value": "App is active"
           }
         }
       }
@@ -452,7 +452,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "RSTorrent download"
+            "value": "JSTorrent download"
           }
         }
       }
@@ -572,7 +572,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "RSTorrent is still starting."
+            "value": "JSTorrent is still starting."
           }
         }
       }
@@ -680,7 +680,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "RSTorrent can open magnet links and .torrent files."
+            "value": "JSTorrent can open magnet links and .torrent files."
           }
         }
       }
@@ -1184,7 +1184,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "RSTorrent Documents is the default folder"
+            "value": "JSTorrent Documents is the default folder"
           }
         }
       }

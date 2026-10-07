@@ -243,6 +243,9 @@ jobs:
             clients/web/src/fixtures/reactive-trace.json \
             clients/web/src/fixtures/view-set-trace.json
 
+      - name: Check product branding and original assets
+        run: node scripts/check-branding.mjs
+
       - name: Typecheck the shared web application
         run: npm run typecheck --prefix clients/web
 
@@ -405,7 +408,7 @@ jobs:
           if ($installer.Count -ne 1) {
             throw "Expected one NSIS installer; found $($installer.Count)"
           }
-          $installDirectory = Join-Path $env:LOCALAPPDATA 'RSTorrent'
+          $installDirectory = Join-Path $env:LOCALAPPDATA 'JSTorrent Preview'
           $executable = Join-Path $installDirectory 'rstorrent-desktop.exe'
           $nativeHost = Join-Path $installDirectory 'rstorrent-native-host.exe'
           try {

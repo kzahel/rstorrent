@@ -106,9 +106,9 @@ impl ConfiguredLauncher {
 impl ConfiguredLauncher {
     fn launch_with_intent(&mut self, background: bool) -> Result<(), String> {
         let config = LaunchConfig::read_from(&self.config_path)
-            .map_err(|_| "RSTorrent launch configuration is unavailable".to_owned())?;
+            .map_err(|_| "JSTorrent launch configuration is unavailable".to_owned())?;
         if !config.path.exists() {
-            return Err("installed RSTorrent application was not found".to_owned());
+            return Err("installed JSTorrent application was not found".to_owned());
         }
         let mut command = match config.kind {
             LaunchKind::Executable => Command::new(&config.path),
@@ -145,7 +145,7 @@ impl ConfiguredLauncher {
             .stderr(Stdio::null())
             .spawn()
             .map(|_| ())
-            .map_err(|_| "RSTorrent launch request could not be started".to_owned())
+            .map_err(|_| "JSTorrent launch request could not be started".to_owned())
     }
 }
 

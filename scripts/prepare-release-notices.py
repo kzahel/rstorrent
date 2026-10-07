@@ -192,7 +192,7 @@ def main():
         raise ValueError('unreviewed desktop target')
     rust, rust_inventory, version = generate_rust_notices([target], ROOT / 'clients/desktop/src-tauri/Cargo.toml')
     npm, npm_inventory = npm_notices()
-    text = ('# RSTorrent third-party Rust and web notices\n\n'
+    text = ('# JSTorrent third-party Rust and web notices\n\n'
             f'Target: {target}\nGenerator: {version}\n'
             'Scope: locked default-feature desktop Cargo graph, including build dependencies;\n'
             'web production dependencies and Ajv standalone code generation.\n'

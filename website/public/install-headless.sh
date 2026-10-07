@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# RSTorrent Headless verified per-user installer.
+# JSTorrent Headless verified per-user installer.
 # Usage: curl -fsSL https://rstorrent.com/install-headless.sh | bash
 
 PINNED_TAG="headless-v0.1.0"
@@ -290,7 +290,7 @@ installer_main() (
     if [ -n "$requested_version" ] && [ "$RELEASE_VERSION" != "$requested_version" ]; then
         error "Requested ${requested_version}, but the signed manifest is ${RELEASE_VERSION}."; return 1
     fi
-    info "Verified signed RSTorrent Headless ${RELEASE_VERSION} manifest."
+    info "Verified signed JSTorrent Headless ${RELEASE_VERSION} manifest."
     local installed_binary="${HOME}/.local/bin/rstorrent-headless"
     if [ -x "$installed_binary" ]; then
         local installed_output installed_version
@@ -318,10 +318,10 @@ installer_main() (
     validate_extracted_bundle "$bundle" "$RELEASE_VERSION" "$ARCH" || return 1
     "$bundle/install.sh" || return 1
     if [ "$("$installed_binary" --version)" != "rstorrent-headless ${RELEASE_VERSION}" ]; then
-        error "Installed RSTorrent Headless version does not match the signed release."; return 1
+        error "Installed JSTorrent Headless version does not match the signed release."; return 1
     fi
     printf '\n'
-    info "RSTorrent Headless ${RELEASE_VERSION} is installed."
+    info "JSTorrent Headless ${RELEASE_VERSION} is installed."
     printf '%s\n' "Follow the printed configuration and systemd user-service steps."
     printf '%s\n' "Updates always require: rstorrent-headless update --apply"
 )

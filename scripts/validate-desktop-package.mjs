@@ -107,7 +107,7 @@ export function validateLinuxDesktop(contents, product = "RSTorrent") {
   const entries = desktopEntry(contents);
   if (entries.get("Type") !== "Application") fail("Linux handler is not an application");
   if (entries.get("Terminal") !== "false") fail("Linux handler must not open a terminal");
-  if (entries.get("Name") !== product) fail(`unexpected Linux handler name ${entries.get("Name")}`);
+  if (entries.get("Name") !== (product === "RSTorrent" ? "JSTorrent Preview" : product)) fail(`unexpected Linux handler name ${entries.get("Name")}`);
   const mimes = entries
     .get("MimeType")
     ?.split(";")

@@ -61,7 +61,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -647,17 +646,11 @@ internal fun AddTorrentDialog(
 
 @Composable
 internal fun RstorrentLogo(modifier: Modifier = Modifier) {
-    androidx.compose.foundation.Canvas(modifier) {
-        drawCircle(color = Color(0xFF006A6A))
-        val stroke = Stroke(width = size.minDimension * 0.1f)
-        val x = size.width / 2f
-        val top = size.height * 0.23f
-        val bottom = size.height * 0.68f
-        drawLine(Color.White, start = androidx.compose.ui.geometry.Offset(x, top), end = androidx.compose.ui.geometry.Offset(x, bottom), strokeWidth = stroke.width)
-        drawLine(Color.White, start = androidx.compose.ui.geometry.Offset(x, bottom), end = androidx.compose.ui.geometry.Offset(size.width * 0.32f, size.height * 0.5f), strokeWidth = stroke.width)
-        drawLine(Color.White, start = androidx.compose.ui.geometry.Offset(x, bottom), end = androidx.compose.ui.geometry.Offset(size.width * 0.68f, size.height * 0.5f), strokeWidth = stroke.width)
-        drawLine(Color.White, start = androidx.compose.ui.geometry.Offset(size.width * 0.3f, size.height * 0.8f), end = androidx.compose.ui.geometry.Offset(size.width * 0.7f, size.height * 0.8f), strokeWidth = stroke.width)
-    }
+    androidx.compose.foundation.Image(
+        painter = androidx.compose.ui.res.painterResource(R.drawable.jstorrent_brand),
+        contentDescription = null,
+        modifier = modifier,
+    )
 }
 
 private fun Set<String>.toggle(value: String): Set<String> =

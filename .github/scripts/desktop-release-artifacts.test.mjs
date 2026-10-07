@@ -30,32 +30,32 @@ function fixture(product = "RSTorrent") {
   writeFileSync(join(root, "CHANGELOG.md"), `# Changelog\n\n## [${version}]\n\n- Fixed test release.\n\n## [1.2.2]\n\n- Older.\n`);
   const packages = {
     "macos-aarch64": [
-      [`target/aarch64-apple-darwin/release/bundle/dmg/RSTorrent_${version}_aarch64.dmg`, false],
-      ["target/aarch64-apple-darwin/release/bundle/macos/RSTorrent.app.tar.gz", true],
+      [`target/aarch64-apple-darwin/release/bundle/dmg/JSTorrent Preview_${version}_aarch64.dmg`, false],
+      ["target/aarch64-apple-darwin/release/bundle/macos/JSTorrent Preview.app.tar.gz", true],
     ],
     "macos-x86_64": [
-      [`target/x86_64-apple-darwin/release/bundle/dmg/RSTorrent_${version}_x64.dmg`, false],
-      ["target/x86_64-apple-darwin/release/bundle/macos/RSTorrent.app.tar.gz", true],
+      [`target/x86_64-apple-darwin/release/bundle/dmg/JSTorrent Preview_${version}_x64.dmg`, false],
+      ["target/x86_64-apple-darwin/release/bundle/macos/JSTorrent Preview.app.tar.gz", true],
     ],
     "linux-aarch64": [
-      [`target/release/bundle/appimage/RSTorrent_${version}_aarch64.AppImage`, true],
-      [`target/release/bundle/deb/RSTorrent_${version}_arm64.deb`, true],
-      [`target/release/bundle/rpm/RSTorrent-${version}-1.aarch64.rpm`, true],
+      [`target/release/bundle/appimage/JSTorrent Preview_${version}_aarch64.AppImage`, true],
+      [`target/release/bundle/deb/JSTorrent Preview_${version}_arm64.deb`, true],
+      [`target/release/bundle/rpm/JSTorrent Preview-${version}-1.aarch64.rpm`, true],
     ],
     "linux-x86_64": [
-      [`target/release/bundle/appimage/RSTorrent_${version}_amd64.AppImage`, true],
-      [`target/release/bundle/deb/RSTorrent_${version}_amd64.deb`, true],
-      [`target/release/bundle/rpm/RSTorrent-${version}-1.x86_64.rpm`, true],
+      [`target/release/bundle/appimage/JSTorrent Preview_${version}_amd64.AppImage`, true],
+      [`target/release/bundle/deb/JSTorrent Preview_${version}_amd64.deb`, true],
+      [`target/release/bundle/rpm/JSTorrent Preview-${version}-1.x86_64.rpm`, true],
     ],
     "windows-x86_64": [
-      [`target/release/bundle/nsis/RSTorrent_${version}_x64-setup.exe`, true],
-      [`target/release/bundle/msi/RSTorrent_${version}_x64_en-US.msi`, true],
+      [`target/release/bundle/nsis/JSTorrent Preview_${version}_x64-setup.exe`, true],
+      [`target/release/bundle/msi/JSTorrent Preview_${version}_x64_en-US.msi`, true],
     ],
   };
   async function stage() {
     for (const lane of RELEASE_LANES) {
       for (const [originalPath, signed] of packages[lane]) {
-        const path = originalPath.replaceAll("RSTorrent", product);
+        const path = originalPath.replaceAll("JSTorrent Preview", product === "RSTorrent" ? "JSTorrent Preview" : product);
         const file = join(root, path);
         mkdirSync(dirname(file), { recursive: true });
         writeFileSync(file, `package ${lane} ${path}`);
@@ -99,7 +99,7 @@ test("rehearsal assembles the same matrix without a published tag", async () => 
     const result = await data.assemble({ channel: "stable", version: "", tag: "" });
     assert.equal(result.release.tagName, `desktop-v${version}`);
     assert.equal(result.release.isPrerelease, false);
-    assert.equal(result.latest.notes, "Signed RSTorrent desktop release rehearsal.");
+    assert.equal(result.latest.notes, "Signed JSTorrent Preview desktop release rehearsal.");
     assert.equal(validateDesktopRelease({ ...result, tag: `desktop-v${version}`, repository }).version, version);
   } finally {
     rmSync(data.root, { recursive: true, force: true });
@@ -108,7 +108,7 @@ test("rehearsal assembles the same matrix without a published tag", async () => 
 
 test("rejects stale, incomplete, duplicated, and altered release legs", async () => {
   for (const mutation of [
-    (data) => writeFileSync(join(data.input, `desktop-release-linux-x86_64-${runId}-${attempt}`, `RSTorrent_${version}_amd64.AppImage`), "altered"),
+    (data) => writeFileSync(join(data.input, `desktop-release-linux-x86_64-${runId}-${attempt}`, `JSTorrent Preview_${version}_amd64.AppImage`), "altered"),
     (data) => rmSync(join(data.input, `desktop-release-linux-x86_64-${runId}-${attempt}`), { recursive: true }),
     (data) => {
       const old = join(data.input, `desktop-release-linux-x86_64-${runId}-${attempt}`);
@@ -153,7 +153,7 @@ test("refuses a leg with an absent updater signature or wrong version", async ()
   const data = fixture();
   try {
     mkdirSync(join(data.root, "target/release/bundle/nsis"), { recursive: true });
-    writeFileSync(join(data.root, `target/release/bundle/nsis/RSTorrent_${version}_x64-setup.exe`), "installer");
+    writeFileSync(join(data.root, `target/release/bundle/nsis/JSTorrent Preview_${version}_x64-setup.exe`), "installer");
     await assert.rejects(
       stageDesktopReleaseLeg({
         root: data.root, lane: "windows-x86_64", sourceSha, runId, attempt,

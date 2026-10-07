@@ -248,6 +248,7 @@ jobs:
     env:
       APPIMAGE_EXTRACT_AND_RUN: "1"
       PACKAGE_PRODUCT: ${{ needs.release-input.outputs.production == 'true' && 'JSTorrent' || 'RSTorrent' }}
+      PACKAGE_DISPLAY_NAME: ${{ needs.release-input.outputs.production == 'true' && 'JSTorrent' || 'JSTorrent Preview' }}
       HAS_UPDATER_SIGNING: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD != '' }}
       HAS_MACOS_SIGNING: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 != '' && secrets.MACOS_CERTIFICATE_PASSWORD != '' && secrets.MACOS_KEYCHAIN_PASSWORD != '' }}
       HAS_MACOS_NOTARIZATION: ${{ secrets.ASC_API_KEY_P8_BASE64 != '' && secrets.ASC_API_KEY_ID != '' && secrets.ASC_API_ISSUER_ID != '' }}
@@ -422,7 +423,7 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          APP_PATH="target/${{ matrix.rust_target }}/release/bundle/macos/$PACKAGE_PRODUCT.app"
+          APP_PATH="target/${{ matrix.rust_target }}/release/bundle/macos/$PACKAGE_DISPLAY_NAME.app"
           test -d "$APP_PATH"
           node scripts/validate-desktop-package.mjs --mac-app "$APP_PATH" --product "$PACKAGE_PRODUCT"
           python3 scripts/inspect-distribution.py --root "$APP_PATH" --output artifacts/distribution/macos.json
@@ -489,7 +490,7 @@ jobs:
           if ($installer.Count -ne 1) {
             throw "Expected one NSIS installer; found $($installer.Count)"
           }
-          $installDirectory = Join-Path $env:LOCALAPPDATA $env:PACKAGE_PRODUCT
+          $installDirectory = Join-Path $env:LOCALAPPDATA $env:PACKAGE_DISPLAY_NAME
           $executable = Join-Path $installDirectory 'rstorrent-desktop.exe'
           try {
             $install = Start-Process -FilePath $installer[0].FullName -ArgumentList '/S' -Wait -PassThru
@@ -638,6 +639,7 @@ jobs:
       RELEASE_VERSION: ${{ needs.release-input.outputs.version }}
       RELEASE_CHANNEL: ${{ needs.release-input.outputs.channel }}
       PACKAGE_PRODUCT: ${{ needs.release-input.outputs.production == 'true' && 'JSTorrent' || 'RSTorrent' }}
+      PACKAGE_DISPLAY_NAME: ${{ needs.release-input.outputs.production == 'true' && 'JSTorrent' || 'JSTorrent Preview' }}
       SOURCE_SHA: ${{ needs.release-input.outputs.source_sha }}
     steps:
       - name: Check out source
@@ -717,7 +719,7 @@ jobs:
           if [ "$RELEASE_CHANNEL" = latest ]; then KIND=(--prerelease); fi
           gh release create "$RELEASE_TAG" \
             --target "$SOURCE_SHA" \
-            --title "RSTorrent Desktop v$RELEASE_VERSION" \
+            --title "JSTorrent Preview Desktop v$RELEASE_VERSION" \
             --notes-file artifacts/desktop-release-output/notes.md \
             --draft "${KIND[@]}"
 

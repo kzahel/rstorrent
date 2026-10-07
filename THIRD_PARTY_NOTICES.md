@@ -104,12 +104,15 @@ currently unresolved advisory blockers and its expiring review date.
 
 ## JSTorrent Brand Assets
 
-Original desktop, Android adaptive/launcher/store, extension and shared web icon
-assets are copied unchanged from `kzahel/jstorrent` revision
+Original desktop, Android adaptive/launcher/store, iOS app/header, extension,
+shared web, gateway and website icon assets are copied unchanged from `kzahel/jstorrent` revision
 `25e4b701433fd815398ba89526546f5e4f072e3f` under its MIT license, copyright
 2025 Kyle Graehl. Reuse preserves the established first-party product identity
 for in-place succession. `distribution/branding/jstorrent-assets.json` records
 each exact source path, destination and SHA-256; the original permission and
 copyright text lives in `distribution/branding/JSTorrent-LICENSE.txt`. Desktop
 and Android generated binary notices include that text, and the extension
-packages it as `LICENSE.jstorrent.txt`. No third-party logo is substituted.
+packages it as `LICENSE.jstorrent.txt`. The iOS app bundles
+`App/Branding/JSTorrent-LICENSE.txt`; the website serves
+`LICENSE.jstorrent.txt`, and the gateway retains the original license beside
+its embedded image. No third-party logo is substituted.

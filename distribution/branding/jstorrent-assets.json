@@ -155,6 +155,56 @@
       "source": "LICENSE.md",
       "path": "clients/extension/LICENSE.jstorrent.txt",
       "sha256": "b3b3b34d5a55b59e8f1475ddbe1d2f1648cf98ad0cd95b93cfdf3dd844d8acda"
+    },
+    {
+      "source": "ios/JSTorrent/Resources/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png",
+      "path": "clients/ios/App/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
+      "sha256": "44b18409034729e0aa355f54e570da3b4a659c77332f1784a3c16107c301c4fd"
+    },
+    {
+      "source": "desktop/tauri-app/src-tauri/icons/128x128@2x.png",
+      "path": "website/public/jstorrent.png",
+      "sha256": "848c84d7582dff5a1fc4464f85300f0e06193df415e0f0c13dca426ce1ba196c"
+    },
+    {
+      "source": "LICENSE.md",
+      "path": "website/public/LICENSE.jstorrent.txt",
+      "sha256": "b3b3b34d5a55b59e8f1475ddbe1d2f1648cf98ad0cd95b93cfdf3dd844d8acda"
+    },
+    {
+      "source": "LICENSE.md",
+      "path": "clients/ios/App/Branding/JSTorrent-LICENSE.txt",
+      "sha256": "b3b3b34d5a55b59e8f1475ddbe1d2f1648cf98ad0cd95b93cfdf3dd844d8acda"
+    },
+    {
+      "source": "ios/JSTorrent/Resources/Assets.xcassets/HeaderAppIcon.imageset/Contents.json",
+      "path": "clients/ios/App/Assets.xcassets/HeaderAppIcon.imageset/Contents.json",
+      "sha256": "482fb031f9146ba7f74dbd62734c91702e8ceff9123db979f7dbb054b5cd653a"
+    },
+    {
+      "source": "ios/JSTorrent/Resources/Assets.xcassets/HeaderAppIcon.imageset/HeaderAppIcon@2x.png",
+      "path": "clients/ios/App/Assets.xcassets/HeaderAppIcon.imageset/HeaderAppIcon@2x.png",
+      "sha256": "5faaca5ccc3a9d178dc17453fe0a3b78e789d367761f9cb55d804af647f824c3"
+    },
+    {
+      "source": "ios/JSTorrent/Resources/Assets.xcassets/HeaderAppIcon.imageset/HeaderAppIcon@3x.png",
+      "path": "clients/ios/App/Assets.xcassets/HeaderAppIcon.imageset/HeaderAppIcon@3x.png",
+      "sha256": "628b13d90a7f5d172d9a8785282815d167a30e191563f11a4e901d423b5b7c18"
+    },
+    {
+      "source": "extension/public/icons/js-128.png",
+      "path": "crates/rstorrent-gateway/resources/jstorrent.png",
+      "sha256": "5ac4f88d3d5a5b05758e6282696433579fe16307849c3a91e4a3901506f885e2"
+    },
+    {
+      "source": "LICENSE.md",
+      "path": "crates/rstorrent-gateway/resources/LICENSE.jstorrent.txt",
+      "sha256": "b3b3b34d5a55b59e8f1475ddbe1d2f1648cf98ad0cd95b93cfdf3dd844d8acda"
+    },
+    {
+      "source": "extension/public/icons/js-128.png",
+      "path": "clients/android/app/src/main/res/drawable/jstorrent_brand.png",
+      "sha256": "5ac4f88d3d5a5b05758e6282696433579fe16307849c3a91e4a3901506f885e2"
     }
   ]
 }

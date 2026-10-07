@@ -54,6 +54,31 @@ final class ProductSurfaceUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
     }
 
+    // Retain actual simulator screens for cross-surface visual review.
+    func testBrandAuditScreens() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        waitUntilReady(app)
+        captureAuditScreen("ios-library")
+        app.buttons["add-torrent"].tap()
+        XCTAssertTrue(app.navigationBars["Add Torrent"].waitForExistence(timeout: 5))
+        captureAuditScreen("ios-add")
+        app.navigationBars.buttons.firstMatch.tap()
+        app.buttons["open-settings"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        captureAuditScreen("ios-settings")
+        app.swipeUp()
+        captureAuditScreen("ios-settings-background")
+    }
+
+    private func captureAuditScreen(_ name: String) {
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     private func waitUntilReady(_ app: XCUIApplication) {
         let ready = NSPredicate(format: "label == %@", "Ready")
         expectation(for: ready, evaluatedWith: app.staticTexts["Ready"])

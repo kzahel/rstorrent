@@ -8175,5 +8175,23 @@
       "type": 0,
       "value": "Report a problem"
     }
+  ],
+  "updates.command-copied": [
+    {
+      "type": 0,
+      "value": "Update command copied. Run it in a shell on this server."
+    }
+  ],
+  "updates.command-copy-failed": [
+    {
+      "type": 0,
+      "value": "The command could not be copied. Check browser clipboard access and try again."
+    }
+  ],
+  "updates.copy-command": [
+    {
+      "type": 0,
+      "value": "Copy update command"
+    }
   ]
 }

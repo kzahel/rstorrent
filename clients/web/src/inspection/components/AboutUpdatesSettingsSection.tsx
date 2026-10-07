@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { message as localizedMessage } from "../../localization/runtime";
 import { progressPercent } from "../updater/controller";
 import type {
@@ -20,6 +21,7 @@ export function AboutUpdatesSettingsSection({
   snapshot,
 }: AboutUpdatesSettingsSectionProps) {
   const { info, state } = snapshot;
+  const [commandCopyStatus, setCommandCopyStatus] = useState<"copied" | "failed">();
   return (
     <div className={styles.aboutUpdates}>
       <fieldset className={styles.section}>
@@ -85,7 +87,21 @@ export function AboutUpdatesSettingsSection({
         {state.phase === "available" && state.manualApply !== undefined ? (
           <div className={styles.manualUpdate}>
             <strong>{localizedMessage("inspection.components.about.updates.settings.section.apply.from.a.shell.on.this.server")}</strong>
-            <code>{state.manualApply.command}</code>
+            <div className={styles.updateActions}>
+              <button type="button" onClick={async () => {
+                const command = state.manualApply?.command;
+                if (command === undefined) return;
+                try {
+                  await navigator.clipboard.writeText(command);
+                  setCommandCopyStatus("copied");
+                } catch {
+                  setCommandCopyStatus("failed");
+                }
+              }}>{localizedMessage("updates.copy-command")}</button>
+            </div>
+            <p role="status">{commandCopyStatus === undefined ? null : commandCopyStatus === "copied"
+              ? localizedMessage("updates.command-copied")
+              : localizedMessage("updates.command-copy-failed")}</p>
             <a href={state.manualApply.releaseUrl} rel="noreferrer" target="_blank">{localizedMessage("inspection.components.about.updates.settings.section.review.signed.release")}</a>
           </div>
         ) : null}

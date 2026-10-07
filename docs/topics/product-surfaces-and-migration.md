@@ -2,6 +2,17 @@
 
 Topic: `product-surfaces-and-migration`
 
+Tactical [258](../tactical/258-cross-surface-branding-and-design-audit.md)
+completes the user-directed cross-surface display-brand audit. JSTorrent copy and
+original assets now cover iOS/system labels, mobile headers, extension/Linux
+onboarding, gateway and bootstrap fallbacks, support exports and website.
+Desktop incubation packages display **JSTorrent Preview**; artifact staging
+follows that filename while internal product selectors, identifiers, endpoints
+and trust roots remain intact. Local native/build/render evidence and remaining
+store/installed-platform gates are recorded in the
+[audit execution record](../tactical/258-cross-surface-branding-and-design-audit.md). This changes no
+publication, deployment, migration or production identity decision.
+
 Tactical [257](../tactical/257-play-upgrade-and-fresh-signed-candidates.md)
 adds bounded physical Play 1.0.23-to-1.0.25 standalone migration evidence.
 The [receipt](../evidence/android-play-upgrade-257.json) records retained rows,

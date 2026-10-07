@@ -281,7 +281,7 @@ async function hello(
     signal === undefined ? timeout : AbortSignal.any([signal, timeout]);
   const value =
     (await companionJson(endpoint, "/hello", {
-      headers: { "X-RSTorrent-Installation": installationId },
+      headers: { "X-JSTorrent-Installation": installationId },
       signal: combined,
     })) as CompanionHello;
   if (value.product !== "rstorrent" || value.backend !== "android" ||
@@ -289,7 +289,7 @@ async function hello(
       !Number.isSafeInteger(value.protocol_max) || value.protocol_max < value.protocol_min ||
       !PORTS.includes(value.port as (typeof PORTS)[number]) ||
       value.port !== Number(new URL(endpoint).port) || typeof value.paired !== "boolean") {
-    throw new Error("The ARC endpoint is not a compatible RSTorrent Android service");
+    throw new Error("The ARC endpoint is not a compatible JSTorrent Android service");
   }
   boundedIdentifier(value.nonce, "hello nonce");
   if (value.protocol_min > 1 || value.protocol_max < 1) {
@@ -379,7 +379,7 @@ export class AndroidPlatformClient implements ApplicationWebSocketPlatformClient
           Accept: "application/json",
           Authorization: `Bearer ${this.credential}`,
           "Content-Type": "application/json",
-          "X-RSTorrent-Installation": this.installationId,
+          "X-JSTorrent-Installation": this.installationId,
         },
         body: JSON.stringify(request),
         ...(signal === undefined ? {} : { signal }),

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>JSTorrent Chromebook setup and troubleshooting</title>
     <link rel="stylesheet" href="setup.css" />
+    <script type="module" src="setup.js"></script>
   </head>
   <body>
     <main>
@@ -30,7 +31,7 @@
       </section>
       <p class="intro">
         ChromeOS Linux runs the Rust torrent engine and serves the complete
-        RSTorrent interface to Chrome. This extension provides the handoff; it
+        JSTorrent interface to Chrome. This extension provides the handoff; it
         cannot wake a fully stopped Linux environment by itself.
       </p>
 
@@ -38,10 +39,10 @@
         <h2>Install the preview</h2>
         <ol>
           <li>Enable <strong>Linux development environment</strong> in ChromeOS Settings only where offered and permitted.</li>
-          <li>Run the <a href="https://rstorrent.com/install-crostini.sh" target="_blank" rel="noopener noreferrer">official authenticated installer</a> in Terminal with <code>curl -fsSL https://rstorrent.com/install-crostini.sh | bash</code>. It verifies the signed release manifest and package hash, then installs the app automatically.</li>
+          <li>Run the <a href="https://rstorrent.com/install-crostini.sh" target="_blank" rel="noopener noreferrer">official authenticated installer</a> in Terminal using <button type="button" data-command="curl -fsSL https://rstorrent.com/install-crostini.sh | bash">Copy installer command</button>. It verifies the signed release manifest and package hash, then installs the app automatically.</li>
           <li>
-            Open <strong>RSTorrent for ChromeOS Linux</strong> from the Chromebook
-            Launcher. It wakes Linux, starts RSTorrent, and returns to Chrome.
+            Open <strong>JSTorrent for ChromeOS Linux</strong> from the Chromebook
+            Launcher. It wakes Linux, starts JSTorrent, and returns to Chrome.
           </li>
         </ol>
         <p>For an already authenticated local package, extract it in Linux files, open Terminal in the extracted folder, and run <code>./install.sh</code> instead of the website command. A development candidate is not automatically a published release.</p>
@@ -59,7 +60,7 @@
 
       <section id="linux-recovery">
         <h2>Linux page unavailable</h2>
-        <p>Open <strong>Terminal</strong> from the Chromebook Launcher, select <strong>penguin</strong> if offered, and wait for the Linux command prompt. Then open <strong>RSTorrent for ChromeOS Linux</strong> from the Launcher and retry the extension's <a href="connect.html">Linux connection</a>.</p>
+        <p>Open <strong>Terminal</strong> from the Chromebook Launcher, select <strong>penguin</strong> if offered, and wait for the Linux command prompt. Then open <strong>JSTorrent for ChromeOS Linux</strong> from the Launcher and retry the extension's <a href="connect.html">Linux connection</a>.</p>
         <p>Current versions use <code>http://jstorrent.localhost:3030</code>, a local connection forwarded by ChromeOS to your Linux app. This avoids the Linux hostname-registration failure observed on some ChromeOS 150 systems. It opens the same Linux library and download folders.</p>
         <p>If an older bookmark or installed version opens <code>penguin.linux.test</code>, update the Linux app and extension together, then launch the app again. Browser approval and appearance preferences may need to be set again for the new address; your Linux library stays in place.</p>
         <p>A failed check cannot identify whether Linux startup, local forwarding, browser permission or the app is responsible. If Terminal also fails, resolve its stated error first. Keep your Linux environment and files; deleting your library will not repair connectivity.</p>
@@ -71,19 +72,20 @@
         <p>
           Downloads initially use Linux <code>~/Downloads</code>. To use a
           Chromebook folder, choose <strong>Share with Linux</strong> in the
-          Files app before adding it in RSTorrent.
+          Files app before adding it in JSTorrent.
         </p>
         <dl>
           <dt>Check the installed backend</dt>
-          <dd><code>rstorrent-crostini status</code></dd>
+          <dd><button type="button" data-command="rstorrent-crostini status">Copy status command</button></dd>
           <dt>Restart the backend</dt>
-          <dd><code>systemctl --user restart com.jstorrent.rstorrent.crostini.service</code></dd>
+          <dd><button type="button" data-command="systemctl --user restart com.jstorrent.rstorrent.crostini.service">Copy restart command</button></dd>
           <dt>Remove app files, keep profile and downloads</dt>
-          <dd><code>rstorrent-crostini uninstall</code></dd>
+          <dd><button type="button" data-command="rstorrent-crostini uninstall">Copy removal command</button></dd>
           <dt>Also remove the Crostini profile</dt>
-          <dd><code>rstorrent-crostini uninstall --purge</code></dd>
+          <dd><button type="button" data-command="rstorrent-crostini uninstall --purge">Copy removal and profile command</button></dd>
         </dl>
       </section>
+      <p id="command-status" role="status" aria-live="polite"></p>
     </main>
   </body>
 </html>

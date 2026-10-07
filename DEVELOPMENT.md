@@ -466,6 +466,7 @@ gate after presentation-copy changes:
 
 ```bash
 node scripts/check-localization.mjs
+node scripts/check-branding.mjs
 ```
 
 Regenerate and validate the shared React catalog with:

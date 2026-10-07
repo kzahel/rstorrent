@@ -22,7 +22,7 @@ export function buildDiagnostics(snapshot: DesktopUpdaterSnapshot): string {
   const { info, state } = snapshot;
   const report = {
     schema: 1,
-    product: "RSTorrent",
+    product: "JSTorrent",
     version: bounded(info.version, /^\d{1,6}\.\d{1,6}\.\d{1,6}(?:-(?:alpha|beta|rc)(?:\.\d{1,6})?)?$/),
     build: bounded(info.buildId, /^(?:[a-f0-9]{7,40}(?:-dirty)?|local|development|unknown)$/i),
     target: member(info.target, TARGETS),
@@ -41,4 +41,4 @@ export function buildDiagnostics(snapshot: DesktopUpdaterSnapshot): string {
   return text;
 }
 
-export const DIAGNOSTICS_FILENAME = "rstorrent-diagnostics.json";
+export const DIAGNOSTICS_FILENAME = "jstorrent-diagnostics.json";

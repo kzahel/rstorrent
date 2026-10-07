@@ -1,6 +1,6 @@
 {
   "id": "rstorrent",
-  "displayName": "RSTorrent",
+  "displayName": "JSTorrent Preview",
   "hostnames": ["updates.graehlarts.com"],
   "pathPrefix": "/rstorrent",
   "githubRepo": "kzahel/rstorrent",

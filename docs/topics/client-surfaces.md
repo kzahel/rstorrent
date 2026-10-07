@@ -2,6 +2,17 @@
 
 Topic: `client-surfaces`
 
+Tactical [258](../tactical/258-cross-surface-branding-and-design-audit.md)
+completes a cross-surface JSTorrent branding audit. Native Android and iOS headers
+use the original box; iOS app/permission/catalog labels and AppIcon now match
+JSTorrent. Compiled phone/iPad and API-35 Android evidence, a validated macOS
+JSTorrent Preview bundle, shared React/extension rendering and source-only
+Windows/Linux limits are retained in the
+[audit execution record](../tactical/258-cross-surface-branding-and-design-audit.md). No engine owner,
+platform identity, persistence, updater trust or store route changes. The iOS
+runtime card, native onboarding hierarchy and current store screenshot campaign
+remain explicit design follow-ups.
+
 Tactical 253 now makes `http://jstorrent.localhost:3030` the primary Linux
 browser route. Its dedicated loopback name bypasses ChromeOS Linux DNS
 registration and keeps host-only cookies separate from bare localhost apps.
@@ -390,7 +401,7 @@ Completed Tactical
 first UI-complete Android product for the current application boundary. Its
 single-stack Material 3 Library, six-tab torrent detail, Speed, dual-family
 DHT, structured Logs, and Settings hierarchy deliberately follow JSTorrent
-Android standalone with RSTorrent branding and honest capability gaps.
+Android standalone with JSTorrent branding and honest capability gaps.
 Completed Tactical
 [`172`](../tactical/172-provisional-magnet-display-name.md) gives the shared
 web, Android, iOS, and desktop-notification presentation boundary one
@@ -681,7 +692,7 @@ Tactical `117` makes that reuse direction concrete: a single-stack Material 3
 Library leads to one torrent detail route with Details, Status, Files,
 Trackers, Peers, and Pieces tabs, while Speed, dual-family DHT, structured
 Logs, and Settings remain global routes. Preserve JSTorrent's hierarchy,
-interaction rhythm, and density with RSTorrent branding. Replace QuickJS-
+interaction rhythm, and density with JSTorrent branding. Replace QuickJS-
 specific health presentation with Rust-native application metrics, and never
 enable a setting whose durable/effective behavior is absent.
 

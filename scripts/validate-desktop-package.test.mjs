@@ -68,7 +68,7 @@ test("requires an executable native host in the macOS application", () => {
 
 test("accepts a Linux handler that forwards one URL list", () => {
   validateLinuxDesktop(`[Desktop Entry]
-Name=RSTorrent
+Name=JSTorrent Preview
 Exec=rstorrent-desktop %U
 Terminal=false
 Type=Application
@@ -80,7 +80,7 @@ test("rejects a Linux handler that advertises but drops activations", () => {
   assert.throws(
     () =>
       validateLinuxDesktop(`[Desktop Entry]
-Name=RSTorrent
+Name=JSTorrent Preview
 Exec=rstorrent-desktop
 Terminal=false
 Type=Application

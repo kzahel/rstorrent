@@ -2,6 +2,13 @@
 
 Topic: `oracle-driven-engine-campaign`
 
+Completed [258](../tactical/258-cross-surface-branding-and-design-audit.md)
+changes only engine-facing presentation labels: RS peer-ID display and UPnP
+mapping description now say JSTorrent while their wire/ownership behavior stays
+unchanged. Its focused pinned-source/specification/test review and full passing
+workspace are recorded in the tactical and audit report. No active engine
+feature checkpoint, resource limit or next action is displaced by this cleanup.
+
 Tactical [253](../tactical/253-chromeos-onboarding-recovery-and-physical-qualification.md)
 has a bounded completion-projection checkpoint: the pinned admission oracle was
 re-inspected, the regression first failed on Downloading versus Seeding, and the

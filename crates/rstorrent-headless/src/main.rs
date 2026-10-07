@@ -191,12 +191,12 @@ async fn update(apply: bool) -> Result<(), rstorrent_headless::runtime::Headless
     let layout = InstalledLayout::discover()?;
     let client = UpdateClient::production()?;
     let Some(candidate) = client.check(&layout.version).await? else {
-        println!("RSTorrent Headless {} is up to date.", layout.version);
+        println!("JSTorrent Headless {} is up to date.", layout.version);
         return Ok(());
     };
     if !apply {
         println!(
-            "RSTorrent Headless {} is available (current {}).",
+            "JSTorrent Headless {} is available (current {}).",
             candidate.version(),
             layout.version
         );
@@ -205,12 +205,12 @@ async fn update(apply: bool) -> Result<(), rstorrent_headless::runtime::Headless
         return Ok(());
     }
     println!(
-        "Downloading and verifying RSTorrent Headless {}...",
+        "Downloading and verifying JSTorrent Headless {}...",
         candidate.version()
     );
     let outcome = client.apply(&candidate).await?;
     println!(
-        "Installed RSTorrent Headless {} with health-checked service recovery.",
+        "Installed JSTorrent Headless {} with health-checked service recovery.",
         outcome.version
     );
     Ok(())
@@ -224,7 +224,7 @@ fn install(bundle: &Path) -> Result<(), rstorrent_headless::runtime::HeadlessErr
     }
     let outcome = installer::install_bundle(bundle)?;
     let paths = installer::InstallPaths::system()?;
-    println!("Installed RSTorrent Headless {}.", outcome.version);
+    println!("Installed JSTorrent Headless {}.", outcome.version);
     if outcome.config_example_created {
         println!(
             "Created protected configuration example: {}",
@@ -262,7 +262,7 @@ fn print_status() -> Result<(), rstorrent_headless::runtime::HeadlessError> {
 fn uninstall() -> Result<(), rstorrent_headless::runtime::HeadlessError> {
     let paths = installer::InstallPaths::system()?;
     installer::uninstall()?;
-    println!("Removed RSTorrent Headless application files and user service.");
+    println!("Removed JSTorrent Headless application files and user service.");
     println!("Preserved configuration: {}", paths.config.display());
     println!(
         "Preserved configuration example: {}",

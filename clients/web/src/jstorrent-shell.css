@@ -1,0 +1,21 @@
+/* Available before the application bundle, including a failed bootstrap. */
+#rstorrent-boot-status, #app > [role="alert"]:only-child, #app > noscript {
+  box-sizing: border-box;
+  display: block;
+  width: min(480px, calc(100% - 48px));
+  margin: 12vh auto 24px;
+  padding: 32px;
+  border: 1px solid #cfd7df;
+  border-radius: 16px;
+  background: #fff;
+  color: #172333;
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  overflow-wrap: anywhere;
+}
+#rstorrent-boot-status::before, #app > [role="alert"]:only-child::before {
+  display: block; content: ""; width: 64px; height: 64px; margin-bottom: 24px;
+  background: url("./assets/jstorrent.png") center / contain no-repeat;
+}
+@media (prefers-color-scheme: dark) {
+  #rstorrent-boot-status, #app > [role="alert"]:only-child, #app > noscript { background: #172333; color: #e2e8f0; border-color: #334155; }
+}

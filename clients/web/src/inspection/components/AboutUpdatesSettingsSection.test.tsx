@@ -64,7 +64,8 @@ describe("About and updates settings", () => {
     expect(updater.selectChannel).toHaveBeenCalledWith("latest");
   });
 
-  it("shows the headless apply command without a browser install action", () => {
+  it("offers the headless update command without a browser install action", async () => {
+    const user = userEvent.setup();
     const updater = fakeUpdater();
     const view = render(
       <AboutUpdatesSettingsSection
@@ -91,11 +92,11 @@ describe("About and updates settings", () => {
         }}
       />,
     );
-    expect(
-      within(view.container).getByText(
-        "$HOME/.local/bin/rstorrent-headless update --apply",
-      ),
-    ).toBeVisible();
+    expect(within(view.container).getByRole("button", { name: "Copy update command" })).toBeVisible();
+    expect(view.container.textContent).not.toContain("rstorrent-headless");
+    await user.click(within(view.container).getByRole("button", { name: "Copy update command" }));
+    expect(await navigator.clipboard.readText()).toBe("$HOME/.local/bin/rstorrent-headless update --apply");
+    expect(within(view.container).getByRole("status").textContent).toContain("Update command copied");
     expect(
       within(view.container).getByText(/no installation identifier/i),
     ).toBeVisible();

@@ -61,7 +61,7 @@ export function validateDesktopReleaseConfiguration({
   if (!changelog.includes(`## [${version}]`)) {
     fail(`CHANGELOG.md has no ${version} entry`);
   }
-  if (tauri.productName !== "RSTorrent") {
+  if (tauri.productName !== "JSTorrent Preview") {
     fail(`unexpected desktop product name: ${tauri.productName}`);
   }
   if (tauri.identifier !== EXPECTED_IDENTIFIER) {
@@ -326,7 +326,7 @@ export function validateDesktopReleaseConfiguration({
 
   const expectedProduct = {
     id: "rstorrent",
-    displayName: "RSTorrent",
+    displayName: "JSTorrent Preview",
     hostnames: ["updates.graehlarts.com"],
     pathPrefix: "/rstorrent",
     githubRepo: "kzahel/rstorrent",

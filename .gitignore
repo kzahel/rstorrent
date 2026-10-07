@@ -41,3 +41,6 @@ __pycache__/
 
 # Reproducible external source references
 /reference/*/
+
+# Local branding audit report, screenshots and evidence
+/docs/evidence/258-brand-audit/

@@ -26,6 +26,7 @@ export const packagedFiles = Object.freeze([
   "popup/platform.js",
   "crostini/setup.html",
   "crostini/setup.css",
+  "crostini/setup.js",
   "crostini/connect.html",
   "crostini/connect.js",
   "src/service-worker.js",
@@ -172,8 +173,13 @@ export function validateSource(production = false) {
     fail("popup surfaces must start hidden until the platform decision completes");
   }
   const setup = readFileSync(path.join(extensionRoot, "crostini/setup.html"), "utf8");
-  if (/<script/iu.test(setup) || /\son[a-z]+\s*=/iu.test(setup)) {
-    fail("Crostini setup must remain a static offline document");
+  const setupModule = '<script type="module" src="setup.js"></script>';
+  if (!setup.includes(setupModule) || /<script/iu.test(setup.replace(setupModule, "")) || /\son[a-z]+\s*=/iu.test(setup)) {
+    fail("Crostini setup must use only its local clipboard module");
+  }
+  const setupScript = readFileSync(path.join(extensionRoot, "crostini/setup.js"), "utf8");
+  if (/\b(?:fetch|XMLHttpRequest|WebSocket|eval|import)\b/u.test(setupScript)) {
+    fail("Crostini setup clipboard module must remain offline");
   }
   const connection = readFileSync(path.join(extensionRoot, "crostini/connect.html"), "utf8");
   if (/<script(?![^>]*\bsrc=)/iu.test(connection) || /\son[a-z]+\s*=/iu.test(connection) ||

@@ -2,6 +2,20 @@
 
 Topic: `web-ui-design`
 
+Tactical [258](../tactical/258-cross-surface-branding-and-design-audit.md)
+completes the broader branded surface audit with an
+[audit execution record](../tactical/258-cross-surface-branding-and-design-audit.md). The website uses
+the original JSTorrent box and blue/navy palette; Linux setup follows system
+appearance, and the actual gateway handoff/bootstrap failure gain local branded
+styles. Remote sign-in uses shared appearance preferences/palette and a scrolling
+shell. Diagnostics use JSTorrent names; exact internal shell commands are
+clipboard actions, with an accessible stronger-color release link. The final
+53 browser capture states have no obsolete display brand, page-wide horizontal
+overflow, uncaught page errors or serious/critical Axe violations. Demo and
+mocked-platform rendering is distinguished from backend/installed evidence.
+Eight design/coverage follow-ups remain, including phone settings-category
+discoverability, dense Linux help and native empty-state hierarchy.
+
 Tactical 253 now opens the Linux library through the dedicated loopback
 address `jstorrent.localhost:3030` by default. No alternate-connection choice is
 needed. The existing bounded connection page retains exact-host permission,

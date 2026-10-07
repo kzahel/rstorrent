@@ -392,13 +392,13 @@ function checkIOSCatalog() {
   const info = fs.readFileSync(path.join(repositoryRoot, "clients/ios/App/Info.plist"), "utf8");
   const requiredInfo = {
     "BitTorrent metainfo": { plistKey: "UTTypeDescription", value: "BitTorrent metainfo" },
-    CFBundleDisplayName: { plistKey: "CFBundleDisplayName", value: "RSTorrent" },
-    CFBundleName: { plistKey: "CFBundleName", value: "RSTorrent", source: "$(PRODUCT_NAME)" },
+    CFBundleDisplayName: { plistKey: "CFBundleDisplayName", value: "JSTorrent" },
+    CFBundleName: { plistKey: "CFBundleName", value: "JSTorrent" },
     CFBundleTypeName: { plistKey: "CFBundleTypeName", value: "BitTorrent metainfo" },
     CFBundleURLName: { plistKey: "CFBundleURLName", value: "Magnet link" },
     NSLocalNetworkUsageDescription: {
       plistKey: "NSLocalNetworkUsageDescription",
-      value: "RSTorrent connects directly to peers on your local network.",
+      value: "JSTorrent connects directly to peers on your local network.",
     },
   };
   const infoIds = Object.keys(infoCatalog.strings).sort();

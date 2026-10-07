@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "RSTorrent",
+  "productName": "JSTorrent Preview",
   "version": "0.3.0",
   "identifier": "com.jstorrent.rstorrent",
   "build": {
@@ -48,7 +48,7 @@
     ],
     "category": "Utility",
     "shortDescription": "First-party BitTorrent client powered by Rust",
-    "longDescription": "RSTorrent is an unreleased first-party BitTorrent client with an in-process Rust engine.",
+    "longDescription": "JSTorrent Preview is an experimental BitTorrent client with an in-process Rust engine.",
     "linux": {
       "deb": {
         "desktopTemplate": "./linux/rstorrent.desktop"

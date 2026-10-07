@@ -33,7 +33,7 @@ for (const width of [320, 1440]) {
       const pending = page.waitForEvent("download");
       await page.getByRole("button", { name: "Download diagnostics" }).click();
       const download = await pending;
-      expect(download.suggestedFilename()).toBe("rstorrent-diagnostics.json");
+      expect(download.suggestedFilename()).toBe("jstorrent-diagnostics.json");
       const file = await download.path();
       expect(file).not.toBeNull();
       expect(await fs.readFile(file!, "utf8")).toBe(bytes);

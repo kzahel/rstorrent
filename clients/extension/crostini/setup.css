@@ -116,3 +116,15 @@ summary { cursor: pointer; font-weight: 600; }
     padding: 18px;
   }
 }
+
+/* Follow the same system appearance as the extension popup. */
+@media (prefers-color-scheme: light) {
+  :root { background: #f5f7fa; color: #172333; }
+  body { background: #f5f7fa; }
+  section { border-color: #cfd7df; background: #fff; box-shadow: 0 8px 24px rgb(23 35 51 / 4%); }
+  h2 { color: #172333; }
+  .eyebrow, code, a { color: #145da8; }
+  .intro, dt { color: #536274; }
+  button { border-color: #145da8; background: #1769bd; color: #fff; }
+  button:focus-visible { outline-color: #087dcc; }
+}

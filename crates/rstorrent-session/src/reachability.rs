@@ -2672,7 +2672,7 @@ mod tests {
                                 soap_response(
                                     action,
                                     &format!(
-                                        "<NewInternalPort>{internal_port}</NewInternalPort><NewInternalClient>127.0.0.1</NewInternalClient><NewEnabled>1</NewEnabled><NewPortMappingDescription>RSTorrent</NewPortMappingDescription><NewLeaseDuration>3600</NewLeaseDuration>"
+                                        "<NewInternalPort>{internal_port}</NewInternalPort><NewInternalClient>127.0.0.1</NewInternalClient><NewEnabled>1</NewEnabled><NewPortMappingDescription>JSTorrent</NewPortMappingDescription><NewLeaseDuration>3600</NewLeaseDuration>"
                                     ),
                                 ),
                             )
@@ -2819,7 +2819,7 @@ mod tests {
                             "200 OK",
                             soap_response(
                                 action,
-                                "<NewInternalPort>42000</NewInternalPort><NewInternalClient>127.0.0.1</NewInternalClient><NewEnabled>1</NewEnabled><NewPortMappingDescription>RSTorrent</NewPortMappingDescription><NewLeaseDuration>1</NewLeaseDuration>",
+                                "<NewInternalPort>42000</NewInternalPort><NewInternalClient>127.0.0.1</NewInternalClient><NewEnabled>1</NewEnabled><NewPortMappingDescription>JSTorrent</NewPortMappingDescription><NewLeaseDuration>1</NewLeaseDuration>",
                             ),
                         ),
                         "GetSpecificPortMappingEntry" => (

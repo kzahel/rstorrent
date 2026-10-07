@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# RSTorrent ChromeOS Linux installer.
+# JSTorrent ChromeOS Linux installer.
 # Usage: curl -fsSL https://rstorrent.com/install-crostini.sh | bash
 #
-# The HTTPS bootstrap carries the RSTorrent beta release public key. It
+# The HTTPS bootstrap carries the JSTorrent beta release public key. It
 # verifies a detached Minisign signature over the canonical release manifest,
 # then verifies the selected package's signed size and SHA-256 before extracting
 # or executing any package byte.
@@ -381,17 +381,17 @@ installer_main() (
         error "Requested ${requested_version}, but the signed manifest is ${RELEASE_VERSION}."
         return 1
     fi
-    info "Verified signed release manifest for RSTorrent ${RELEASE_VERSION}."
+    info "Verified signed release manifest for JSTorrent ${RELEASE_VERSION}."
 
     local installed_binary="${HOME}/.local/bin/rstorrent-crostini"
     if [ -x "$installed_binary" ]; then
         local installed_output installed_version
         installed_output=$("$installed_binary" --version) || {
-            error "The installed RSTorrent launcher failed its version self-test."
+            error "The installed JSTorrent launcher failed its version self-test."
             return 1
         }
         if [[ ! "$installed_output" =~ ^rstorrent-crostini\ ((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$ ]]; then
-            error "The installed RSTorrent launcher reported an invalid version."
+            error "The installed JSTorrent launcher reported an invalid version."
             return 1
         fi
         installed_version="${BASH_REMATCH[1]}"
@@ -416,13 +416,13 @@ installer_main() (
     validate_extracted_bundle "$bundle" "$RELEASE_VERSION" || return 1
     "$bundle/install.sh" || return 1
     if [ "$("$installed_binary" --version)" != "rstorrent-crostini ${RELEASE_VERSION}" ]; then
-        error "Installed RSTorrent version does not match the signed release."
+        error "Installed JSTorrent version does not match the signed release."
         return 1
     fi
 
     printf '\n'
-    info "RSTorrent for ChromeOS Linux ${RELEASE_VERSION} is installed."
-    printf '%s\n' "Open ‘RSTorrent for ChromeOS Linux’ from the Chromebook Launcher."
+    info "JSTorrent for ChromeOS Linux ${RELEASE_VERSION} is installed."
+    printf '%s\n' "Open ‘JSTorrent for ChromeOS Linux’ from the Chromebook Launcher."
     printf '%s\n' "Useful commands:"
     printf '%s\n' "  rstorrent-crostini status"
     printf '%s\n' "  rstorrent-crostini uninstall"

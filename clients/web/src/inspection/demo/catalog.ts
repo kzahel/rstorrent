@@ -2051,7 +2051,7 @@ function buildPeers(
   seconds: number,
   torrentProgress: number,
 ): PeerRow[] {
-  const clients = ["libtorrent 2.0.13", "qBittorrent 5.1", "Transmission 4.1", "Deluge 2.2", "WebTorrent 2.8", "RSTorrent dev"];
+  const clients = ["libtorrent 2.0.13", "qBittorrent 5.1", "Transmission 4.1", "Deluge 2.2", "WebTorrent 2.8", "JSTorrent dev"];
   const sources = ["tracker", "dht", "tracker", "dht", "pex", "manual"] as const;
   const rows: PeerRow[] = [];
   for (let index = 0; index < count; index += 1) {

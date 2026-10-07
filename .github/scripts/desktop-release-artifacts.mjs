@@ -21,6 +21,7 @@ function requireValue(value, pattern, label) {
 
 function laneFiles(lane, version, product = "RSTorrent") {
   if (!["RSTorrent", "JSTorrent"].includes(product)) fail("unknown release product");
+  product = product === "RSTorrent" ? "JSTorrent Preview" : product;
   const mac = (arch, target) => [
     [`target/${target}/release/bundle/dmg/${product}_${version}_${arch}.dmg`, `${product}_${version}_${arch}.dmg`, false],
     [`target/${target}/release/bundle/macos/${product}.app.tar.gz`, `${product}_${arch}.app.tar.gz`, true],
@@ -125,7 +126,7 @@ export async function stageDesktopReleaseLeg({ root, lane, sourceSha, runId, att
 }
 
 function releaseNotes({ root, channel, version, publish, product }) {
-  if (!publish) return `Signed ${product} desktop release rehearsal.`;
+  if (!publish) return `Signed ${product === "RSTorrent" ? "JSTorrent Preview" : product} desktop release rehearsal.`;
   if (channel === "latest") return "Signed Latest build from verified main source.";
   const changelog = readFileSync(join(root, "CHANGELOG.md"), "utf8");
   const marker = `## [${version}]`;
@@ -139,6 +140,7 @@ function releaseNotes({ root, channel, version, publish, product }) {
 }
 
 function updaterPlatforms(version, tag, repository, assetDirectory, product) {
+  product = product === "RSTorrent" ? "JSTorrent Preview" : product;
   const prefix = `https://github.com/${repository}/releases/download/${tag}/`;
   const platforms = {};
   function add(keys, name) {

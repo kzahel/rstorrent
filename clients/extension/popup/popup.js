@@ -97,7 +97,7 @@ linuxButton.addEventListener("click", async () => {
     linuxStatus.textContent =
       error instanceof Error
         ? error.message
-        : "Use RSTorrent for ChromeOS Linux from the Chromebook Launcher.";
+        : "Use JSTorrent for ChromeOS Linux from the Chromebook Launcher.";
   } finally {
     linuxButton.disabled = false;
   }

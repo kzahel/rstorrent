@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 
 const PRODUCTION_EXTENSION_ORIGIN: &str = "chrome-extension://dbokmlpefliilbjldladbimlcfgbolhk/";
 const BETA_EXTENSION_ORIGIN: &str = "chrome-extension://gcgoepclopkgijmclmlheafaglmbjlcc/";
-const HOST_DESCRIPTION: &str = "RSTorrent desktop bootstrap";
+const HOST_DESCRIPTION: &str = "JSTorrent desktop bootstrap";
 const HOST_MANIFEST_FILENAME: &str = "com.jstorrent.rstorrent.native.json";
 const HOST_DIRECTORY: &str = "native-host";
 const MAX_HOST_BINARY_BYTES: u64 = 32 * 1024 * 1024;
@@ -557,7 +557,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let home = directory.path().join("home");
         let config = directory.path().join("config");
-        let desktop = absolute(directory.path(), "RSTorrent");
+        let desktop = absolute(directory.path(), "JSTorrent");
         let bundled_host = absolute(directory.path(), "rstorrent-native-host");
         fs::create_dir_all(home.join(".config/google-chrome")).unwrap();
         fs::write(&desktop, b"desktop").unwrap();
@@ -615,10 +615,10 @@ mod tests {
 
     #[test]
     fn mac_launch_targets_the_app_bundle_not_its_inner_executable() {
-        let desktop = Path::new("/Applications/RSTorrent.app/Contents/MacOS/rstorrent-desktop");
+        let desktop = Path::new("/Applications/JSTorrent.app/Contents/MacOS/rstorrent-desktop");
         assert_eq!(
             launch_config(Platform::MacOS, desktop).unwrap(),
-            LaunchConfig::mac_app(PathBuf::from("/Applications/RSTorrent.app"))
+            LaunchConfig::mac_app(PathBuf::from("/Applications/JSTorrent.app"))
         );
     }
 

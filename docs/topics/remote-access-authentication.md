@@ -2,6 +2,15 @@
 
 Topic: `remote-access-authentication`
 
+Tactical [258](../tactical/258-cross-surface-branding-and-design-audit.md)
+changes only remote presentation: the sign-in gate follows shared JSTorrent
+appearance/palette, applies existing saved preferences before connection, and
+scrolls within a phone viewport. Local light/dark and scroll-to-sign-in renders,
+full web tests and the packaged remote CSP check pass. Startup failure receives
+the independent branded alert style. Authentication, credentials, trust,
+transport authority and deployment status are unchanged. See the
+[audit execution record](../tactical/258-cross-surface-branding-and-design-audit.md).
+
 Tactical [254](../tactical/254-ci-candidate-and-pages-validation.md) restores
 Pages assembly of the remote client's hashed JSTorrent PNG. Hashed images/fonts
 are accepted alongside code/Wasm; unhashed assets and service workers remain

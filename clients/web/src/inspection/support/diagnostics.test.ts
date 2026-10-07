@@ -9,7 +9,7 @@ describe("local diagnostics allowlist", () => {
         target: "aarch64-apple-darwin", bundleType: "app", checkPrivacy: "anonymous" },
       state: { phase: "error", operation: "install", message: "/private/payload?token=secret" },
     };
-    expect(JSON.parse(buildDiagnostics(source))).toEqual({ schema: 1, product: "RSTorrent",
+    expect(JSON.parse(buildDiagnostics(source))).toEqual({ schema: 1, product: "JSTorrent",
       version: "0.1.3", build: "abcdef1234567-dirty", target: "aarch64-apple-darwin", package: "app",
       update_check_privacy: "anonymous", updater_phase: "error", updater_operation: "install" });
   });

@@ -1,6 +1,6 @@
 # Managed by rstorrent-headless. Operator overrides belong in systemd drop-ins.
 [Unit]
-Description=RSTorrent Headless Service
+Description=JSTorrent Headless Service
 Documentation=https://github.com/kzahel/rstorrent
 Wants=network-online.target
 After=network-online.target
