@@ -2,6 +2,13 @@
 
 Topic: `client-surfaces`
 
+Tactical [260](../tactical/260-android-shutdown-failure-containment.md) contains
+an observed physical Android shutdown exception at the client adapter boundary.
+Typed native cleanup errors remain visible after releasing the client; other
+failures and cancellation propagate. Both ABI builds, generated Kotlin and
+121 JVM tests pass. Physical shutdown/restart and endurance remain pending;
+engine, mapping leases and background policy are unchanged.
+
 Tactical [258](../tactical/258-cross-surface-branding-and-design-audit.md)
 completes a cross-surface JSTorrent branding audit. Native Android and iOS headers
 use the original box; iOS app/permission/catalog labels and AppIcon now match

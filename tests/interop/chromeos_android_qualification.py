@@ -224,11 +224,16 @@ def main():
     def diagnostic(name, *, failure=False):
         if args.diagnostics is None:
             return
-        operations = [("logcat", ("logcat", "-d", "-v", "threadtime", f"--uid={package_uid}", "-t", "1000"))]
+        operations = [
+            ("logcat", ("logcat", "-d", "-v", "threadtime", f"--uid={package_uid}", "-t", "1000")),
+            ("activities", ("shell", "dumpsys", "activity", "-p", PACKAGE, "activities")),
+            ("services", ("shell", "dumpsys", "activity", "services", PACKAGE)),
+        ]
         if failure:
-            operations += [("exit-info", ("shell", "dumpsys", "activity", "exit-info", PACKAGE)),
-                           ("services", ("shell", "dumpsys", "activity", "services", PACKAGE)),
-                           ("activities", ("shell", "dumpsys", "activity", "-p", PACKAGE, "activities"))]
+            operations += [
+                ("crash-logcat", ("logcat", "-b", "crash", "-d", "-v", "threadtime", f"--uid={package_uid}", "-t", "1000")),
+                ("exit-info", ("shell", "dumpsys", "activity", "exit-info", PACKAGE)),
+            ]
         for label, arguments in operations:
             try:
                 result = adb.run(*arguments, check=False)

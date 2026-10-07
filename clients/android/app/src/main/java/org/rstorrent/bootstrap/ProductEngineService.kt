@@ -4732,6 +4732,7 @@ class ProductEngineService : Service() {
             return
         }
         Log.i(TAG, "product_shutdown_begin reason=$reason")
+        var clientCleanupFailed = false
         try {
             initializationJob?.cancelAndJoin()
             lifecycleCoordinator.close()
@@ -4762,21 +4763,32 @@ class ProductEngineService : Service() {
             }
             notificationCoordinator.close()
             if (clientOpen) {
-                try {
-                    Log.i(TAG, "product_shutdown_client_begin")
-                    client.shutdown()
-                    Log.i(TAG, "product_shutdown_client_complete")
-                } finally {
-                    companionConnectionJob?.join()
-                    companionPairingJob?.join()
-                    companionRootJob?.join()
-                    companionRootRemovalJob?.join()
-                    safStorageJobs.forEach { it.join() }
-                    client.close()
-                    clientOpen = false
+                val failure =
+                    joinProductClientShutdown(
+                        shutdown = {
+                            Log.i(TAG, "product_shutdown_client_begin")
+                            client.shutdown()
+                            Log.i(TAG, "product_shutdown_client_complete")
+                        },
+                        release = {
+                            companionConnectionJob?.join()
+                            companionPairingJob?.join()
+                            companionRootJob?.join()
+                            companionRootRemovalJob?.join()
+                            safStorageJobs.forEach { it.join() }
+                            client.close()
+                            clientOpen = false
+                        },
+                    )
+                if (failure != null) {
+                    clientCleanupFailed = true
+                    reportError(failure)
                 }
             }
-            Log.i(TAG, "product_shutdown_complete reason=$reason")
+            Log.i(
+                TAG,
+                "product_shutdown_complete reason=$reason cleanup_failed=$clientCleanupFailed",
+            )
         } finally {
             releasePowerLock()
             stopForeground(STOP_FOREGROUND_REMOVE)

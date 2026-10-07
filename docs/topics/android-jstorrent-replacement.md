@@ -2,6 +2,13 @@
 
 Topic: `android-jstorrent-replacement`
 
+Tactical [260](../tactical/260-android-shutdown-failure-containment.md) contains
+an observed physical Android shutdown exception at the client adapter boundary.
+Typed native cleanup errors remain visible after releasing the client; other
+failures and cancellation propagate. Both ABI builds, generated Kotlin and
+121 JVM tests pass. Physical shutdown/restart and endurance remain pending;
+engine, mapping leases and background policy are unchanged.
+
 Finish-line Tactical [259](../tactical/259-jstorrent-finish-line-checks.md)
 qualifies current source `a35934d2` Android 1.0.26/code 26 through nonpublishing
 run `37657799144` and independent upload-certificate, launcher/API 28, both-ABI,

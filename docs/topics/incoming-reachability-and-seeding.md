@@ -2,6 +2,12 @@
 
 Topic: `incoming-reachability-and-seeding`
 
+Tactical [260](../tactical/260-android-shutdown-failure-containment.md) preserves
+the existing uncertain IPv6 lease error while containing its propagation in the
+Android service after native shutdown. No mapping, pinhole, advertisement or
+engine ownership behavior changes. Adapter build/JVM evidence passes; physical
+shutdown/restart remains pending under finish-line 259.
+
 Tactical 253's startup follow-up overlaps four read-only file observations
 before constructing completed-seed availability. No early seed is admitted;
 file order, exact lengths/kinds, padding/selection and verified-piece authority

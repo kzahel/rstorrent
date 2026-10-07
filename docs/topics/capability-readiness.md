@@ -1232,6 +1232,13 @@ hosted repeats.
 
 ### Active
 
+- **Finish-line Android shutdown containment: Tactical `260`** is active under
+  `259`. The second physical cohort exposes a generated native cleanup failure
+  escaping service shutdown. Preserve the uncertain lease error and release
+  owners without an Android process crash; cancellation, engine/network policy
+  and production delivery identity remain unchanged. Both ABI builds, generated Kotlin and 121 JVM cases pass; physical
+  shutdown/restart and endurance qualification remain open.
+
 - **Priority ChromeOS qualification: Tactical `253`** is active: portable recovery
   and bounded cohort-A physical checks pass; full acceptance remains open.
   It covers pre-Play setup,
