@@ -2139,6 +2139,9 @@ fn show_legacy_startup_failure(app: &AppHandle, error: String) {
 }
 
 pub fn run() {
+    // Native tray/accessibility names must not fall back to the executable name.
+    #[cfg(target_os = "linux")]
+    glib::set_application_name("JSTorrent");
     if download_picker::run_helper_if_requested() {
         return;
     }
