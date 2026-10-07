@@ -27,6 +27,24 @@ ACTIVITY = f"{PACKAGE}/org.rstorrent.bootstrap.MainActivity"
 FOLDER = "RSTorrentQualification253"
 ROOT = f"/sdcard/Download/{FOLDER}"
 
+
+def reset_owned_profile(adb):
+    # Clear storage also revokes runtime permissions. Every new repetition
+    # must restore the explicitly selected notification-eligible test setup.
+    adb.shell("pm", "clear", PACKAGE)
+    adb.shell("pm", "grant", PACKAGE, "android.permission.POST_NOTIFICATIONS")
+
+
+def observation_result(seconds, transferred, verified, sha1):
+    return {
+        "status": ("pass" if seconds == 3600 else "bounded_short_run") if verified else "fail",
+        "seconds": seconds,
+        "seed_payload_upload": transferred,
+        "completion": "pass" if verified else "fail",
+        "sha1": sha1 if verified else None,
+    }
+
+
 class RemoteAdb:
     def __init__(self, command: list[str]):
         self.command = command
@@ -41,7 +59,10 @@ class RemoteAdb:
         result = subprocess.run([*self.command, "testbed", "--", "shell"], input=remote, capture_output=True, text=True, timeout=timeout)
         result.stdout = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", result.stdout).replace("\r", "")
         if check and result.returncode:
-            raise RuntimeError(f"owned Android command failed ({result.returncode}): {result.stdout[-1500:]}")
+            raise RuntimeError(
+                f"owned Android command failed ({result.returncode}): "
+                f"stdout={result.stdout[-1500:]!r}; stderr={result.stderr[-1500:]!r}"
+            )
         return result
 
     def shell(self, *arguments: str, **options):
@@ -75,9 +96,51 @@ def finish_first_use(adb):
     raise RuntimeError("first-use disclosure did not resolve within its stage budget")
 
 
+def native_maximize_arguments(result):
+    # The platform adapter writes human-readable queries to stderr. Duplicate
+    # ARC accessibility roots may describe the very same native caption button.
+    output = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", result.stdout + "\n" + result.stderr)
+    count = re.search(r"(?m)^(\d+) matches$", output)
+    if count is None:
+        raise RuntimeError("native window query has no match count")
+    if int(count[1]) == 0:
+        return None
+    controls = re.findall(r'(?m)^\[button\] "Maximize" at \((-?\d+),(-?\d+)\) (\d+)x(\d+)$', output)
+    if len(controls) != int(count[1]) or len(set(controls)) != 1 or any(int(v) <= 0 for v in controls[0][2:]):
+        raise RuntimeError("product window has ambiguous native Maximize controls")
+    return ["--nth", "1"]
+
+
 def select_owned_tree(adb):
+    # Maximize the owning product window before DocumentsUI inherits its ARC
+    # geometry. Maximizing a previous picker does not persist across tasks.
+    window = subprocess.run(
+        [*adb.command, "testbed", "--", "desktop-find", "^Maximize$", "--role", "button"],
+        capture_output=True, text=True, check=True, timeout=30,
+    )
+    selection = native_maximize_arguments(window)
+    if selection is not None:
+        subprocess.run(
+            [*adb.command, "testbed", "--", "desktop-action", "^Maximize$", "doDefault", "--role", "button", *selection],
+            capture_output=True, text=True, check=True, timeout=30,
+        )
+
+    def recover_picker():
+        # ARC can place DocumentsUI behind the shelf. Its Android button has
+        # zero bounds; use the observed native window action, never a guess.
+        result = subprocess.run(
+            [*adb.command, "testbed", "--", "desktop-find", "^Maximize$", "--role", "button"],
+            capture_output=True, text=True, check=True, timeout=30,
+        )
+        selection = native_maximize_arguments(result)
+        if selection is None:
+            raise RuntimeError("clipped SAF picker lacks one native Maximize control")
+        subprocess.run(
+            [*adb.command, "testbed", "--", "desktop-action", "^Maximize$", "doDefault", "--role", "button", *selection],
+            capture_output=True, text=True, check=True, timeout=30,
+        )
     try:
-        product.select_controlled_tree(adb)
+        product.select_controlled_tree(adb, recover_picker=recover_picker)
     except product.ScenarioFailure as error:
         # The old helper predates 194's binary retained-root registry. Keep its
         # real picker interaction, then inspect the current independently owned
@@ -110,6 +173,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--screenshots", type=Path, help="retain actual ChromeOS captures at product checkpoints")
     parser.add_argument("--observe-seconds", type=int, default=3600)
+    parser.add_argument("--diagnostics", type=Path, help="new owned directory for bounded, package-scoped failure/observation logs")
     args = parser.parse_args()
     if not 0 <= args.seed_port <= 65535:
         parser.error("seed port must be 0..65535")
@@ -117,6 +181,14 @@ def main():
         parser.error("observation is bounded to 0..3600 seconds; short runs do not close endurance")
     command = [str(args.machine_control), "--registry", str(args.registry), "--target", args.target]
     adb = RemoteAdb(command)
+    package_uid = None
+    if args.diagnostics:
+        args.diagnostics.mkdir(parents=True, exist_ok=False)
+        package_info = adb.shell("dumpsys", "package", PACKAGE).stdout
+        uid = re.search(r"\buserId=(\d+)\b", package_info)
+        if uid is None:
+            raise RuntimeError("owned qualification package UID is unavailable")
+        package_uid = uid[1]
     # Existing picker/durable-grant assertions are reused with exclusively owned
     # identities. No fixed-package install/reset function is invoked.
     product.PACKAGE = PACKAGE
@@ -133,6 +205,7 @@ def main():
     records = []
     report = {"schema": "chromeos-android-qualification/v1", "cohort": args.target,
               "delivery": "isolated_debug_sideload", "play_installation": "unrun",
+              "notification_setup": "granted_after_each_owned_profile_reset",
               "repetitions": records, "result": "fail", "cleanup": "pending"}
     if args.screenshots:
         args.screenshots.mkdir(parents=True, exist_ok=False)
@@ -147,6 +220,22 @@ def main():
         if not destination.is_file() or destination.stat().st_size == 0:
             raise RuntimeError("product screenshot did not produce an artifact")
         report["screenshots"].append(destination.name)
+
+    def diagnostic(name, *, failure=False):
+        if args.diagnostics is None:
+            return
+        operations = [("logcat", ("logcat", "-d", "-v", "threadtime", f"--uid={package_uid}", "-t", "1000"))]
+        if failure:
+            operations += [("exit-info", ("shell", "dumpsys", "activity", "exit-info", PACKAGE)),
+                           ("services", ("shell", "dumpsys", "activity", "services", PACKAGE)),
+                           ("activities", ("shell", "dumpsys", "activity", "-p", PACKAGE, "activities"))]
+        for label, arguments in operations:
+            try:
+                result = adb.run(*arguments, check=False)
+                output = (result.stdout + result.stderr)[-65536:]
+            except Exception as error:
+                output = f"Diagnostic capture failed: {type(error).__name__}"
+            (args.diagnostics / f"{name}-{label}.txt").write_text(output)
 
     session = create_session()
     session.apply_settings({"listen_interfaces": f"{args.seed_address}:{args.seed_port}", "upload_rate_limit": 8 * 1024, "ignore_limits_on_local_network": False})
@@ -197,7 +286,7 @@ def main():
                 # Different deterministic torrents use the same exact single-file
                 # name. Retire only this owned catalog before the next run.
                 adb.shell("am", "force-stop", PACKAGE)
-                adb.shell("pm", "clear", PACKAGE)
+                reset_owned_profile(adb)
                 adb.shell("rm", "-f", destination)
                 if ordinal < 3 or args.observe_seconds:
                     adb.shell("am", "start", "-W", "-n", ACTIVITY)
@@ -223,6 +312,9 @@ def main():
                 while time.monotonic()-beginning < args.observe_seconds:
                     transferred = int(handle.status().total_payload_upload)
                     samples.append(transferred)
+                    report["observation"] = {"status": "running", "seconds": round(time.monotonic()-beginning), "seed_payload_upload": transferred, "completion": "unrun"}
+                    if len(samples) % 4 == 1:
+                        diagnostic(f"observation-{len(samples):03}")
                     if len(samples) == 3:
                         capture("05-controlled-observation")
                     if len(samples) >= 5 and samples[-1] <= samples[-5]:
@@ -241,13 +333,16 @@ def main():
                         verified = True
                         break
                     time.sleep(2)
-                report["observation"] = {"status": "pass" if args.observe_seconds == 3600 and verified else "bounded_short_run", "seconds": args.observe_seconds, "seed_payload_upload": samples[-1], "completion": "pass" if verified else "unrun", "sha1": actual if verified else None}
+                report["observation"] = observation_result(args.observe_seconds, samples[-1], verified, actual)
                 if verified:
                     capture("06-observation-verified")
-                if args.observe_seconds == 3600 and not verified:
+                if not verified:
                     raise RuntimeError("observation completion did not verify within the recovery budget")
     except BaseException:
         report["result"] = "fail"
+        if report.get("observation", {}).get("status") == "running":
+            report["observation"]["status"] = "fail"
+        diagnostic("failure", failure=True)
         try:
             capture("failure")
         except Exception as error:

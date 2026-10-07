@@ -3,6 +3,8 @@
 Owner: [product-surfaces-and-migration](topics/product-surfaces-and-migration.md).
 Campaign: [231](tactical/231-jstorrent-migration-working-campaign.md).
 Candidate mechanics: [250](tactical/250-jstorrent-production-identity-candidates.md).
+Finish-line execution: [259](tactical/259-jstorrent-finish-line-checks.md)
+(desktop, Android/ChromeOS, extension and website; iOS excluded).
 
 This is the acceptance checklist for replacing the existing desktop, Android
 and extension products. A source check, emulator with disposable signatures,
@@ -12,7 +14,26 @@ certificate/key fingerprints, platform/build, observation and recovery outcome
 for each installed cohort. Keep personal paths, credentials and private keys out
 of the public evidence. No row authorizes publication by itself.
 
-## Current Qualification Checkpoint, 2026-10-04
+## Finish-Line Qualification Checkpoint, 2026-10-07
+
+Tactical [259](tactical/259-jstorrent-finish-line-checks.md) owns current
+execution. Source `a35934d2` passes every in-scope CI job; iOS is excluded.
+Exact-source Android 1.0.26/code 26 and production extension 1.1.2 packages
+pass independent package checks. Authenticated Play remains production code 23
+and internal code 25; the existing Web Store item is published/draft 1.1.1.
+Neither candidate is uploaded. All five fresh signed desktop packaging legs
+pass; combined collector validation is running after an infrastructure timeout.
+The current signed macOS arm64 package passes independent signing/notarization
+checks and eight manual installed migration checks. Automatic updating and the
+broader installed matrix remain open. Physical cohort A passes three repetitions,
+a full foreground hour and seven SAF/recovery cases. Cohort B's failed hour
+remains open: its latest short rerun also fails final byte completion despite
+three successful repetitions and corrected notification setup. Bounded physical
+evidence does not close final store/background delivery rows.
+All owned VMs are stopped between uses and their idle claims released.
+The tactical and ignored local report bind exact results and next actions.
+
+## Historical Qualification Checkpoint, 2026-10-04
 
 Tactical [257](tactical/257-play-upgrade-and-fresh-signed-candidates.md) passes a
 bounded physical Play 1.0.23-to-1.0.25 standalone upgrade: managed signer,

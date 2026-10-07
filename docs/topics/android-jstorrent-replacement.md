@@ -2,6 +2,19 @@
 
 Topic: `android-jstorrent-replacement`
 
+Finish-line Tactical [259](../tactical/259-jstorrent-finish-line-checks.md)
+qualifies current source `a35934d2` Android 1.0.26/code 26 through nonpublishing
+run `37657799144` and independent upload-certificate, launcher/API 28, both-ABI,
+16-KiB and notice checks. Production Play code 23 and internal code 25 remain
+unchanged; final code-26 Play delivery awaits explicit authorization. Both
+physical production installations are preserved. Isolated current-source cohort
+A passes three cold-launch/recovery repetitions and a byte-verified full hour;
+cohort B's hour fails, followed by a byte-verified 600-second diagnostic pass.
+Cohort A additionally passes seven SAF/source-recovery checks. The latest
+cohort B diagnostic passes three repetitions but fails final completion; its
+cause remains unresolved. Further installed and endurance checks continue. These
+foreground/debug results do not qualify Play replacement or detached upload.
+
 Tactical [257](../tactical/257-play-upgrade-and-fresh-signed-candidates.md)
 qualifies a bounded physical Play 1.0.23-to-1.0.25 standalone upgrade: original
 managed signer, unchanged installation identity, two retained paused rows and

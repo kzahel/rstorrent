@@ -153,6 +153,16 @@ footer a:focus-visible {
   font-size: 0.82rem;
 }
 
+.availability a {
+  color: #93c5fd;
+  text-underline-offset: 0.2em;
+}
+
+.availability a:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 4px;
+}
+
 footer {
   display: flex;
   min-height: 5rem;

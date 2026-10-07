@@ -354,8 +354,15 @@ than describing navigation as a private local preview.
 
 ## Known Gaps And Next Work
 
-- Deploy and publicly verify sibling website commit `af615ce5` through a
-  separately authorized website operation, then flip the three reviewed
+- Finish-line Tactical [259](../tactical/259-jstorrent-finish-line-checks.md)
+  finds the historical sibling commit `af615ce5` unavailable in the current
+  checkout and its corrections absent from both source and the live policy.
+  New sibling source preparation corrects privacy copy and closed, bounded
+  text-only feedback/uninstall rendering. Eight parser/security cases, actual
+  baseline XSS reproduction and corrected desktop/mobile rendering pass;
+  all external requests are blocked or stubbed and no form is submitted.
+  Deploy and publicly verify the reviewed sibling source through a separately
+  authorized website operation, then qualify any change to the three reviewed
   hosted-context gates in one release-qualified change. Until then UUID, age,
   and counters remain absent from new feedback/uninstall traffic.
 - Run Tactical `208`'s physical ChromeOS Android/extension campaign and Apple

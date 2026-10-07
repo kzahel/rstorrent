@@ -2,6 +2,16 @@
 
 Topic: `beta-release-readiness`
 
+Finish-line Tactical [259](../tactical/259-jstorrent-finish-line-checks.md)
+owns the current source/artifact and installed gate execution, excluding iOS.
+Source `a35934d2` passes all in-scope CI jobs; Android and extension candidates
+pass independent package checks. Complete signed desktop collection is running
+after dependency-installation timeouts. Current signed macOS ARM manual migration passes eight checks; automatic
+updating and the wider installed matrix remain unqualified. Bounded physical
+Android results cannot replace final store/background evidence.
+The second physical cohort's failed hour remains open. No publication occurred;
+owned VMs are stopped between uses instead of waiting idle for builds/approval.
+
 Tactical [257](../tactical/257-play-upgrade-and-fresh-signed-candidates.md)
 completes bounded current-source qualification at f5860c99: all ten executed
 CI jobs and Website, signed JSTorrent desktop 0.3.0 on all five targets, all ten

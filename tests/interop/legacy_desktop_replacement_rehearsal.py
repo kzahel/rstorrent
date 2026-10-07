@@ -151,7 +151,8 @@ def main():
 
     def quit_and_join(child):
         wait_until(lambda: child.poll() is not None, seconds=600)
-        assert child.wait() == 0, "native Quit failed"
+        exit_code = child.wait()
+        assert exit_code == 0, f"native Quit failed (exit {exit_code})"
 
     def source_snapshot():
         data = {"discovery": digest(native / "rpc-info.json"), "profiles": {}, "files": {}}

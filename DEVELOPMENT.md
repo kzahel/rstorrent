@@ -35,6 +35,11 @@ and recovery policy. Private target selection may come from the maintainer's
 dotfiles inventory, but target identities and credentials must not be copied
 into this repository.
 
+Boot a VM only when its next executable check is ready. Shut it down through
+Machine Control between uses, including while waiting for builds, approvals or
+other targets; do not leave idle VMs running for later checks. Verify the stopped
+state and release the claim when the session no longer needs exclusive access.
+
 Do not substitute direct hypervisor commands or legacy platform-specific
 testbed repositories for ordinary cross-platform acceptance. Direct provider
 access is reserved for a recovery procedure explicitly documented by

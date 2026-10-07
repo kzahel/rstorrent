@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import pickle
+import platform as host_platform
 from pathlib import Path
 import shutil
 import signal
@@ -37,6 +38,19 @@ APPIMAGE_BINARIES = (
     "e7b93708c0c9f9218a2402efae373ce5c56b9d00463ae5c7944bbad15e9dfd63",
     "eaf386835af15b140ff5f9c91680af198554cf9deb9480e571ed60ad2bf8bce1",
 )
+ARM_APPIMAGE_PACKAGE = "5c74f3f7f0f375a0eb17b3e5f2da171a07c8fdc45948b3b46489e9cb87d446ae"
+ARM_APPIMAGE_BINARIES = (
+    "7bfd7ee516933119d830f678db38bd66095eec9c8d848021751422d14b165bc8",
+    "25b424417aeadd1b7d6b85696988953cdb7804263e1cc668174a7b9dec18f33d",
+)
+
+
+def linux_legacy_pins(architecture):
+    if architecture in ("x86_64", "amd64"):
+        return PACKAGES["linux"], APPIMAGE_BINARIES
+    if architecture in ("aarch64", "arm64"):
+        return ARM_APPIMAGE_PACKAGE, ARM_APPIMAGE_BINARIES
+    raise ValueError("unsupported native Linux rehearsal architecture")
 BROWSERS = ("google-chrome", "google-chrome-for-testing", "chromium",
             "BraveSoftware/Brave-Browser", "microsoft-edge")
 WIN_BROWSERS = (r"Google\Chrome", "Chromium", r"BraveSoftware\Brave-Browser", r"Microsoft\Edge")
@@ -177,7 +191,12 @@ def main():
     platform = "windows" if os.name == "nt" else "linux" if sys.platform == "linux" else None
     if platform is None or not args.root.is_absolute() or args.root.exists():
         parser.error("requires Windows/Linux and a new absolute controlled root")
-    assert digest(args.legacy) == PACKAGES[platform]
+    architecture = host_platform.machine().lower()
+    legacy_package, binary_pins = (
+        linux_legacy_pins(architecture) if platform == "linux"
+        else (PACKAGES["windows"], BINARIES["windows"])
+    )
+    assert digest(args.legacy) == legacy_package
     assert digest(args.candidate) == args.candidate_sha256
     assert not old_running() and not {"rstorrent-desktop", "rstorrent-deskt"}.intersection(process_names())
     args.root.mkdir(parents=True)
@@ -201,7 +220,8 @@ def main():
     native, product = config / "jstorrent-native", data / "com.jstorrent.desktop"
     children, logs, saved, created = [], [], [], []
     registry = None
-    results = {"platform": platform, "legacyPackageSha256": PACKAGES[platform],
+    results = {"platform": platform, "hostArchitecture": architecture,
+               "legacyPackageSha256": legacy_package,
                "candidatePackageSha256": args.candidate_sha256, "checks": []}
 
     def phase(name):
@@ -355,7 +375,6 @@ def main():
             for source in app.glob("jstorrent-*.exe"):
                 shutil.copy2(source, old_bin / source.name)
             host_path = next(old_bin.glob("jstorrent-host*.exe"))
-        binary_pins = BINARIES[platform] if platform == "windows" else APPIMAGE_BINARIES
         assert digest(host_path) == binary_pins[0]
         daemon = next(old_bin.glob("jstorrent-io-daemon*"))
         assert digest(daemon) == binary_pins[1]

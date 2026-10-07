@@ -1,15 +1,26 @@
-# RSTorrent support, privacy and recovery
+# JSTorrent support, privacy and recovery
 
-RSTorrent `0.1.x` packages are unsupported incubation builds. They are useful
-for testing, but their torrent catalog, settings and private application state
-may be reset by a newer build. No first supported release has been selected.
-Downloaded files are separate from that private state.
+The Rust implementation is being qualified as an in-place JSTorrent update.
+Desktop candidate `0.3.0` retains `com.jstorrent.desktop`; Android candidate
+`1.0.26` retains `com.jstorrent.app`. Final installed and store qualification is
+tracked in the [finish-line checklist](tactical/259-jstorrent-finish-line-checks.md).
+Candidate build success is not a production-release or support declaration.
+Android 9/API 28 is the replacement minimum. Older Android devices retain the
+old app and need a supported OS/device; an unavailable store update is not a
+transfer failure to retry indefinitely. App and extension updates may arrive
+separately, and companion pairing may need renewal. Android and the explicitly
+selected Linux backend retain separate libraries.
+
+Earlier `0.1.x` preview packages are unsupported incubation builds. Their
+torrent catalog, settings and private application state may be reset by a
+newer preview build. Downloaded files are separate from that private state.
+These preview-reset instructions do not apply to production migration.
 
 ## Reporting a problem
 
 Open **Settings → About & updates** and note the version, build, target and
 package. In builds with **Support diagnostics**, choose **Prepare diagnostics**
-and review the exact report. Copy it or download `rstorrent-diagnostics.json`,
+and review the exact report. Copy it or download `jstorrent-diagnostics.json`,
 then attach it to a [new issue](https://github.com/kzahel/rstorrent/issues/new).
 Include what you did, what you expected and what happened. Existing
 [open issues](https://github.com/kzahel/rstorrent/issues) may already describe
@@ -55,12 +66,13 @@ may require the manual [release downloads](https://github.com/kzahel/rstorrent/r
 path shown in About. An installation failure should leave the current package
 available; do not infer success from a replacement file alone.
 
-Closing a window may leave RSTorrent running in the background. Use **Quit
-RSTorrent** from its tray/menu to finish shutdown before manually changing its
-private files. A current-source fix repairs a Windows old-catalog reset
-failure that still exists in public `0.1.3`: an update can replace the executable
-and then fail before opening a usable window. A repaired signed update is not
-yet qualified.
+Closing a window may leave JSTorrent running in the background. Use **Quit
+JSTorrent** from its tray/menu to finish shutdown before manually changing its
+private files. Historical preview `0.1.3` has a Windows old-catalog reset failure:
+an update can replace the executable and then fail before opening a usable
+window. Its recovery below concerns only that incubation identity. Current
+JSTorrent installed-update qualification has its own source/artifact evidence
+in the finish-line checklist.
 
 For that specific Windows `0.1.3` failure, after confirming the app is stopped,
 moving `%APPDATA%\com.jstorrent.rstorrent\profile` aside preserves it for
