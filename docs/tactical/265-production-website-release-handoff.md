@@ -53,7 +53,7 @@ unchanged disabled route. Update owning topics before committing.
 ## Completed local evidence
 
 Sibling commit `0e935e75` implements the disabled curated handoff. Twenty-two
-positive/negative guards, focused TypeScript, six-page Astro 7.3.6 static build,
+positive/negative guards, focused TypeScript/ESLint, six-page Astro 7.3.6 static build,
 35 tracked docs and supported file-format checks pass in the owned frozen
 checkout. Astro files have no configured Prettier parser; their source diff and
 actual build/views are reviewed instead of claiming that unsupported check.
@@ -82,3 +82,7 @@ The final publisher guard remains intact. No push, tag, release, feed/store
 change or public website deployment occurs. Final signed qualification,
 production publisher activation and public delivery are still acceptance gates
 owned by 259 and the cutover checklist.
+
+Both task-created archive validation checkouts are removed after final checks.
+Inherited modules, global package cache, user untracked files and release/report
+assets remain preserved. All owned browser/listener processes are reaped.
