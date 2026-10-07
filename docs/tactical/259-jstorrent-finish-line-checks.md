@@ -414,3 +414,20 @@ Device power policy remains unchanged. Fourteen qualification safety cases and
 Python compilation pass; attempt 15 is active. The listener observation also
 accepts Tactical 262's human-readable address/port label, retaining the earlier
 APK label for exact historical test artifacts. All Machine Control VMs are off.
+
+
+### Android presentation and signed-candidate checkpoint, 2026-10-08
+
+Tactical 262 completes the actual Android Network-status branding leak repair.
+Current source `37673687f15235840f3ac47ab044f2cd3e2f2445` normal original-key
+release passes 121 JVM cases, lint and independent APK/AAB checks. Actual
+old/new isolated and final original-signed production APK screens pass; all 24
+API-35 navigation cases pass. Candidate AAB SHA-256 is
+`428b8ccbb9330b30ec44799a1f9d336d85a355a3c51b4fa695249c4e28e66b46`;
+APK is `121bbe514138c1202d459605cb35732be23350f78c42c1d83946877b8a3a1bc7`.
+Source-184's Android review is superseded. No upload is authorized/performed.
+All capture/test AVDs are shut down and deleted after use. Controlled current
+ordinary and companion upgrade rehearsals on API 28/35 are next; their
+same-package disposable certificate does not qualify Play delivery. Physical
+cohort A's fixed-source background hour and cohort B's new background-before-
+intake hour are active; payload completion and cleanup remain required.

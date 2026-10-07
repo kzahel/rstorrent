@@ -1,6 +1,6 @@
 # Tactical 262: Android Network Status Presentation
 
-Status: Active, 2026-10-07. Bounded finish-line branding follow-up.
+Status: Complete, 2026-10-08. Bounded Android presentation/signing checkpoint.
 
 Topics: `client-surfaces`, `web-ui-design`, `localization`.
 
@@ -64,3 +64,26 @@ normal release with the original upload certificate, independently inspect the
 final APK/AAB, then run bounded legacy ordinary/companion upgrade rehearsals.
 The earlier source-184 signed capsule is historical and must not be uploaded
 as the final candidate after this correction.
+
+
+## Final original-key release checkpoint
+
+Normal production release from `37673687f15235840f3ac47ab044f2cd3e2f2445`
+passes both ABI builds/generated binding, 121 release JVM cases (zero failed,
+errors or skipped), release lint and independent validation with pinned
+bundletool. Package remains `com.jstorrent.app`, 1.0.26/code 26, API 28/target 36,
+original upload certificate, one retained launcher alias, both ABIs, 16-KiB
+ELF/ZIP alignment and complete notices. No store upload is performed.
+
+Final AAB SHA-256:
+`428b8ccbb9330b30ec44799a1f9d336d85a355a3c51b4fa695249c4e28e66b46`.
+Final APK SHA-256:
+`121bbe514138c1202d459605cb35732be23350f78c42c1d83946877b8a3a1bc7`.
+The original-signed production APK also passes actual owned API-35 launch,
+disclosure, Network navigation and clean disabled-status capture. Its task AVD
+is shut down/deleted. The exact artifacts and receipts are retained in ignored
+259 evidence. The concrete internal-track review supersedes source-184.
+
+Stopping condition is met. Wider current ordinary/companion installed rehearsals,
+physical lifetime checks, Play/Web Store delivery and cutover remain Tactical
+259 gates; this presentation checkpoint does not qualify them.

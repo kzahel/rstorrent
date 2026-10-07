@@ -8,8 +8,10 @@ listener/router descriptions, retaining endpoints, ports, failure and uncertain
 lease facts. Message-less feedback failures use product copy. Actual owned
 API-35 before/after captures and all 24 navigation cases pass, including the new
 status regression. Internal namespaces, generated ABI and network policy remain
-unchanged. Normal final signed release rebuild remains pending; source-184's
-Android capsule is superseded for final delivery.
+unchanged. Original-key production release from `37673687` passes 121 JVM
+cases, lint and independent APK/AAB checks; its actual production APK also
+passes the corrected native screen capture. Source-184's Android capsule is
+superseded. Store/physical delivery gates remain Tactical 259.
 
 Tactical [258](../tactical/258-cross-surface-branding-and-design-audit.md)
 finishes remaining iOS product/system display names and auxiliary first-party

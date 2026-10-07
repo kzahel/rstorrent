@@ -18,10 +18,11 @@ of the public evidence. No row authorizes publication by itself.
 
 Tactical [259](tactical/259-jstorrent-finish-line-checks.md) owns current
 execution. Source `a35934d2` passes every in-scope CI job; iOS is excluded.
-Original-key Android 1.0.26/code 26 at `184dcaba157c4dbd335778b7a70fe1cbd3393932`
+Original-key Android 1.0.26/code 26 at `37673687f15235840f3ac47ab044f2cd3e2f2445`
 passes normal release, 121 JVM tests, lint and independent package checks after
-Tactical 260. This capsule is superseded for final delivery by Tactical 262
-Android status presentation; its final original-key rebuild is pending. Production extension 1.1.2 also passes package checks. Authenticated
+Tactical 260 and Tactical 262's Network-status branding correction. Actual
+old/new screens, original-signed APK capture and all 24 API-35 navigation
+cases pass. Production extension 1.1.2 also passes package checks. Authenticated
 Play reconfirms production 23, internal 25 and uploaded maximum 25; the existing
 Web Store item is published/draft 1.1.1. Neither candidate is uploaded.
 All five fresh

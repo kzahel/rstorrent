@@ -10,11 +10,12 @@ Signed macOS ARM, Linux ARM and Linux x64 manual migration pass eight assertions
 current Linux x64 pixels render, while ARM black captures and the old x64 blank
 window retain visual gaps. Tactical 261's exact fixed source passes 73 native
 Linux tests and GNOME tray-name observation; final signed packages need a rebuild.
-Original-key Android 1.0.26/code 26 is rebuilt at `184dcaba157c4dbd335778b7a70fe1cbd3393932`
+Original-key Android 1.0.26/code 26 is rebuilt at `37673687f15235840f3ac47ab044f2cd3e2f2445`
+after Tactical 262's actual Network-status branding correction
 with 121 passing JVM tests, lint and independent package validation. Fixed-source
 physical B passes a full-hash 600-second detached background check. Full background
 hours and broader physical/store gates remain open. Latest local checks pass
-branding (2,013 display values / 40 assets), localization, extension tests/CSP/ZIP,
+branding (2,036 display values / 40 assets), localization, extension tests/CSP/ZIP,
 shared-web typecheck / 470 tests (two skipped), 46 browser E2E tests (14 skipped),
 and website check/build. These use bundled Chromium and reap owned processes.
 Authenticated Play remains production 23/internal 25/max uploaded 25. Explicit
