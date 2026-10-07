@@ -252,7 +252,10 @@ internal class AndroidPresentationRepository(
                 SubscriptionSpec(
                     selector,
                     ViewProjection.DIAGNOSTICS,
-                    DeliveryPolicy(100U, 256U * 1024U),
+                    // Retention is bounded to 2 MiB plus the snapshot envelope.
+                    // Use the existing 4-MiB subscription bound so resync can
+                    // restore the full retained history after queue overflow.
+                    DeliveryPolicy(100U, 4U * 1024U * 1024U),
                     DiagnosticFilter(
                         diagnosticProfile,
                         diagnosticSeverity,

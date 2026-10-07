@@ -248,7 +248,29 @@ async fn diagnostics_filter_before_queue_and_report_ring_drops() {
         )
         .expect("record bounded event");
     }
-    let snapshot = hub
+    // Android previously requested 256 KiB even though retained history can
+    // exceed it. Prove the real bounded snapshot refuses that old budget.
+    let old_budget = hub.subscribe(SubscriptionSpec {
+        selector: ViewSelector::TorrentList,
+        projection: ViewProjection::Diagnostics,
+        delivery: DeliveryPolicy {
+            min_interval_millis: 0,
+            max_queue_bytes: 256 * 1024,
+        },
+        diagnostics: Some(DiagnosticFilter {
+            profile: DiagnosticProfile::Normal,
+            minimum_severity: DiagnosticSeverity::Info,
+            categories: Vec::new(),
+        }),
+        catalog_page: None,
+    });
+    assert!(matches!(
+        old_budget,
+        Err(crate::SubscriptionError::SnapshotExceedsQueue { snapshot, maximum })
+            if snapshot > maximum as usize && maximum == 256 * 1024
+    ));
+
+    let subscription = hub
         .subscribe(SubscriptionSpec {
             selector: ViewSelector::TorrentList,
             projection: ViewProjection::Diagnostics,
@@ -263,10 +285,14 @@ async fn diagnostics_filter_before_queue_and_report_ring_drops() {
             }),
             catalog_page: None,
         })
-        .expect("bounded subscription")
-        .next_update()
-        .await
-        .expect("bounded snapshot");
+        .expect("bounded subscription");
+    let snapshot = subscription.next_update().await.expect("bounded snapshot");
+    let high_water = subscription.stats().expect("stats").queue_high_water;
+    assert!(high_water > 256 * 1024 && high_water <= 4 * 1024 * 1024);
+    subscription.resync().expect("full retained-history resync");
+    let replacement = subscription.next_update().await.expect("resync snapshot");
+    assert_eq!(snapshot.payload, replacement.payload);
+    println!("bounded diagnostic snapshot high-water: {high_water} bytes");
     let ViewUpdatePayload::Snapshot {
         snapshot: ViewSnapshot::Diagnostics { events, retention },
     } = snapshot.payload
