@@ -539,3 +539,21 @@ and 390-pixel header overflow are corrected with original asset URL imports
 and wrapping controls; before/after evidence is ignored. Other workspace
 importers, inherited modules and unrelated untracked material are intact.
 Whole retired-workspace advisory clearance and public deployment are not claimed.
+
+### Production website handoff checkpoint, 2026-10-08
+
+Tactical 265 completes locally at sibling `0e935e75`. The actual hosted download
+page otherwise selects only old `tauri-app-v*` releases and guesses optional
+Mac PKGs. The prepared handoff validates 23 immutable production assets and
+retained root, uses actual DMGs/direct Linux packages, blocks legacy selection,
+retains recipients and corrects obsolete engine/signing claims. Twenty-two
+guards, focused types, static build/docs and 18 actual disabled plus six
+explicitly synthetic responsive views pass. Historical inventory compatibility
+also passes actual hash/size rechecking, without promoting that capsule.
+The descriptor remains disabled/null, with a final clean build/check.
+
+The production assembler still rejects JSTorrent tag publication. Ordinary
+`desktop-v*` tag inputs select the incubation lane; a nonpublishing production
+candidate does not activate this route. Final qualified publisher activation,
+public asset availability and website deployment are separate open gates. No
+publisher guard, tag, push, feed or store state is changed in this preparation.

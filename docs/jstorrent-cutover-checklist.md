@@ -46,8 +46,14 @@ completed-file upload and joined Live-library reopen. These runs are active.
 Tactical 263's fresh web/website audit, strict review, affected builds/tests,
 46 configured E2E cases (14 existing skips), byte-identical extension packages
 and desktop notices pass; its residual upstream cache behavior and static Astro
-call-path limits remain explicit. Sibling hosted graph checks continue under
-Tactical 264. Managed Play and broader physical delivery gates remain open.
+call-path limits remain explicit. Sibling Tactical 264 completes locally at `56dc2299`: frozen current graph,
+112 client cases/12 hosted route cases and 18 responsive captures pass; actual
+logo/phone-header defects are fixed. Tactical 265 prepares the production
+website handoff at `0e935e75`, with 22 inventory guards and actual/controlled
+phone/wide checks. It remains disabled/null. Official JSTorrent publication is
+intentionally rejected by the current publisher; final activation and public
+website delivery remain explicit technical/release gates. Managed Play and
+broader physical delivery gates remain open.
 All owned VMs are stopped between uses and their idle claims released.
 The tactical and ignored local report bind exact results and next actions.
 

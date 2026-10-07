@@ -2,6 +2,16 @@
 
 Topic: `product-surfaces-and-migration`
 
+Tactical [265](../tactical/265-production-website-release-handoff.md) prepares
+sibling `0e935e75`'s disabled production website handoff. Its closed 23-asset
+inventory, original updater root and curated immutable links pass 22 guards,
+focused TypeScript and phone/wide actual/controlled views. Enabled links use
+actual DMGs/direct Linux packages and cannot be replaced by legacy discovery.
+Source/CI pointers follow the selected implementation; support recipients remain.
+The real descriptor stays disabled/null. Final signed qualification, production
+publisher activation and public deployment remain separate gates; no publication
+guard is removed and no external state changes.
+
 Tactical [264](../tactical/264-hosted-website-dependency-qualification.md)
 qualifies sibling hosted website commit `56dc2299` locally. Frozen Astro 7.3.6
 build, eight hosted security/four migration cases, client typecheck/112 cases
