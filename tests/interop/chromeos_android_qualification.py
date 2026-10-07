@@ -18,6 +18,7 @@ import tempfile
 import time
 import sys
 import hashlib
+import uuid
 from types import SimpleNamespace
 from pathlib import Path
 
@@ -29,6 +30,19 @@ PACKAGE = "org.rstorrent.qualification253"
 ACTIVITY = f"{PACKAGE}/org.rstorrent.bootstrap.MainActivity"
 FOLDER = "RSTorrentQualification253"
 ROOT = f"/sdcard/Download/{FOLDER}"
+
+
+def create_owned_fixture(path, run_id, phase, payload_size):
+    # Concurrent devices must not discover and seed each other's deterministic
+    # fixture through the normal product discovery paths. Name is in infohash.
+    return create_fixture(path, payload_size=payload_size,
+                          root_name=f"qualification253-{run_id}-{phase}")
+
+
+def observation_payload_size(seconds):
+    # 28 MiB is almost exactly an hour at 8 KiB/s, with no scheduling margin.
+    # Keep transfer active for the requested hour; release the limit afterward.
+    return 40 * 1024 * 1024 if seconds == 3600 else 28 * 1024 * 1024
 
 
 def reset_owned_profile(adb):
@@ -351,12 +365,13 @@ def main():
         raise RuntimeError("qualification folder already exists; refusing inherited payload deletion")
     if adb.shell("test", "-e", "/data/local/tmp/rstorrent253-ui.xml", check=False).returncode == 0:
         raise RuntimeError("qualification UI artifact exists; refusing to overwrite")
+    run_id = uuid.uuid4().hex
     records = []
     report = {"schema": "chromeos-android-qualification/v1", "cohort": args.target,
               "delivery": "isolated_debug_sideload", "play_installation": "unrun",
               "notification_setup": "granted_after_each_owned_profile_reset",
               "observation_lifetime": args.observation_lifetime,
-              "completed_upload_requested": args.completed_upload,
+              "completed_upload_requested": args.completed_upload, "fixture_run_id": run_id,
               "repetitions": records, "result": "fail", "cleanup": "pending"}
     if args.screenshots:
         args.screenshots.mkdir(parents=True, exist_ok=False)
@@ -410,14 +425,14 @@ def main():
             port = wait_for_listener(session, [])
             for ordinal in range(1, 4):
                 start = time.monotonic()
-                fixture = create_fixture(directory / str(ordinal), payload_size=256 * 1024, root_name=f"qualification253-{ordinal}")
+                fixture = create_owned_fixture(directory / str(ordinal), run_id, str(ordinal), 256 * 1024)
                 handle = add_seed(session, fixture.torrent_info, fixture.seed_directory, [])
                 handles.append(handle)
                 # Cold launch retains the same app/profile/grant. Unique payload
                 # names keep repetition records and files independently owned.
                 adb.shell("am", "force-stop", PACKAGE)
                 adb.shell("am", "start", "-W", "-n", ACTIVITY, "-a", "android.intent.action.VIEW", "-d", magnet_uri(fixture.info_hash, f"{args.seed_address}:{port}"))
-                destination = f"{ROOT}/qualification253-{ordinal}/payload.bin"
+                destination = f"{ROOT}/{fixture.payload_path.parent.name}/payload.bin"
                 expected = fixture.payload_hash
                 deadline = time.monotonic() + 300
                 actual = ""
@@ -453,7 +468,9 @@ def main():
             if args.observe_seconds:
                 # Large metainfo is unrelated to public swarms. Slow the controlled
                 # seed so the initial window contains continuous real transfer.
-                fixture = create_fixture(directory / "observation", payload_size=28*1024*1024, root_name="qualification253-observation")
+                fixture = create_owned_fixture(directory / "observation", run_id, "observation", observation_payload_size(args.observe_seconds))
+                destination = f"{ROOT}/{fixture.payload_path.parent.name}/payload.bin"
+                report["observation_fixture"] = {"info_hash": fixture.info_hash, "payload_bytes": fixture.payload_path.stat().st_size, "root_name": fixture.payload_path.parent.name}
                 handle = add_seed(session, fixture.torrent_info, fixture.seed_directory, [])
                 handles.append(handle)
                 # Qualify the real background policy before intake. ARC can
@@ -492,7 +509,7 @@ def main():
                 verified = False
                 deadline = time.monotonic()+300
                 while time.monotonic() < deadline:
-                    actual = adb.shell("sha1sum", f"{ROOT}/qualification253-observation/payload.bin", check=False).stdout.split(" ", 1)[0].strip()
+                    actual = adb.shell("sha1sum", destination, check=False).stdout.split(" ", 1)[0].strip()
                     if actual == fixture.payload_hash:
                         verified = True
                         break
@@ -510,7 +527,7 @@ def main():
                     diagnostic("completed-background-upload")
                     capture("07-completed-background-upload")
                     report["joined_completion_restart"] = disable_seeding_and_verify_joined_restart(
-                        adb, f"{ROOT}/qualification253-observation/payload.bin", fixture.payload_hash)
+                        adb, destination, fixture.payload_hash)
                     diagnostic("joined-restart")
                     capture("08-joined-completion-restart")
     except BaseException:

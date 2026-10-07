@@ -57,6 +57,7 @@ def cancel_tree_picker(adb):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--machine-control', type=Path, required=True)
+    parser.add_argument('--registry', type=Path, help='runtime-private Machine Control registry')
     parser.add_argument('--target', required=True)
     parser.add_argument('--seed-address', required=True)
     parser.add_argument('--seed-port', type=int, required=True)
@@ -65,7 +66,10 @@ def main():
     args = parser.parse_args()
     if not 1 <= args.seed_port <= 65535:
         parser.error('explicit permitted seed port required')
-    command = [str(args.machine_control), '--target', args.target]
+    command = [str(args.machine_control)]
+    if args.registry:
+        command.extend(['--registry', str(args.registry)])
+    command.extend(['--target', args.target])
     adb = qualification.RemoteAdb(command)
     product.PACKAGE, product.ACTIVITY = qualification.PACKAGE, qualification.ACTIVITY
     product.GRANT_FOLDER, product.GRANT_PATH = qualification.FOLDER, qualification.ROOT

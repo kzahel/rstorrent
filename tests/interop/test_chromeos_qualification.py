@@ -8,10 +8,25 @@ from unittest.mock import Mock, patch
 import xml.etree.ElementTree as ET
 
 import android_reactive_surface as product
-from chromeos_android_qualification import observation_result, PACKAGE, RemoteAdb, confirm_intake, finish_first_use, native_maximize_arguments, reset_owned_profile
+from chromeos_android_qualification import observation_result, PACKAGE, RemoteAdb, confirm_intake, finish_first_use, native_maximize_arguments, reset_owned_profile, create_owned_fixture, observation_payload_size
 
 
 class QualificationSafety(unittest.TestCase):
+    def test_concurrent_run_fixtures_have_distinct_swarm_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = create_owned_fixture(root / "a", "cohort-a", "observation", 256 * 1024)
+            second = create_owned_fixture(root / "b", "cohort-b", "observation", 256 * 1024)
+            self.assertNotEqual(first.info_hash, second.info_hash)
+            self.assertEqual(first.payload_hash, second.payload_hash)
+            self.assertNotEqual(first.payload_path.parent.name, second.payload_path.parent.name)
+
+    def test_hourly_transfer_budget_has_margin_and_bounded_payload(self):
+        size = observation_payload_size(3600)
+        self.assertGreater(size, (3600 + 600) * 8 * 1024)
+        self.assertLessEqual(size, 40 * 1024 * 1024)
+        self.assertEqual(observation_payload_size(120), 28 * 1024 * 1024)
+
     def test_folder_tap_must_be_confirmed_by_the_owned_breadcrumb(self):
         snapshots = iter([
             '<hierarchy><node text="Select folder" clickable="true" bounds="[1,1][2,2]"/></hierarchy>',

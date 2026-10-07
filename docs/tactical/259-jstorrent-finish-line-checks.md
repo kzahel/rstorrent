@@ -478,3 +478,28 @@ Python compilation, JavaScript syntax and whitespace checks pass. Owned AVDs,
 browsers, keys, APKs, forwards and fixtures are removed; normal debug build
 identity is restored. Disposable signatures and an unpacked beta extension do
 not qualify managed Play delivery or the preserved-profile production store ID.
+
+
+### Physical observation fixture correction, 2026-10-08
+
+Cohort A's background hour and cohort B attempt 15 fail the harness transfer-
+stall assertion at 3,131 and 1,172 seconds respectively. Both actual Android
+logs show all 1,792 pieces verified, Complete and normal joined idle shutdown
+with cleanup_failed=false before failure. No hour or independent full hash is
+claimed. The deterministic fixture used the same infohash on both devices,
+allowing ordinary discovery to supply another controlled source; controller-
+only upload cannot bound that combined rate. Earlier results keep exact scope.
+
+Give every run a unique metainfo root name, including cold repetitions, so
+concurrent owned devices have distinct infohashes. Hour fixtures are now bounded
+at 40 MiB rather than 28 MiB, providing more than ten minutes of rate margin
+at 8 KiB/s; short observations remain 28 MiB. Record run ID, infohash, size and
+owned destination in the receipt and independently hash all bytes afterward.
+No product, discovery, device power or seeding policy changes. Validate distinct
+actual metainfo identities with identical deterministic payloads and enforce
+hourly rate-budget margin. Fresh final-source physical runs follow.
+
+The recovery runner accepts an optional runtime-private Machine Control registry
+through the public CLI, avoiding copied private target inventory. Existing
+default resolution is unchanged; all seven recovery cases and owned cleanup
+remain the same.
