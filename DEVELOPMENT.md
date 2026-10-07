@@ -1603,6 +1603,7 @@ and isolated owned state:
 
 ```bash
 uv run --project tests/interop --locked python tests/interop/chromeos_android_qualification.py --help
+uv run --project tests/interop --locked python tests/interop/chromeos_android_recovery.py --help
 uv run --project tests/interop --locked python tests/interop/chromeos_crostini_qualification.py --help
 PYTHONDONTWRITEBYTECODE=1 uv run --project tests/interop --locked python -m unittest discover -s tests/interop -p test_chromeos_qualification.py -v
 ```
@@ -1612,7 +1613,14 @@ The Android runner requires the qualification APK installed in its separate
 package. The Crostini runner requires the exact package staged in its owned
 root and an isolated running gateway; it reports runtime coverage separately
 from installation/launcher/browser acceptance. Both use controlled payloads,
-three repetitions and a bounded 60-minute observation. Short observation runs
+three repetitions and a bounded 60-minute observation. Android runs use unique
+metainfo names to prevent concurrent owned devices sharing a swarm; hour
+fixtures are bounded at 40 MiB, short fixtures at 28 MiB. `--completed-upload`
+requires background mode and a nonzero observation; it selects actual native
+seeding/listener controls, verifies an independent leecher and waits for joined
+shutdown followed by the restored Live library. The SAF recovery runner also
+accepts optional `--registry` for runtime-private inventory and preserves
+production installations. Short observation runs
 leave endurance open. External teardown must uninstall only the owned APK,
 stop/remove the owned Linux runtime, restore initial VM/window state and remove
 only owned temporary transport exceptions. See Tactical 253 for current limits.

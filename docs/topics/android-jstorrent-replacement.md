@@ -37,6 +37,13 @@ first-use disclosure. Old-picker and old-download setup failures remain recorded
 no production-store identity or managed signer is inferred from disposable
 certificates and the unpacked beta extension. Tactical 259 owns exact receipts.
 
+Final Android application source 37673687 passes all seven isolated physical
+SAF/source recovery cases on both cohorts, with independent payload hashes and
+successful owned cleanup. Earlier shared-identity attempts remain failed or
+intentionally interrupted. Corrected unique-identity full background-hour,
+actual completed-upload and joined Live-reopen runs are active. Physical Play,
+removable providers and broader reboot/sleep/network-loss remain separate gates.
+
 Tactical [257](../tactical/257-play-upgrade-and-fresh-signed-candidates.md)
 qualifies a bounded physical Play 1.0.23-to-1.0.25 standalone upgrade: original
 managed signer, unchanged installation identity, two retained paused rows and

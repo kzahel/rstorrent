@@ -508,3 +508,24 @@ Concurrent physical recovery fixtures also need distinct infohashes. The first
 fresh pair is intentionally interrupted before adjudication so another owned
 source cannot invalidate the source-offline check. Finally cleanup is required
 before retrying with unique metainfo names. No interrupted run is counted passed.
+
+
+### Fresh source and physical recovery checkpoint, 2026-10-08
+
+Final Android application source 37673687, isolated APK SHA-256
+9c8cd5c94f87239abdb46eefb7d8354102c525780626b43897a10b26d2287821, passes
+all seven physical SAF/source recovery cases on both cohorts. Partial source-
+offline restart, resumed full-hash completion, revoked grant, picker cancellation,
+retry with generation advance, missing-folder refusal without recreation and
+relocation repair preserve payload SHA-1 6788172e1ce40d42ebb058a29376a0cd9ba22006.
+Both owned cleanups pass. Interrupted shared-identity runs remain failed. Fresh
+unique-identity 40-MiB background-hour plus completed-upload/joined-reopen runs
+are active; no pass is inferred before independent hashes and final cleanup.
+
+Tactical 263 repairs compatible web/website dependency graphs. Fresh audits and
+strict review pass, with the cache residual/source-call-path limit explicitly
+recorded. Updated web typecheck, 470 unit tests, build/CSP, 46 configured E2E
+cases (14 skipped), 54 extension cases, both byte-identical ZIPs, three-page
+website build, 18 distribution tests and desktop notices pass. Sibling hosted
+website graph qualification continues separately under Tactical 264. Android
+code-26 artifact bytes are unaffected; final desktop packaging remains pending.

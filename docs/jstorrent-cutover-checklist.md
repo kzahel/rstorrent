@@ -34,16 +34,20 @@ checks and eight manual installed migration checks. Automatic updating and the
 broader installed matrix remain open. Signed Linux ARM and x64 manual migration pass eight assertions and six
 refusal routes, with restored guest state. Current Linux x64 product pixels
 render; ARM black captures and the old x64 blank window retain visual gaps.
-Physical cohort A's earlier source passes a foreground hour and seven SAF cases.
-Fixed-source cohort B passes three byte/offline-restart repetitions and a complete
-600-second detached background check. Later setup/intake attempts fail before
-the hour; a fresh run enables real background policy before observation intake.
-Cohort A's fixed-source background hour is running.
-The failed foreground run remains failed: Android stops the activity, the
-correct default-off lifecycle joins idle shutdown and ARC power records a timeout.
-Tactical 260 contains the earlier uncaught typed shutdown error; engine and
-device power policy are unchanged. Final-source physical and managed Play
-qualification continue. Bounded debug evidence does not close store/upload gates.
+Current ordinary and companion writer upgrades pass API 28/35 with disposable
+signatures; actual old writers, two SAF roots, partial verification, restart and
+both mixed-version companion pairs pass. Ordinary mode also passes emulator
+reboot. Final Android application source 37673687 passes all seven isolated
+physical SAF/source recovery cases on both cohorts, with independent hashes and
+successful cleanup. Shared-identity background attempts fail after reaching
+Complete and normal joined shutdown; they are not hour passes. Corrected runs
+use unique infohashes and bounded 40-MiB hourly fixtures, followed by actual
+completed-file upload and joined Live-library reopen. These runs are active.
+Tactical 263's fresh web/website audit, strict review, affected builds/tests,
+46 configured E2E cases (14 existing skips), byte-identical extension packages
+and desktop notices pass; its residual upstream cache behavior and static Astro
+call-path limits remain explicit. Sibling hosted graph checks continue under
+Tactical 264. Managed Play and broader physical delivery gates remain open.
 All owned VMs are stopped between uses and their idle claims released.
 The tactical and ignored local report bind exact results and next actions.
 
