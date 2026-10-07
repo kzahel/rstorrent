@@ -223,8 +223,20 @@ def disable_seeding_and_verify_joined_restart(adb, destination, expected_hash):
         raise RuntimeError("joined restart changed completed payload bytes")
     if saf_registry() != registry_before:
         raise RuntimeError("joined restart changed the retained SAF registry")
+    # A delivered launch and unchanged filesystem bytes do not prove that
+    # the restarted client finished restoring its retained library.
+    expected_name = Path(destination).parent.name
+    deadline = time.monotonic() + 120
+    while time.monotonic() < deadline:
+        labels = {node.get("text", "") for node in product.dump_ui(adb).iter()}
+        if "Live" in labels and expected_name in labels:
+            break
+        time.sleep(.5)
+    else:
+        raise RuntimeError("joined restart did not restore the live owned library")
     return {"shutdown": joined[-1], "service_absent_after_join": True,
-            "reopen_sha1": actual, "retained_saf_registry": "unchanged"}
+            "reopen_sha1": actual, "retained_saf_registry": "unchanged",
+            "reopen_live_library": True}
 
 
 def native_maximize_arguments(result):

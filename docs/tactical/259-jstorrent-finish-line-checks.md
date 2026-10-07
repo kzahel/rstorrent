@@ -431,3 +431,19 @@ ordinary and companion upgrade rehearsals on API 28/35 are next; their
 same-package disposable certificate does not qualify Play delivery. Physical
 cohort A's fixed-source background hour and cohort B's new background-before-
 intake hour are active; payload completion and cleanup remain required.
+
+
+### Joined-reopen observation guard, 2026-10-08
+
+The bounded completed-upload/restart runner now requires an observed Live
+library containing its owned torrent after reopening, in addition to joined
+service termination, unchanged payload hash and retained SAF registry. A
+delivered launch alone does not qualify restored client state. Fourteen safety
+cases, compilation and whitespace checks pass; physical upload/reopen execution
+follows the active hour runs and is not yet claimed passed.
+
+Current ordinary-writer API-35 upgrade rehearsal passes the released-app
+settings/intake/two-root/running-replacement, verified partial resume, process
+restart and device reboot assertions. It uses a disposable certificate and
+owned AVD, so the managed Play and physical delivery rows remain open. API-28
+and both companion rehearsals continue serially with owned cleanup.
