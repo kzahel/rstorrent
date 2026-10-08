@@ -53,6 +53,15 @@ Approved source8c desktop run37735081504 completes all five original-root-signed
 lanes and collector. Independent23 hash/size comparisons,15 selectors and10
 signatures pass. Both Mac archive signatures and Accepted notarization receipts
 pass; local ARM Gatekeeper accepts the app. Installed matrix remains separate.
+The final signed Linux ARM Debian extracted native payload subsequently passes
+all eight manual migration assertions and six legacy-host refusal routes.
+Actual populated/restarted/refusal captures render with JSTorrent window/tray
+labels. Source/payload preservation, inherited restoration, exact owned
+recording/recent-file cleanup and VM-off/claim-release checks pass. Two earlier
+coordinator timeouts remain failed. This does not qualify package-manager
+installation, AppImage pixels or automatic updating. Final Mac ARM native
+qualification is the next ready session.
+
 The approved private preview activates source8c and passes actual authenticated
 static/health/WebSocket and responsive rendered branding checks.
 

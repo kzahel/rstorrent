@@ -3,6 +3,29 @@
 Topic: `product-surfaces-and-migration`
 
 
+Current finish-line checkpoint259 supersedes the historical candidate and store
+statuses below. Approved desktop source8c/run37735081504 passes all five signed
+lanes/collector,23 independent hashes/sizes,15 selectors and10 original-root
+signatures. Both Mac code signatures/notarization receipts and local ARM
+Gatekeeper assessment pass. Final signed ARM Debian extracted native payload
+passes8 migration assertions/6 refusal routes, actual populated/restarted
+pixels, source/payload preservation and restored/off/released cleanup; package
+manager and updater qualification remain separate. Approved private preview8c
+is deployed and actually verified.
+
+Internal Play26 is delivered and both preserved managed packages update25-to26
+through Play. The populated cohort retains complete/partial bytes and rows,
+settings and durable SAF grant across engine restart. The other cohort retains
+its inherited disclosure unchanged. Production remains23. Local Android27
+fixes the real stale Live task after Shutdown and passes original-key packaging,
+122 JVM cases/lint and actual isolated menu shutdown/reopen/hash/SAF/cleanup.
+Code27 upload and revised-source hosted CI are unperformed. Original hosted8c
+CI's Android listener test fails;277's test-only readiness correction and the
+revised local fmt/clippy/1,575 cases pass. Web Store remains1.1.1; its native
+inspection is complete read-only. No production release/feed/site publication
+is performed; unavailable installed cohorts and owner policy remain open.
+
+
 Tactical [271](../tactical/271-manual-production-desktop-publisher.md) prepares
 an explicitly manual Stable JSTorrent publication path. Branch candidates and
 stable tag pushes never publish; manual publication requires the exact stable
