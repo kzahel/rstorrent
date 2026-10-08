@@ -57,8 +57,23 @@ a checked local task does not close a delivery row.
 - [x] Approved exact source8c push to existing main and nonpublishing desktop
   dispatch37735081504 record the same SHA and publish=false. Fresh strict
   three-lockfile review passes; the existing expiry remains unchanged.
-- [ ] Complete original-signed five-target collection and artifact verification
-  from that exact final-source run; hosted checks are in progress.
+- [x] Exact source8c desktop run37735081504 completes all five original-signed
+  targets and collector;23 hashes/sizes,15 selectors and10 original-root
+  signatures independently pass. Both Mac signatures/notarization receipts and
+  local ARM Gatekeeper assessment pass. Installed acceptance remains separate.
+- [x] Source8c hosted CI exposes an Android listener-test readiness race;277
+  fixes the test only. Revised local source passes fmt/clippy and1,575 Rust
+  cases with18 existing ignores. Revised-source hosted CI remains unperformed.
+- [x] Actual Play-managed25-to26 update preserves both installation identities;
+  one populated cohort preserves two rows, complete/partial hashes, paused50%,
+  complete100%, settings and durable folder grant through engine restart.
+  The second cohort retains its unacknowledged disclosure unchanged.
+- [x] Android27 fixes the actual managed26 stale Live after Shutdown. Original-key
+  APK/AAB,122 release JVM cases/lint and independent package checks pass;
+  isolated physical normal Shutdown/task/service removal and fresh Live/100%
+  reopen preserve payload/SAF state. Exact owned cleanup passes.
+- [ ] Explicit revised-source push/CI and code27 internal delivery instruction;
+  these newer bytes are not covered by the exact8c/code26 delivery approval.
 - [ ] Final signed installed desktop updates and recovery matrix; native Windows
   credential repair and Intel Mac availability are external machine inputs.
 - [x] Approved exact sourceaeaa original-key AAB uploads and publishes code26
@@ -68,7 +83,7 @@ a checked local task does not close a delivery row.
   alone is not installed acceptance. Production promotion is a separate decision.
 - [ ] Approved same-item Web Store upload/submission/certifications and actual
   preserved-profile update/mixed-version acceptance. Native inspection resumes
-  after the unrelated Save modal clears; published/draft1.1.1 and obsolete
+  completes read-only; published/draft1.1.1 and obsolete
   permission/privacy explanations are recorded without modifying the item.
 - [ ] Remaining real physical provider/reboot/network/sleep and Linux integration
   outcomes using supported Machine Control routes; no injected-state substitute.

@@ -1,6 +1,6 @@
 # Tactical 278: Android Shutdown Window Lifecycle
 
-Status: Active, 2026-10-08. Managed finish-line UI defect.
+Status: Complete locally, 2026-10-08. Managed delivery remains separate.
 
 Topics: `android-jstorrent-replacement`, `client-surfaces`, `web-ui-design`.
 
@@ -44,4 +44,27 @@ finishes/removes its task. ProductApp forwards the callback through its existing
 navigation host; preview callers retain their service callback default. The first
 debug compile misses that navigation forwarding and is retained as a failed
 attempt; after correction, all122 JVM cases and debug lint pass. Candidate27
-is prepared locally. Native qualification and signed release remain next.
+is frozen at application source `68e247ad` with normal original-key APK/AAB.
+All122 release JVM cases, lint and independent signature/package/label/API/ABI,
+16-KiB alignment and notices checks pass. APK SHA256 is
+`7215a127f472ab21230d812482e6221f170bb570a0dbc90eedd67ce234e4ebd2`;
+AAB SHA256 is
+`383379eeb05363e6a361e02a9a1250fb6e72c8dc595b6267bb897b17f34156d8`.
+
+Actual physical ChromeOS normal file-picker intake retains an independently
+hashed private64-KiB complete fixture. The normal Shutdown menu removes the
+owned task/activity and service; the native log records explicit-stop joined
+completion with cleanup_failed=false. Normal activity launch creates a fresh
+service and actual Live/100.0% owned row. Payload SHA256 and SAF registry remain
+identical. Cleanup removes exactly the newly owned folder/files and isolated
+profile; managed code26 installation metadata remains unchanged. Receipts and
+before/after screenshots stay in the ignored finish-line evidence directory.
+A harness initially expected100% instead of the actual100.0%, and an unfiltered
+activity dump initially included other applications; these assertions are
+corrected to the observed display and exact owned identity. Neither failure
+changes product behavior.
+
+The repaired source additionally passes workspace formatting, clippy and1,575
+Rust cases with18 existing ignores. This is local evidence; source8c's original
+hosted listener-test failure remains until revised-source CI is instructed.
+Code27 has not been uploaded. Existing internal26/production23 are unchanged.

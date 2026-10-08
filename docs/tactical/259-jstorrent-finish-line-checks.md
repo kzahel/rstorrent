@@ -47,6 +47,38 @@ private targets, endpoints, accounts, paths, library contents and credentials.
 Record source SHA, public package identity, artifact hashes, exact checks and
 limitations in this document. No new engine/service architecture is implied.
 
+## Current verified delivery checkpoint
+
+Approved source8c desktop run37735081504 completes all five original-root-signed
+lanes and collector. Independent23 hash/size comparisons,15 selectors and10
+signatures pass. Both Mac archive signatures and Accepted notarization receipts
+pass; local ARM Gatekeeper accepts the app. Installed matrix remains separate.
+The approved private preview activates source8c and passes actual authenticated
+static/health/WebSocket and responsive rendered branding checks.
+
+Exact approved sourceaeaa AAB19f9c358 publishes26 to existing internal testers.
+Both preserved managed installations update25-to26 through Play, retaining UID,
+first-install time and installer. One populated cohort retains complete/partial
+payload hashes, paused50%/complete100% rows, settings and durable SAF grant;
+normal stopped-owner reopen restores the actual Live library. The second
+retains its inherited unacknowledged statistics disclosure; changing that
+preference awaits the maintainer's answer. This bounded25-to26 evidence does
+not replace ordinary/companion migration from the older legacy engine.
+
+Managed26's actual Shutdown menu joins the engine but leaves a stale Live task.
+Tactical278 fixes activity ownership in local candidate27/source68e247ad:
+original-key release,122 JVM cases/lint, independent package checks and actual
+isolated menu task/service removal, joined cleanup, fresh Live/100% reopen,
+unchanged payload/SAF and exact owned cleanup pass. Code27 remains unuploaded.
+Source8c CI's immediate listener snapshot fails;277 fixes test readiness only.
+The revised source passes local fmt/clippy and1,575 Rust cases/18 ignores.
+No revised-source push or hosted CI has been instructed.
+
+Native Web Store inspection is complete read-only: existing1.1.1 package,
+legacy explanations/privacy URL and three small historical screenshots remain.
+No upload, edited disclosure, certification or submission occurs. Production
+Play remains23; no desktop public tag/release/feed or sibling site deploy occurs.
+
 ## Ordered finish-line checklist
 
 Checkboxes mean the complete stated check passes. Partial evidence is recorded

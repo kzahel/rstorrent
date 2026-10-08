@@ -1,11 +1,18 @@
 # Android Changelog
 
+## [1.0.27]
+
+- Close the Android task when Shutdown stops its engine, so a stopped engine
+  cannot leave a stale Live library visible.
+- Verify normal reopen preserves the library, payload bytes and folder access.
+- Original-key local candidate; internal delivery remains on 1.0.26.
+
 ## [1.0.26]
 
 - Correct the release-only application label to JSTorrent, including the
   launcher and Android header.
 - Validate resolved APK and App Bundle branding before release staging.
-- Signed qualification candidate; no Play upload or production rollout.
+- Available to existing internal Play testers; production remains 1.0.23.
 
 ## [1.0.25]
 

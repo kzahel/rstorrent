@@ -5,8 +5,13 @@ real code26 managed menu failure: the engine joins successfully, but the bound
 activity still displays Live. The next local candidate27 routes Shutdown
 through the activity owner, requesting the existing terminal stop then removing
 the task so its binding is released. Engine/network/background/privacy policy
-is unchanged. Debug JVM tests and lint pass; actual isolated menu/reopen and
-original-key packaging remain pending. Existing managed code26 is preserved.
+is unchanged. At application source68e247ad, all122 release JVM cases/lint,
+original-key APK/AAB and independent package checks pass. Actual physical
+isolated normal-menu Shutdown removes the task/service with joined successful
+cleanup; normal launch restores a fresh Live service, the same complete row,
+independent payload hash and SAF registry. Exact owned cleanup passes, with
+managed code26 installation metadata unchanged. Code27 internal delivery and
+revised-source hosted CI remain separate unperformed steps.
 
 Topic: `web-ui-design`
 
