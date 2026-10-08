@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 import xml.etree.ElementTree as ET
 
 import android_reactive_surface as product
-from chromeos_android_qualification import diagnostic_rows_match_filter, wait_unique_observed_control, observation_result, PACKAGE, RemoteAdb, confirm_intake, finish_first_use, native_maximize_arguments, reset_owned_profile, create_owned_fixture, observation_payload_size, reopened_library_action, owned_torrent_id, parse_incoming_observation, observe_owned_incoming, wait_owned_seed_readiness
+from chromeos_android_qualification import diagnostic_rows_match_filter, wait_unique_observed_control, observation_result, PACKAGE, RemoteAdb, confirm_intake, finish_first_use, native_maximize_arguments, reset_owned_profile, create_owned_fixture, observation_payload_size, reopened_library_action, owned_torrent_id, parse_incoming_observation, observe_owned_incoming, wait_owned_seed_readiness, IncomingObservationTimeout
 
 
 class QualificationSafety(unittest.TestCase):
@@ -79,6 +79,29 @@ class QualificationSafety(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,'readiness budget'):wait_owned_seed_readiness(adb,info_hash,receipt,timeout=.02)
         self.assertEqual(receipt['status'],'timeout')
         self.assertEqual(receipt['samples'][-1]['registrations'],0)
+
+    def test_busy_native_sample_does_not_invent_a_zero_registry_or_abort_admission(self):
+        torrent_id = 't1-' + 'b' * 32;info_hash = 'a' * 40
+        adb = Mock();adb.shell.return_value.stdout='userId=10001';adb.run.return_value.stdout=f'torrent={torrent_id} v1={info_hash}'
+        receipt={}
+        with patch('chromeos_android_qualification.observe_owned_incoming',side_effect=[IncomingObservationTimeout('busy'),{'port':6881,'registrations':1}]),patch('chromeos_android_qualification.time.sleep'):
+            self.assertEqual(wait_owned_seed_readiness(adb,info_hash,receipt),6881)
+        self.assertEqual(receipt['samples'][0]['status'],'sample_timeout')
+        self.assertNotIn('registrations',receipt['samples'][0])
+        self.assertEqual(receipt['status'],'ready')
+        with patch('chromeos_android_qualification.observe_owned_incoming',side_effect=RuntimeError('malformed')):
+            with self.assertRaisesRegex(RuntimeError,'malformed'):wait_owned_seed_readiness(adb,info_hash,{})
+
+    def test_observer_does_not_start_transport_with_an_exhausted_sample_budget(self):
+        untouched=Mock()
+        with self.assertRaises(IncomingObservationTimeout):
+            observe_owned_incoming(untouched,'10001','t1-'+'b'*32,__import__('time').monotonic()+.5)
+        self.assertEqual(untouched.mock_calls,[])
+
+    def test_transport_timeout_before_sample_deadline_is_not_retryable_busy_state(self):
+        adb=Mock();adb.run.side_effect=subprocess.TimeoutExpired(['owned-transport'],15)
+        with self.assertRaises(subprocess.TimeoutExpired):
+            observe_owned_incoming(adb,'10001','t1-'+'b'*32,__import__('time').monotonic()+25)
 
     def test_seed_readiness_retains_first_and_bounded_latest_samples(self):
         torrent_id = 't1-' + 'b' * 32;info_hash = 'a' * 40

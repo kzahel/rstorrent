@@ -75,3 +75,18 @@ Both current targeted native large-fixture reruns are next; no physical pass is
 inferred from these portable tests. The original observer failure/UnknownTorrent
 and three successful two-positive-file uploads with later failed restart capture
 remain immutable failed overall receipts, with successful owned cleanup.
+
+### Initial native-readiness retry and bounded unavailable samples
+
+Both first ready-stage reruns independently hash the payload and recover the
+actual Logs/Live view, then retain measured zero registrations before a sample
+expires. CohortA samples remain zero through70.07 seconds; cohortB through
+106.69 seconds. No leecher starts and both cleanups pass. A native observer's
+10-second cancellation can leave no reply while structural admission owns the
+service lock. Treat only this bounded sample expiry as unavailable, retain it
+without inventing a zero/ready registry, and continue within the same180-second
+readiness budget. Malformed replies and earlier transport timeouts still refuse.
+Do not launch a transport operation with less than two seconds left in a sample.
+Logs/diagnostic messages remain evidence and never substitute for the actual
+registry snapshot. All40 driver cases pass, including these refusal/busy and
+exhausted-deadline cases. A second current physical retry follows.

@@ -265,15 +265,24 @@ def parse_incoming_observation(line, torrent_id):
             "rejection_counts": match[6], "recent_rejections": match[7]}
 
 
+class IncomingObservationTimeout(RuntimeError):
+    pass
+
+
 def observe_owned_incoming(adb, uid, torrent_id, deadline):
     def remaining():
         budget = deadline - time.monotonic()
-        if budget <= 0:
-            raise RuntimeError("owned incoming observation deadline expired")
+        if budget <= 2:
+            raise IncomingObservationTimeout("owned incoming observation deadline expired")
         return min(15, budget)
     def logs():
-        return adb.run("logcat", "-d", "-v", "threadtime", f"--uid={uid}", "-t", "10000",
-                       "RSTorrentProduct:I", "*:S", timeout=remaining()).stdout.splitlines()
+        try:
+            return adb.run("logcat", "-d", "-v", "threadtime", f"--uid={uid}", "-t", "10000",
+                           "RSTorrentProduct:I", "*:S", timeout=remaining()).stdout.splitlines()
+        except subprocess.TimeoutExpired:
+            if time.monotonic() >= deadline:
+                raise IncomingObservationTimeout("owned incoming observation deadline expired") from None
+            raise
     marker = f"incoming_peer_snapshot torrent={torrent_id} "
     before = {line for line in logs() if marker in line}
     result = adb.shell("am", "broadcast", "-a", "org.rstorrent.bootstrap.PRODUCT_TEST",
@@ -303,16 +312,23 @@ def wait_owned_seed_readiness(adb, info_hash, receipt, *, timeout=180):
     torrent_id = owned_torrent_id(log, info_hash)
     receipt.update(status="pending", torrent_id=torrent_id, info_hash=info_hash, samples=[])
     while time.monotonic() < deadline:
-        observation = observe_owned_incoming(adb, uid[1], torrent_id, min(deadline, time.monotonic() + 25))
+        try:
+            observation = observe_owned_incoming(adb, uid[1], torrent_id, min(deadline, time.monotonic() + 25))
+        except IncomingObservationTimeout:
+            # Structural admission can hold the application's service lock.
+            # An unavailable bounded sample is not a fabricated zero or ready
+            # registry. Its native future has its own cancellation budget.
+            observation = {"status": "sample_timeout"}
         observation["elapsed_seconds"] = round(time.monotonic() - beginning, 2)
         receipt["samples"].append(observation)
         if len(receipt["samples"]) > 32:
             del receipt["samples"][1]
         receipt["elapsed_seconds"] = observation["elapsed_seconds"]
-        if observation["registrations"] > 1:
+        print(json.dumps({"stage": "incoming_seed_readiness", **observation}), flush=True)
+        if observation.get("registrations", 0) > 1:
             receipt["status"] = "refused"
             raise RuntimeError("isolated single-fixture seed registry is ambiguous")
-        if observation["registrations"] == 1:
+        if observation.get("registrations") == 1:
             receipt["status"] = "ready"
             return observation["port"]
         time.sleep(max(0, min(2, deadline - time.monotonic())))
