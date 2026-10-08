@@ -1,6 +1,6 @@
 # Tactical 259: JSTorrent Finish-Line Checks
 
-Status: Active, 2026-10-07. Maintainer-directed end-to-end release qualification.
+Status: Active, 2026-10-08. Maintainer-directed end-to-end release qualification.
 
 Topics: `product-surfaces-and-migration`, `beta-release-readiness`,
 `android-jstorrent-replacement`, `client-surfaces`.
@@ -582,3 +582,36 @@ Next executable action: diagnose actual stage failures, install latest-source
 isolated APK after existing owned probes finish, then run complete three-
 repetition/hour/hash/diagnostic/upload/join/Live-reopen checks. Keep every
 failed receipt and finally cleanup. VMs remain stopped.
+
+### Native observer and two-device transport checkpoint, 2026-10-08
+
+Both source0aa small two-positive-file fixtures pass independently hashed
+524289-byte upload in foreground, background and reopened foreground. Actual
+joined shutdown, Live-library return, retained SAF registry and payload pass
+on both devices; owned cleanup succeeds. Tactical260 and266 are complete
+locally under their bounded stopping conditions, not complete store delivery.
+
+A separate28-MiB two-positive-file source0aa diagnostic receives one peer and
+4,276,224/4,734,963/4,505,600 bytes in its three15-second phases. It remains
+incomplete. Actual joined restart and cleanup pass. This is a measured
+short-budget failure, distinct from the original120-empty-file fixture's
+zero-peer EOF. No general background-seeding failure is inferred.
+
+Observer sourceaeaa72f9 passes all15 native Android cases, focused clippy,
+normal original-signed release/lint,122 JVM cases and independent package
+checks. Exact production APK SHA-256:
+`f5ee36a3ecd529e0005d4346cefd23ea49dde451f1ddaea3ea8af2bb31881b53`;
+AAB SHA-256:
+`19f9c3585ea2ac8d596bdd19bc4e1ab7ffcb5bf73e96b22b0c3c1f595baa9644`.
+The isolated dual-ABI APK SHA-256 is
+`b0e8fc36ffe1c0991d24d64da2a7cf85b3a8e8512a6f29cfba6cb89179bd66ed`.
+Both physical installs pass; one native large-fixture diagnosis and one
+120-second two-positive-file full upload/hash retry are active, exclusively
+owning their respective UI. The sole failed-test-owned observer temp fixture
+was removed after its corrected test passed. Older capsules remain immutable.
+No store upload, publication, push, tag, engine or network policy change.
+
+Next action: obtain actual current-port/rejection evidence for the large
+fixture, complete current full-hash upload trials, then repeat the whole
+three-cold-repetition/hour/diagnostic/upload/joined-Live sequence after any
+necessary bounded fix. Keep all failed receipts, scoped provenance and cleanup.

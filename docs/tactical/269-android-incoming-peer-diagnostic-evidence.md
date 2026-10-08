@@ -56,5 +56,8 @@ actual port and six rejection counts while retaining exactly four latest hashes
 with explicit truncation and no peer addresses. Offline returnsNone and closed
 application access refuses. The first test assumed an initially enabled listener
 and failed; it now explicitly enables only its owned loopback listener before
-observation. No product default was changed. Normal generated build/physical
-samples remain pending.
+observation. No product default was changed. Normal generated dual-ABI release, original-upload signature, resolved labels,
+API28/target36,16-KiB alignment/notices, lint and122 JVM cases pass at
+sourceaeaa72f9. Both isolated physical installs pass; actual current-port and
+rejection samples remain active. The one owned temporary directory from the
+initial failed test was removed. No inherited fixture or profile was deleted.

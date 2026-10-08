@@ -16,22 +16,36 @@ of the public evidence. No row authorizes publication by itself.
 
 ## Latest Android And Physical Checkpoint, 2026-10-08
 
-Android application source `0aa5c9e2dd5d4ba61ddfd68f8a76dce261a6fa72` supersedes
-source376 and source2ad candidates. Tactical 266 repairs the actual retained
-native diagnostic snapshot queue failure; Tactical 268 removes message-less
-visible error class-name fallbacks while preserving meaningful messages and
-technical logs. Normal original-upload-signed release, 122 JVM tests, lint,
-localization and independent APK/AAB package/signature/labels/API/ABI/alignment/
-notices checks pass. No code26 upload or managed Play acceptance is claimed.
+Android application source `aeaa72f97b816c7f7fbad71dfb7aee5ea46499ca` supersedes
+source0aa, source2ad and source376 candidates. Tactical 269 adds a bounded
+read-only incoming-peer observer for native rejection evidence; it does not
+change engine, listener or seeding policy. Normal original-upload-signed
+release, 122 JVM tests, lint and independent APK/AAB package/signature/labels/
+API/ABI/alignment/notices checks pass. AAB SHA-256:
+`19f9c3585ea2ac8d596bdd19bc4e1ab7ffcb5bf73e96b22b0c3c1f595baa9644`.
+Both physical devices now have the exact isolated observer APK; current native
+diagnosis and large two-positive-file upload trials are active. No code26
+upload or managed Play acceptance is claimed.
 
-Both source376 physical detached hour components complete 3,600 seconds and
+Both source0aa physical small-fixture runs independently receive/hash all
+524289 bytes in foreground, background and reopened foreground. Both joined
+shutdowns, actual Live-library returns, unchanged SAF registries/payloads and
+owned cleanups pass. Tactical 260's bounded adapter shutdown fix and Tactical
+266's retained native diagnostic recovery are complete locally. These passes
+exclude the large fixture's 120 empty files and do not qualify Play or an hour.
+The large two-positive-file 15-second diagnostic receives about4.3–4.7 MiB
+and one peer in each state; it remains incomplete, with successful joined
+restart and cleanup. Measured movement justifies a120-second full-hash retry.
+
+Both source376 physical detached hour components complete3,600 seconds and
 independently hash all40 MiB. Their subsequent Android upload stages fail;
-overall receipts remain failed. A source2ad short probe measures zero upload
-bytes and peers after120 seconds; the other cohort times out on cold repetition
-three. Tactical267 retains these failures, bounded tunnel readiness and
-actual peer/byte counters, and trials actual diagnostic resubscription plus
-joined Live-library reopen. Latest-source whole physical qualification remains
-open. No VM is running while these physical trials proceed.
+overall receipts remain failed. Large-metadata source0aa trials likewise
+restore retained diagnostic history/actual Live but receive zero peers/bytes.
+EOF is not proof of missing registration; an actual native peer record reports
+completed-file registration accepted. Tactical267 retains these failures and
+requires actual settled diagnostic rows, fresh UI captures and byte-checked
+upload/reopen. Whole final physical qualification remains open. All VMs remain
+stopped while these physical trials proceed.
 
 ## Finish-Line Qualification Checkpoint, 2026-10-07
 
