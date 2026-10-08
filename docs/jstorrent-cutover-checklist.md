@@ -363,9 +363,13 @@ the candidate source and needs a fresh signed build.
 
 ## Candidate Identity And Delivery
 
-- [ ] **D-01 Desktop identity:** JSTorrent name/icons, `com.jstorrent.desktop`,
+- [x] **D-01 Desktop identity:** JSTorrent name/icons, `com.jstorrent.desktop`,
   existing Tauri updater trust root and `updates.jstorrent.com` route. Candidate
   version exceeds every selected installed source. Beta route/key remain separate.
+  Exact source8c signed five-target0.3.0 metadata, both packaged Mac icons,
+  2,037 display values/40 original assets, retained ID/key/route and selected
+  legacy0.2.1 ordering qualify. Native/updater/launcher/pixel cohorts remain
+  separate installed gates.
 - [ ] **D-02 Desktop signatures:** retained updater key verifies final signatures;
   wrong key fails. macOS Developer ID/team, notarization/stapling/Gatekeeper and
   Windows publisher/signature match the accepted production delivery lane.

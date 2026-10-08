@@ -68,6 +68,14 @@ with statistics disabled in the owned test profile; persisted choice is checked.
 Every completed Mac repeat restores the guest, removes owned captures/staging,
 powers off and releases its claim. Failed coordinator repeats stay failed.
 
+D-01 now qualifies for the exact signed desktop source8c candidate and selected
+legacy0.2.1 sources. Independent Mac archive metadata and embedded original
+icons match JSTorrent/com.jstorrent.desktop/0.3.0; the other three signed lane
+receipts match the same name/version/source. Current production configuration
+and 2,037-value/40-original-asset guards pass. The retained updater ID/key/route
+and separate incubation configuration are unchanged. Broader installed, launch,
+updater and pixel requirements retain their own open rows.
+
 The approved private preview activates source8c and passes actual authenticated
 static/health/WebSocket and responsive rendered branding checks.
 

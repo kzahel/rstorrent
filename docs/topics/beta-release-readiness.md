@@ -12,8 +12,11 @@ Final Mac ARM manual migration passes eight assertions/nine refusal routes,
 with actual settled/restarted JSTorrent pixels, independent inherited-tree
 restoration and off/released cleanup. Final signed ARM Debian extracted native payload
 passes8 migration assertions/6 refusal routes, actual populated/restarted
-pixels, source/payload preservation and restored/off/released cleanup; package
-manager and updater qualification remain separate. Approved private preview8c
+pixels, source/payload preservation and restored/off/released cleanup. A
+separate actual ARM Debian dpkg installation and installed native run also pass
+eight migration assertions/six refusal routes, readable settled/restart pixels
+and exact owned package/cache/profile restoration with VM off/claim released.
+Updater and broader installed qualification remain separate. Approved private preview8c
 is deployed and actually verified.
 
 Internal Play26 is delivered and both preserved managed packages update25-to26

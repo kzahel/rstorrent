@@ -24,9 +24,8 @@ assertions and six refusal routes, with readable populated/restarted/refusal
 compositor captures and JSTorrent window/tray labels. Owned staging/captures and
 recent-file metadata are removed, VMs return off and claims are released.
 
-These manual replacements do not qualify final automatic/GUI updating,
-package-manager installation, AppImage visual acceptance or the remaining native
-Windows/Intel Mac/x64 cohorts. Windows login repair and Intel Mac availability
+Final automatic/GUI updating, AppImage visual acceptance and the remaining native
+Windows/Intel Mac/x64 cohorts remain unqualified. Windows login repair and Intel Mac availability
 remain external testbed inputs. No public tag, release or feed changes.
 
 The final signed ARM Debian package also passes actual `dpkg --install` and
