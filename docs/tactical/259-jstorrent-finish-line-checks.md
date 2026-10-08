@@ -215,6 +215,19 @@ notice hashes/provenance; both AppImages reconcile 179 native components,
 review obligations remain separate under R-05. Owned extracts/server/staging
 are removed and Windows returns off with its claim released.
 
+Independent read-only ELF/SquashFS inspection also identifies both final
+AppImage outer runtimes as upstream `type2-runtime`
+`8f39b89e2ac31e1640b3d3f7e9a5108e6ce805fa`. Every byte matches the upstream
+x64/ARM assets except the named 16-byte `.digest_md5` payload-digest section.
+The runtime lengths are 944,632/936,456 bytes; upstream SHA-256 values are
+`156f4bdbde9c52d01814600013e0a273f0118dc2de98975f3c8c63427ec79074` and
+`b4ff0030242d0c3bb12ce40541828303cf167493f4793456f0436edd6255c39d`.
+Pinned license, build workflow, Makefile and dependency-build inputs are
+inspected without executing the runtime or booting a VM. The upstream license
+lists static libraries; its build pins and patches libfuse 3.15.0 and pins
+squashfuse 0.5.2. Runtime attribution improves; complete corresponding-source,
+relink material and per-package redistribution review remain open under R-05.
+
 Final signed Linux ARM native launch qualification also passes in a fresh owned
 empty catalog with DHT/PEX disabled and loopback networking. Twelve post-Quit
 IPC requests refuse with Retry; controlled busy-owner retry and eight-second

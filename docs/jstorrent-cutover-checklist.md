@@ -107,6 +107,10 @@ a checked local task does not close a delivery row.
 - [x] 736 selected production input Git objects/modes match source8c-to681;
   Android Rust runtime prefix is identical and its readiness fix is test-only.
   Signed8c and local Android27 identities remain distinct; hosted CI unchanged.
+- [x] Both final AppImage outer runtimes match pinned upstream8f39b89 bytes
+  except their named16-byte payload digest; ELF/SquashFS boundaries and upstream
+  license/build/dependency inputs are inspected read-only. Complete static
+  dependency/relink/source and per-package redistribution review stays under R-05.
 - [x] Final signed package identity/signing/notice integrity qualifies D-01/D-02;
   Windows native accepted publisher/timestamps and both Mac Gatekeeper policy
   assessments pass. Fresh exact-lock strict dependency audit passes unchanged.

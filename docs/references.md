@@ -694,3 +694,21 @@ executing either prospective reference as an oracle, pin its exact source and
 record the build recipe. Before copying, linking, vendoring, or distributing
 it, repeat the exact file-level license, notice, modification, dependency, and
 platform review required by the reference policy above.
+
+## Final AppImage Runtime Provenance
+
+Tactical259's final source8c AppImages embed
+[`type2-runtime` revision8f39b89](https://github.com/AppImage/type2-runtime/tree/8f39b89e2ac31e1640b3d3f7e9a5108e6ce805fa).
+Independent ELF-boundary and complete runtime-byte comparison binds both
+architectures to the upstream assets from
+[build36463736478](https://github.com/AppImage/type2-runtime/actions/runs/36463736478),
+allowing only the named16-byte `.digest_md5` payload-digest field.
+The pinned [license](https://github.com/AppImage/type2-runtime/blob/8f39b89e2ac31e1640b3d3f7e9a5108e6ce805fa/LICENSE),
+`BUILD.md`, `.github/workflows/build.yaml`, `src/runtime/Makefile`,
+`scripts/common/install-dependencies.sh` and `patches/libfuse/mount.c.diff`
+are inspected for provenance and static dependency/build inputs. The license
+lists separate static-library terms; dependency builds pin and patch libfuse
+3.15.0 and pin squashfuse0.5.2. Inspection does not establish complete
+corresponding-source/relink availability or per-package redistribution
+acceptance. R-05 retains those requirements. No upstream source or fixture is
+imported into the public repository by this inspection.

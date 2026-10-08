@@ -103,6 +103,14 @@ architectures remain open. Every completed session cleans up/off/releases.
 Fresh exact-lock strict dependency review passes on 2026-10-08 with the existing
 seven-warning policy, verified GLib backport and unchanged 2026-10-12 expiry.
 
+Both final AppImage outer runtimes independently match upstream
+`type2-runtime` revision `8f39b89e2ac31e1640b3d3f7e9a5108e6ce805fa` byte for
+byte except each named 16-byte `.digest_md5` payload-digest section. The exact
+upstream asset digests, ELF boundaries and pinned license/build/dependency inputs
+are recorded in 259. This is runtime provenance, not complete corresponding-source
+or redistribution acceptance; static dependency/relink and per-package review
+remain under R-05.
+
 Internal Play26 is delivered and both preserved managed packages update25-to26
 through Play. The populated cohort retains complete/partial bytes and rows,
 settings and durable SAF grant across engine restart. The other cohort retains

@@ -79,6 +79,14 @@ AppImage FUSE mounting, associations and automatic updating remain separate.
 The final signed controlled Linux native launch check is recorded below.
 Next executable native cohort: Windows x64 after verified appliance rebuild.
 
+Both final AppImage outer runtimes independently match upstream
+`type2-runtime` revision `8f39b89e2ac31e1640b3d3f7e9a5108e6ce805fa` byte for
+byte except each named 16-byte `.digest_md5` payload-digest section. The exact
+upstream asset digests, ELF boundaries and pinned license/build/dependency inputs
+are recorded in 259. This is runtime provenance, not complete corresponding-source
+or redistribution acceptance; static dependency/relink and per-package review
+remain under R-05.
+
 The final original-signed Linux x64 AppImage also passes its native
 extract-and-run migration: eight assertions, six refusal routes, stable four-row
 restart and exact source/payload preservation. Candidate SHA-256 is
