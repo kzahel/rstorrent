@@ -819,3 +819,11 @@ call overlaps the first shutdown, and follow-up doctor finds running. A new
 exclusive claim serializes the final shutdown, doctor explicitly confirms off,
 and claim release succeeds. All local exports remain ignored. No owned VM
 needs to remain running for physical tests or external delivery decisions.
+
+Read-only follow-up also measures the earlier normal-cache migrated/restarted
+PNGs against their actual native accessibility frame bounds. Both rectangles
+have zero RGBA throughout. The apparent black areas are transparent capture
+content; they do not prove black rendering on the actual guest display or a
+product design defect. Keep original captures/adjudication unchanged and append
+the hash-bound alpha follow-up. Populated visual acceptance remains unavailable,
+while the separate functional migration pass stays valid.

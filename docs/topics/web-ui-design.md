@@ -23,10 +23,14 @@ The same historical signed ARM package repeats all eight manual migration
 assertions and six refusal routes with normal native Quit and complete restored
 state. Actual accessibility exposes four rows and an acknowledged disclosure,
 and JSTorrent tray menu pixels render, while populated/restarted and refusal-
-dialog captures remain black. This remains a visual failure; the separate styled
-empty first-use probe does not qualify populated visuals. Recorded GVfs/module
-warnings and a separate spice-vdagent crash do not establish its cause. Tactical
-259 retains the actual comparison and final signed/pixel acceptance gap.
+dialog captures remain unusable. Read-only alpha analysis finds zero RGBA
+throughout the actual migrated/restarted native frame bounds; the cache probe's
+active-window PNG is also entirely transparent. These captures cannot establish
+the actual display pixels or a product design/rendering defect. Populated visual
+acceptance remains open; the separate styled empty first-use probe cannot close
+it. Recorded GVfs/module warnings and a separate spice-vdagent crash do not
+establish its cause. Tactical259 retains original captures/adjudication plus the
+alpha follow-up, with no graphics override or product change.
 
 Tactical [258](../tactical/258-cross-surface-branding-and-design-audit.md)
 completes the broader branded surface audit with an
