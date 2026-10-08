@@ -911,3 +911,13 @@ the AppImage capture finding without proving a cause or qualifying final source,
 package-manager installation or automatic/GUI updating. Exact owned roots/PNGs
 and six delayed recording recent entries are removed; restored scopes, serialized
 VM off and released claim are verified. Full receipts/media remain ignored.
+
+A fresh anonymous bundled-browser read-only public homepage/privacy refresh
+passes four actual390/1200 views: HTTP200, no obsolete display brand, overflow,
+broken images or page errors. Both actual response hashes and screenshots remain
+ignored. Public privacy still has historical absolute server/analytics copy;
+its corrected local source is not deployed. The readable standalone privacy
+layout lacks shared site navigation/logo, retained as a presentation follow-up.
+Report local-reference validation finds all1,224 asset/document links present;
+updated local six-view responsive review passes. Browser processes are joined.
+Fresh authoritative Linux/Windows/macOS doctors confirm all VMs off after275.

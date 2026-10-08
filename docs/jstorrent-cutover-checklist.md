@@ -33,8 +33,10 @@ a checked local task does not close a delivery row.
   registry/payload bytes. Owned cleanup passes; targeted runs do not prove an hour.
 - [x] Manual-only production publisher 271 passes 58 focused cases/workflow lint
   and the historical actual 23-asset/15-selection/10-signature local rehearsal.
-- [x] Native Linux toolkit name correction is verified on x64; fresh signed ARM
-  first-use pixels render. Migrated native frame captures are transparent; populated visual acceptance remains open.
+- [x] Native Linux toolkit name correction is verified on x64. Historical signed
+  ARM first-use and extracted Debian populated/restarted pixels render; eight
+  migration assertions/six refusal routes and restored-state cleanup pass.
+  AppImage capture and final signed/native/install qualification remain open.
 - [x] Concrete shipment review independently rehashes the three Android artifacts,
   exact production extension ZIP and 23 historical desktop assets. Final signed
   source, installed cohorts, store delivery and owner approval remain open.
