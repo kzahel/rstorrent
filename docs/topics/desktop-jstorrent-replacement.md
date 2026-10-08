@@ -16,8 +16,9 @@ The final ARM Mac archive passes eight real old-writer migration assertions and
 nine registered legacy-protocol refusal routes. Source/payload bytes and the
 independently recorded inherited file/type/mode/size/hash trees remain unchanged
 after joined cleanup. Native captures show JSTorrent menu/window/header and the
-styled populated library behind its first-use disclosure. A separate settled
-library capture is still being qualified; failed driver repeats remain failed.
+styled populated library, settled and restarted after a native first-use choice.
+The owned profile explicitly disables statistics; an independent read-only
+persisted-state check confirms acknowledgement. Failed driver repeats stay failed.
 The exact signed Linux ARM Debian extracted payload passes eight migration
 assertions and six refusal routes, with readable populated/restarted/refusal
 compositor captures and JSTorrent window/tray labels. Owned staging/captures and

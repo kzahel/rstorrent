@@ -63,7 +63,8 @@ coordinator timeouts remain failed. This does not qualify package-manager
 installation, AppImage pixels or automatic updating. Final Mac ARM archive
 manual migration also passes eight assertions and nine refusal routes, with
 source/payload preservation and independent inherited-tree restoration. Native
-populated/disclosure pixels render; a settled-library repeat remains in flight.
+settled/restarted library pixels render after native first-use acknowledgement
+with statistics disabled in the owned test profile; persisted choice is checked.
 Every completed Mac repeat restores the guest, removes owned captures/staging,
 powers off and releases its claim. Failed coordinator repeats stay failed.
 

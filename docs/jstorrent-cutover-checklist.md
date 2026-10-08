@@ -64,6 +64,11 @@ a checked local task does not close a delivery row.
   signatures and ten wrong-incubation-root refusals independently pass. Both Mac
   signatures/notarization/DMG stapling and local ARM Gatekeeper assessment pass.
   Installed acceptance remains separate.
+- [x] Final signed Mac ARM manual replacement: eight migration assertions/nine
+  refusal routes, readable settled/restarted JSTorrent library, source/payload
+  preservation, independent inherited-tree restoration and exact owned cleanup;
+  transfer server reaped, VM off and claim released. Automatic updating and DMG
+  drag/drop qualification remain separate.
 - [x] Source8c hosted CI exposes an Android listener-test readiness race;277
   fixes the test only. Revised local source passes fmt/clippy and1,575 Rust
   cases with18 existing ignores. Revised-source hosted CI remains unperformed.

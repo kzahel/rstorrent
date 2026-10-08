@@ -6,8 +6,11 @@ Topic: `beta-release-readiness`
 Current finish-line checkpoint259 supersedes the historical candidate and store
 statuses below. Approved desktop source8c/run37735081504 passes all five signed
 lanes/collector,23 independent hashes/sizes,15 selectors and10 original-root
-signatures. Both Mac code signatures/notarization receipts and local ARM
-Gatekeeper assessment pass. Final signed ARM Debian extracted native payload
+signatures and ten wrong-incubation-root refusals. Both Mac code signatures,
+Accepted notarization receipts, DMG staples and local ARM Gatekeeper pass.
+Final Mac ARM manual migration passes eight assertions/nine refusal routes,
+with actual settled/restarted JSTorrent pixels, independent inherited-tree
+restoration and off/released cleanup. Final signed ARM Debian extracted native payload
 passes8 migration assertions/6 refusal routes, actual populated/restarted
 pixels, source/payload preservation and restored/off/released cleanup; package
 manager and updater qualification remain separate. Approved private preview8c
@@ -16,7 +19,9 @@ is deployed and actually verified.
 Internal Play26 is delivered and both preserved managed packages update25-to26
 through Play. The populated cohort retains complete/partial bytes and rows,
 settings and durable SAF grant across engine restart. The other cohort retains
-its inherited disclosure unchanged. Production remains23. Local Android27
+its inherited disclosure unchanged. Owned managed fixture records/files are
+subsequently removed with installation metadata and inherited grant preserved.
+Production remains23. Local Android27
 fixes the real stale Live task after Shutdown and passes original-key packaging,
 122 JVM cases/lint and actual isolated menu shutdown/reopen/hash/SAF/cleanup.
 Code27 upload and revised-source hosted CI are unperformed. Original hosted8c
