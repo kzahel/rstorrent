@@ -3671,6 +3671,10 @@ def verify_product_upload(
             "in_enc_policy": int(lt.enc_policy.pe_disabled),
             "out_enc_policy": int(lt.enc_policy.pe_disabled),
             "alert_queue_size": 1000,
+            "alert_mask": int(lt.alert.category_t.error_notification)
+            | int(lt.alert.category_t.status_notification)
+            | int(lt.alert.category_t.connect_notification)
+            | int(lt.alert.category_t.peer_notification),
         }
     )
     handle = None
@@ -3730,6 +3734,7 @@ def verify_product_upload(
             next_sample = time.monotonic()
             while time.monotonic() < deadline:
                 diagnostics.extend(alert.message() for alert in session.pop_alerts())
+                diagnostics = diagnostics[-100:]
                 status = handle.status()
                 if time.monotonic() >= next_sample:
                     print(

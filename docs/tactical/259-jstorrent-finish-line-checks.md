@@ -557,3 +557,28 @@ The production assembler still rejects JSTorrent tag publication. Ordinary
 candidate does not activate this route. Final qualified publisher activation,
 public asset availability and website deployment are separate open gates. No
 publisher guard, tag, push, feed or store state is changed in this preparation.
+
+### Diagnostic and upload follow-up checkpoint, 2026-10-08
+
+Both source376 physical hour/hash components pass; following upload stages
+time out, so their overall receipts remain failed. Source2ad short trial A
+passes three cold/offline repetitions and full completion hash but records
+zero uploaded payload/peers after120 seconds. Trial B times out on its third
+cold repetition; two earlier repetitions pass. Both owned cleanups pass.
+
+Tactical266 repairs a separately observed581079-byte retained snapshot refusal
+by changing only the diagnostic queue to the existing4-MiB maximum. Actual
+473255-byte snapshot/resync,387 session cases and focused clippy pass.
+Tactical268 prevents message-less visible Android errors from leaking internal
+class names. Latest app source0aa5c9e2 passes normal original-signed release,
+122 JVM cases,lint,localization and independent packaging checks. Exact new
+APK/AAB supersede earlier artifacts in the ignored review; older artifact
+approval would not authorize the different bundle. No store upload occurred.
+
+Tactical267's targeted source2ad physical diagnostics/upload probes are active.
+They cannot qualify a full hour. Tunnel readiness proves the local listener
+only; additional bounded connect/peer alerts now preserve failure details.
+Next executable action: diagnose actual stage failures, install latest-source
+isolated APK after existing owned probes finish, then run complete three-
+repetition/hour/hash/diagnostic/upload/join/Live-reopen checks. Keep every
+failed receipt and finally cleanup. VMs remain stopped.

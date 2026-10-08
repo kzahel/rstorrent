@@ -6,7 +6,8 @@ Tactical [268](../tactical/268-android-visible-error-fallback.md) replaces
 message-less/blank Android exception class-name fallbacks with catalog-owned
 product copy. Meaningful messages and complete technical logs remain. Portable
 formatting regression, 122 debug JVM cases, lint and all localization catalogs
-pass; normal signed packaging and latest-source physical evidence are pending.
+pass; normal original-signed packaging and independent package checks also
+pass. Latest-source physical delivery remains separately pending.
 This is a source-level leak prevention, not a reproduced runtime exception.
 
 Tactical [266](../tactical/266-android-diagnostic-history-resynchronization.md)

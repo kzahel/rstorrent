@@ -1,6 +1,6 @@
 # Tactical 268: Android Visible Error Fallback
 
-Status: Active, 2026-10-08. Bounded branding follow-up to 259.
+Status: Complete locally, 2026-10-08. Bounded branding follow-up to 259.
 
 Topics: `client-surfaces`, `localization`.
 
@@ -33,4 +33,6 @@ observed on a device. Physical checks retain exact application-source identity.
 All localization catalogs pass (469 Android English resources; English remains
 the only shipping locale). Debug JVM tests and lint pass through the normal
 Gradle variant; the new test covers absent/blank and custom technical identities
-as well as exact meaningful-message preservation. Signed packaging pending.
+as well as exact meaningful-message preservation. Normal original-signed release (122 JVM cases and lint) and independent
+APK/AAB package/signature/labels/API/ABI/alignment/notices validation pass.
+Latest-source physical acceptance is separately pending under259/267.

@@ -80,7 +80,8 @@ class UploadTransportSafety(unittest.TestCase):
         target = Mock(host='owned-test-alias')
         target.run.return_value = SimpleNamespace(returncode=0, stdout='54321', stderr='')
         session = Mock()
-        fake_lt = SimpleNamespace(session=Mock(return_value=session), enc_policy=SimpleNamespace(pe_disabled=0))
+        fake_lt = SimpleNamespace(session=Mock(return_value=session), enc_policy=SimpleNamespace(pe_disabled=0),
+            alert=SimpleNamespace(category_t=SimpleNamespace(error_notification=1, status_notification=64, connect_notification=32, peer_notification=2)))
         with tempfile.TemporaryDirectory() as directory:
             owned = Path(directory) / 'owned-upload'; owned.mkdir()
             sentinel = Path(directory) / 'unrelated'; sentinel.write_text('preserve')

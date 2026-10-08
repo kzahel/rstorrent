@@ -14,6 +14,25 @@ certificate/key fingerprints, platform/build, observation and recovery outcome
 for each installed cohort. Keep personal paths, credentials and private keys out
 of the public evidence. No row authorizes publication by itself.
 
+## Latest Android And Physical Checkpoint, 2026-10-08
+
+Android application source `0aa5c9e2dd5d4ba61ddfd68f8a76dce261a6fa72` supersedes
+source376 and source2ad candidates. Tactical 266 repairs the actual retained
+native diagnostic snapshot queue failure; Tactical 268 removes message-less
+visible error class-name fallbacks while preserving meaningful messages and
+technical logs. Normal original-upload-signed release, 122 JVM tests, lint,
+localization and independent APK/AAB package/signature/labels/API/ABI/alignment/
+notices checks pass. No code26 upload or managed Play acceptance is claimed.
+
+Both source376 physical detached hour components complete 3,600 seconds and
+independently hash all40 MiB. Their subsequent Android upload stages fail;
+overall receipts remain failed. A source2ad short probe measures zero upload
+bytes and peers after120 seconds; the other cohort times out on cold repetition
+three. Tactical267 retains these failures, bounded tunnel readiness and
+actual peer/byte counters, and trials actual diagnostic resubscription plus
+joined Live-library reopen. Latest-source whole physical qualification remains
+open. No VM is running while these physical trials proceed.
+
 ## Finish-Line Qualification Checkpoint, 2026-10-07
 
 Tactical [259](tactical/259-jstorrent-finish-line-checks.md) owns current

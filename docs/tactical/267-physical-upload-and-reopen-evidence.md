@@ -70,3 +70,14 @@ explicit completed-upload observations of 1..600 seconds. Its receipt marks
 cold repetitions unrun and it cannot be used for an hour. The ordinary hour path
 still requires all three repetitions. This bounds further stage-diagnosis work
 without relabeling a targeted result as complete endurance qualification.
+
+### Short trial checkpoint
+
+Source2ad cohortA passes all three cold repetitions and full short completion
+hash, then measures zero peers/bytes for120 seconds with its SSH child still
+running. CohortB times out on repetition3 after two passes. Both finally
+cleanups succeed. These are retained failures, not inferred tunnel/engine
+diagnoses. Add bounded connect/peer alerts (last100 retained; existing1000
+alert queue) so future transport/refusal failures have concrete evidence.
+Five transport ownership/refusal tests still pass. Targeted actual native
+diagnostic/upload probes are active; no upload or joined-reopen pass yet.
