@@ -889,3 +889,15 @@ flush, independently verifies zero owned metadata entries and all recording
 roots absent, then confirms serialized shutdown/off/claim release. The earlier
 immediate absent observations remain preserved and do not establish final
 metadata absence. Normal real migration passes; visual acceptance remains open.
+
+### External delivery refresh after native capture cleanup
+
+Fresh read-only remote observation still finds main at historicala35934d2 and
+no reviewed8c final-source Desktop Release build among current runs. Visible
+authenticated Play overview remains production23/internal25/max uploaded25.
+The existing unrelated native Chrome Save modal remains intact and blocks
+privileged Web Store inspection. Store tabs retain handoff marks. No push,
+dispatch, upload, certification, promotion, account edit or deployment occurs;
+existing concrete action reviews and machine inputs remain pending. Current
+B's fresh whole native-wake run passes three cold repetitions and is actively
+advancing through the detached hour, without a final whole receipt yet.
