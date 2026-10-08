@@ -51,16 +51,21 @@ limitations in this document. No new engine/service architecture is implied.
 
 Approved source8c desktop run37735081504 completes all five original-root-signed
 lanes and collector. Independent23 hash/size comparisons,15 selectors and10
-signatures pass. Both Mac archive signatures and Accepted notarization receipts
-pass; local ARM Gatekeeper accepts the app. Installed matrix remains separate.
+signatures pass. Both Mac archive signatures, Accepted notarization receipts and DMG staples
+pass; local ARM Gatekeeper accepts the app. All ten payloads also refuse the
+incubation signing root. Installed matrix remains separate.
 The final signed Linux ARM Debian extracted native payload subsequently passes
 all eight manual migration assertions and six legacy-host refusal routes.
 Actual populated/restarted/refusal captures render with JSTorrent window/tray
 labels. Source/payload preservation, inherited restoration, exact owned
 recording/recent-file cleanup and VM-off/claim-release checks pass. Two earlier
 coordinator timeouts remain failed. This does not qualify package-manager
-installation, AppImage pixels or automatic updating. Final Mac ARM native
-qualification is the next ready session.
+installation, AppImage pixels or automatic updating. Final Mac ARM archive
+manual migration also passes eight assertions and nine refusal routes, with
+source/payload preservation and independent inherited-tree restoration. Native
+populated/disclosure pixels render; a settled-library repeat remains in flight.
+Every completed Mac repeat restores the guest, removes owned captures/staging,
+powers off and releases its claim. Failed coordinator repeats stay failed.
 
 The approved private preview activates source8c and passes actual authenticated
 static/health/WebSocket and responsive rendered branding checks.
@@ -72,7 +77,10 @@ payload hashes, paused50%/complete100% rows, settings and durable SAF grant;
 normal stopped-owner reopen restores the actual Live library. The second
 retains its inherited unacknowledged statistics disclosure; changing that
 preference awaits the maintainer's answer. This bounded25-to26 evidence does
-not replace ordinary/companion migration from the older legacy engine.
+not replace ordinary/companion migration from the older legacy engine. Normal
+Keep data removal subsequently deletes only the two owned fixture records;
+independent hash guards remove their four owned files. The inherited folder
+grant and managed26 installation metadata remain unchanged.
 
 Managed26's actual Shutdown menu joins the engine but leaves a stale Live task.
 Tactical278 fixes activity ownership in local candidate27/source68e247ad:

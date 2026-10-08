@@ -2,6 +2,32 @@
 
 Topic: `desktop-jstorrent-replacement`
 
+## Current final signed checkpoint, 2026-10-08
+
+The approved frozen desktop source `8c06f48e` supersedes the historical candidate
+statuses below. Run [37735081504](https://github.com/kzahel/rstorrent/actions/runs/37735081504)
+completes all five signed lanes and collector without publication. Independent
+checks pass 23 asset hashes/sizes, 15 updater selections, ten original-root
+signatures and ten refusals under the incubation root. Both macOS archive
+Developer ID signatures, Accepted notarization receipts and DMG staples pass;
+ARM Gatekeeper accepts the signed app.
+
+The final ARM Mac archive passes eight real old-writer migration assertions and
+nine registered legacy-protocol refusal routes. Source/payload bytes and the
+independently recorded inherited file/type/mode/size/hash trees remain unchanged
+after joined cleanup. Native captures show JSTorrent menu/window/header and the
+styled populated library behind its first-use disclosure. A separate settled
+library capture is still being qualified; failed driver repeats remain failed.
+The exact signed Linux ARM Debian extracted payload passes eight migration
+assertions and six refusal routes, with readable populated/restarted/refusal
+compositor captures and JSTorrent window/tray labels. Owned staging/captures and
+recent-file metadata are removed, VMs return off and claims are released.
+
+These manual replacements do not qualify final automatic/GUI updating,
+package-manager installation, AppImage visual acceptance or the remaining native
+Windows/Intel Mac/x64 cohorts. Windows login repair and Intel Mac availability
+remain external testbed inputs. No public tag, release or feed changes.
+
 Tactical [261](../tactical/261-linux-native-brand-name.md) repairs GNOME's
 tray/accessibility fallback to the internal desktop executable name. The pinned
 GTK/GLib binding initializes the human-readable JSTorrent name before desktop

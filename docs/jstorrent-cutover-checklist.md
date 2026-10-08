@@ -24,7 +24,7 @@ a checked local task does not close a delivery row.
   actual native and responsive website before/after evidence is retained locally.
 - [x] Compatible dependency/security corrections, web typecheck/470 tests,
   affected 46 E2E/54 extension cases and workspace 1,575 tests/fmt/clippy pass.
-- [x] Final Android source `aeaa72f9`, original-key code-26 APK/AAB, 122 JVM tests,
+- [x] Delivered Android source `aeaa72f9`, original-key code-26 APK/AAB, 122 JVM tests,
   lint and independent package/labels/API/ABI/alignment/notices checks pass.
 - [x] Bounded native incoming observer 269 diagnoses actual pre-admission probe
   ordering without changing engine, listener, background or retry policy.
@@ -36,7 +36,9 @@ a checked local task does not close a delivery row.
 - [x] Native Linux toolkit name correction is verified on x64. Historical signed
   ARM first-use and extracted Debian populated/restarted pixels render; eight
   migration assertions/six refusal routes and restored-state cleanup pass.
-  AppImage capture and final signed/native/install qualification remain open.
+  Final source8c signed extracted Debian also passes eight assertions/six refusal
+  routes with readable populated/restarted/error pixels. Actual package-manager,
+  AppImage and updater qualification remain separate.
 - [x] Concrete shipment review independently rehashes the three Android artifacts,
   exact production extension ZIP and 23 historical desktop assets. Final signed
   source, installed cohorts, store delivery and owner approval remain open.
@@ -59,8 +61,9 @@ a checked local task does not close a delivery row.
   three-lockfile review passes; the existing expiry remains unchanged.
 - [x] Exact source8c desktop run37735081504 completes all five original-signed
   targets and collector;23 hashes/sizes,15 selectors and10 original-root
-  signatures independently pass. Both Mac signatures/notarization receipts and
-  local ARM Gatekeeper assessment pass. Installed acceptance remains separate.
+  signatures and ten wrong-incubation-root refusals independently pass. Both Mac
+  signatures/notarization/DMG stapling and local ARM Gatekeeper assessment pass.
+  Installed acceptance remains separate.
 - [x] Source8c hosted CI exposes an Android listener-test readiness race;277
   fixes the test only. Revised local source passes fmt/clippy and1,575 Rust
   cases with18 existing ignores. Revised-source hosted CI remains unperformed.
@@ -82,7 +85,7 @@ a checked local task does not close a delivery row.
 - [ ] Preserved managed ordinary/companion upgrades to code26; store availability
   alone is not installed acceptance. Production promotion is a separate decision.
 - [ ] Approved same-item Web Store upload/submission/certifications and actual
-  preserved-profile update/mixed-version acceptance. Native inspection resumes
+  preserved-profile update/mixed-version acceptance. Native inspection
   completes read-only; published/draft1.1.1 and obsolete
   permission/privacy explanations are recorded without modifying the item.
 - [ ] Remaining real physical provider/reboot/network/sleep and Linux integration
@@ -94,9 +97,13 @@ a checked local task does not close a delivery row.
   policy and explicit delivery instructions; tags/releases/feeds remain intact.
 - [ ] Actual qualified public inventory, enabled website descriptor and explicitly
   approved production website deployment/public verification.
-- [x] Final physical cleanup: both owned staging/markers and payload/UI XML
-  are absent. Production versions/install/update timestamps match their original
-  baselines; B is checked before and after staging mutation. Reports stay ignored.
+- [x] Isolated physical cleanup: both owned staging/markers and payload/UI XML
+  are absent; inherited production metadata was preserved before approved Play
+  delivery. After managed25-to26, remove only owned fixture rows through normal
+  Keep data actions, then independently hash/remove their four owned files.
+  Managed26 UID/install/update/version/installer and inherited folder grant stay
+  unchanged. The isolated27 test profile and its owned folder are cleared.
+  Reports stay ignored.
 
 ## Approved Delivery Checkpoint, 2026-10-08
 
@@ -123,8 +130,15 @@ activation. Tactical276 qualifies only the checker Host correction against
 the actual source8c gateway: wrong Host403, missing credentials401, correct
 static/health/WebSocket pass. The corrected preview activation succeeds; the private listener and HTTPS
 route both pass exact-source static/health/WebSocket checks. Final signed
-candidate packaging is in progress. Physical managed baselines are collected
-before any update; no production sideload, uninstall or data clear is used.
+candidate packaging completes all five lanes and collector, with independent
+23 hashes/sizes,15 selectors,10 original-root signatures and10 wrong-root
+refusals. Physical managed baselines precede actual Play25-to26 updates on both
+retained installations; no production sideload, uninstall or data clear is used.
+One populated cohort preserves complete/partial bytes, settings and grant; the
+second retains its inherited disclosure. Managed fixture cleanup subsequently
+removes only owned rows/files and preserves installation metadata and grant.
+Local27 corrects the observed stale Shutdown task; its internal delivery and
+revised-source hosted CI require a new exact-artifact instruction.
 
 ## Local Production Publisher Checkpoint, 2026-10-08
 
