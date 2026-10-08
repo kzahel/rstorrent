@@ -1,5 +1,27 @@
 # Tactical 259: JSTorrent Finish-Line Checks
 
+The exact signed source8c Windows x64 MSI now passes quiet per-machine
+fresh installation, both installed native publisher/timestamp checks,
+five-entry distribution/notice inspection, native empty-library launch and
+Quit/restart with a synthetic loopback/mapping-off/DHT-off/PEX-off fixture.
+All four new native screenshots are visually inspected. Its owned
+version1/statistics-off fixture and clean-shutdown marker persist. Normal
+uninstall and independent100 HKCU/HKLM scopes/nine file-scope comparisons
+pass; no owned process, firewall rule, candidate/related MSI or uninstall
+key remains. All26 staging files are hash-bound and removed; VM off and
+exact claim release pass. Installer wizard, legacy MSI migration and full
+OS association dispatch remain unqualified. MSI uses its advertised
+`JSTorrent.torrent` class and quoted short magnet path, recorded separately
+from the private NSIS class; no NSIS-validator pass is inferred.
+
+The real MSI About screen initially claims automatic updates are enabled.
+Manual Check correctly changes to package-channel guidance, but automatic
+schedule/privacy copy and the check button remain. Tactical281 repairs this
+presentation/controller initialization issue; the native backend already
+refuses managed-package checks and replacement. Source8c screenshots are
+unchanged before-fix evidence. The empty detail panel's implementation-oriented
+copy is an additional design note, rather than an unstyled page.
+
 Tactical [280](../tactical/280-desktop-executable-display-brand.md) locally
 corrects the desktop output to `jstorrent-client`, preventing the observed
 advanced-firewall filename from retaining the old display brand. The distinct
@@ -19,11 +41,11 @@ Independent checks compare48 HKCU scopes and seven restored file scopes;
 exactly four newly created program-bound firewall Block rules are removed,
 unrelated OS rules are preserved, no owned process remains, and35 hash-bound
 staging files are removed. The VM is verified off and its claim released.
-Native MSI metadata/signature inspection passes, but per-machine installation,
+The separate MSI installation checkpoint above now passes its bounded scope.
 Windows automatic/GUI updating and full launch/association cohorts remain open.
-The advanced firewall rule inventory exposes the executable label
-`rstorrent-desktop.exe`; it is an unresolved OS-facing branding finding,
-separate from the eleven branded product screenshots. The raw native-host
+The advanced firewall inventory exposes `rstorrent-desktop.exe`; Tactical280
+corrects the output name locally, with fresh signed system-label evidence still
+required. This finding is separate from the branded product screenshots. The raw native-host
 registration error also confirms the existing actionable-copy design gap.
 
 The authorized native Windows x64 appliance rebuild is handed off with verified
