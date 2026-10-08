@@ -9,14 +9,15 @@ physical incoming snapshots pass. Full workspace1575 cases/fmt/clippy and
 web typecheck/470 cases also pass, with existing ignores/skips retained.
 The original failed probe observes zero then one native registration and two
 UnknownTorrent rejections for exactly its owned hash; it started before actual
-admission. Tactical270 waits for fresh native registry readiness and current
-port. Both devices now independently upload/hash all28 MiB with120 empty files;
-cohortA joins/reopens Live, while cohortB's subsequent fresh restart capture
-fails during folder checking. Its overall failure and cleanup remain intact.
+admission. Tactical270 is complete locally: fresh UID/exact-fixture registry
+readiness precedes independent upload. Both current-source original large
+fixtures verify/upload all28 MiB with120 empty files, retained diagnostic
+history/actual filters, joined shutdown and actual reopened Live/owned row,
+unchanged SAF registry/payload and cleanup. Readiness takes107.99/166.16 seconds.
+All48 portable cases pass; earlier failed receipts remain scoped and intact.
 Normal diagnostic warnings intentionally remain across category filters. No
-engine/network/admission/retry policy changes. Full hour/managed delivery remain
-open;270 preserves bounded unavailable captures inside the existing restart
-deadline, never substituting launch/hash/screenshot for actual Live rows.
+engine/network/admission/retry policy changes. Default three-repetition/hour
+and managed delivery remain open under259; a short pass is not an hour.
 
 Both source0aa physical cohorts independently hash the installed APK and pass
 small foreground/background/reopened upload plus joined Live-library restart,

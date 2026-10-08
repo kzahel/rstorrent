@@ -692,3 +692,17 @@ correct common management command without global--claim releases it. The
 separate raw/adjudication/release receipts preserve that correction. All VMs
 are off again and idle claims released; the only active tests are the two
 physical Android cohorts. Reports/screenshots remain fully ignored.
+
+### Both original large-fixture end-to-end targeted receipts pass
+
+270 completes locally. CohortA ready-attempt2 and cohortB ready-attempt4 each
+independently verify/upload every file of the original28-MiB/120-empty-file
+fixture, recover actual retained Logs and Warning/Info rows, return Live, wait
+for actual native registry/current port, join normal shutdown and reopen the
+actual owned Live row with unchanged SAF registry/hash and cleanup ok. Native
+readiness takes107.99/166.16 seconds; the controlled tunnel probe explains the
+one HandshakeInvalid, with no owned UnknownTorrent rejection after readiness.
+All48 qualification cases pass. The old capture/ordering failures stay failed.
+CohortA's full default three-repetition/hour run remains active; cohortB's
+default full run follows. Targeted passes do not qualify an hour or managed
+Play delivery.

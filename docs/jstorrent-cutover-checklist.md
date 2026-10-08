@@ -74,11 +74,11 @@ release, 122 JVM tests, lint and independent APK/AAB package/signature/labels/
 API/ABI/alignment/notices checks pass. AAB SHA-256:
 `19f9c3585ea2ac8d596bdd19bc4e1ab7ffcb5bf73e96b22b0c3c1f595baa9644`.
 Both physical devices have the exact isolated observer APK. Tactical269
-completes locally with actual current-port/rejection samples. After native
-registry readiness, both original large fixtures independently upload/hash
-all28 MiB; cohortA joins/reopens Live, while cohortB's final fresh capture fails
-during folder checking with cleanup ok. Tactical270's bounded observer retry
-and default full-hour acceptance proceed separately. No code26
+completes locally with actual current-port/rejection samples. Tactical270 also
+completes locally: both original large fixtures independently upload/hash all
+28 MiB after fresh native registry readiness and pass retained diagnostic
+filters, joined actual Live reopen, unchanged SAF registry/payload and cleanup.
+Default three-repetition/hour acceptance proceeds separately. No code26
 upload or managed Play acceptance is claimed.
 
 Both source0aa physical small-fixture runs independently receive/hash all

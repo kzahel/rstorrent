@@ -1,6 +1,6 @@
 # Tactical 270: Observed Native Seed Readiness
 
-Status: Active, 2026-10-08. Qualification-only follow-up to259/267/269.
+Status: Complete locally, 2026-10-08. Qualification-only follow-up to259/267/269.
 
 Topics: `client-surfaces`, `incoming-reachability-and-seeding`,
 `application-view-api`.
@@ -134,3 +134,24 @@ transport and navigation while preserving all prior native ownership/refusal
 cases. The current cohortB fourth bounded retry follows; cohortA's default
 run passes all three cold/download/source-offline repetitions and now transfers
 under the detached hour observation. Neither is adjudicated as a full hour yet.
+
+## Bounded physical stopping condition
+
+Both current application sourceaeaa original large fixtures pass the complete
+targeted path: cohortA ready-attempt2 and cohortB ready-attempt4. Each verifies
+all29360128 bytes/hash1b90d0a98b5c16a7ced9cb42c13f5c61757d6482, actual large
+retained history and Warning/Info rows, return to the owned Live library, fresh
+native registry/current port6881, independent upload of every file, joined
+shutdown withcleanup_failed=false/service absent, unchanged SAF registry and
+payload, actual reopened Live plus owned row and successful cleanup. Readiness
+takes107.99/166.16 seconds respectively; unavailable native samples retain
+their true status. No UnknownTorrent rejection occurs in these ready uploads.
+The single HandshakeInvalid is the known controlled tunnel open/close probe.
+
+CohortB's successful reopen observes two real Settings Back steps and zero
+unavailable final captures; portable cases cover unavailable-to-fresh recovery.
+All48 driver cases pass. Earlier registration, fresh-capture and filter-assertion
+failures remain immutable separate receipts. This completes270's bounded
+qualification-only stopping condition; full default three-repetition/hour
+acceptance, managed Play and final signed delivery remain under259. Report
+assets stay ignored and no engine or product policy changes are needed.
