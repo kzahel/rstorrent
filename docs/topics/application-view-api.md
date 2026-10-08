@@ -2,6 +2,24 @@
 
 Topic: `application-view-api`
 
+Tactical [266](../tactical/266-android-diagnostic-history-resynchronization.md)
+repairs Android's diagnostic-only queue after a real 581,079-byte history cannot
+resynchronize through 256 KiB. Source `2adf2eb1` requests the existing 4-MiB
+subscription bound for retained history (2 MiB / 2,048 events); Kotlin still
+retains 512 rows. The real retention regression rejects the old budget, delivers
+473,255 bytes and resynchronizes unchanged history. Normal original-signed and
+isolated dual-ABI builds, 121 release JVM cases, lint and independent package
+checks pass. Full session checks pass 387 cases with two existing ignores.
+Physical resubscription/upload/reopen remain active; no store upload occurs.
+
+Tactical [267](../tactical/267-physical-upload-and-reopen-evidence.md) strengthens
+actual upload transport/readiness/counter and observed retained-settings
+navigation evidence. Both source-376 physical runs pass their full 3,600-second
+background transfer and whole 40-MiB hash; their subsequent upload phase fails.
+No complete end-to-end pass is inferred. Portable delayed-listener/failure
+ownership/refusal tests pass; short current-APK trials run before full retries.
+No engine/network/seeding policy changes or inherited app/data cleanup occurs.
+
 Tactical
 [253](../tactical/253-chromeos-onboarding-recovery-and-physical-qualification.md)
 keeps the native companion wire/API unchanged. The page owns bounded discovery

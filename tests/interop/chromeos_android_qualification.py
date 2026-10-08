@@ -195,7 +195,60 @@ def verify_completed_upload(adb, fixture, registry, target, listener_port):
         expected_file_hashes={str(path.relative_to(root)): hashlib.sha1(path.read_bytes()).hexdigest()
                               for path in root.rglob("*") if path.is_file()},
     )
-    return bootstrap.verify_product_upload(ForwardedAdb(), upload_fixture, device_port=listener_port)
+    return bootstrap.verify_product_upload(ForwardedAdb(), upload_fixture, device_port=listener_port, leech_timeout_seconds=120)
+
+
+def verify_retained_diagnostic_view(adb, capture):
+    # Real log filters replace the native subscription with a full retained
+    # snapshot. Exercise this after a large verified transfer, not an empty
+    # first-use view; do not inject backend facts or increase retention.
+    uid = re.search(r"\buserId=(\d+)\b", adb.shell("dumpsys", "package", PACKAGE).stdout)
+    if uid is None:
+        raise RuntimeError("owned diagnostic package UID is unavailable")
+    log_args = ("logcat", "-d", "-v", "threadtime", f"--uid={uid[1]}", "-t", "1000")
+    baseline = set(adb.run(*log_args).stdout.splitlines())
+    adb.shell("am", "start", "-W", "-n", ACTIVITY)
+    for field, value in [("content-desc", "More options"), ("text", "Logs"),
+                         ("text", "Minimum: info"), ("text", "warning"),
+                         ("text", "Minimum: warning"), ("text", "info")]:
+        product.tap_bounds(adb, unique_observed_control(adb, field, value).get("bounds"))
+    deadline = time.monotonic() + 30
+    summary = None
+    while time.monotonic() < deadline:
+        labels = {node.get("text", "") for node in product.dump_ui(adb).iter()}
+        summaries = [text for text in labels if re.fullmatch(r"source evicted \d+ · local evicted \d+ · subscription resets \d+", text)]
+        if "Logs" in labels and "Minimum: info" in labels and len(summaries) == 1:
+            match = re.search(r"local evicted (\d+)", summaries[0])
+            if int(match[1]) > 0:
+                summary = summaries[0]
+                break
+        time.sleep(.5)
+    if summary is None:
+        raise RuntimeError("owned full retained diagnostic view was not observed")
+    recent = [line for line in adb.run(*log_args).stdout.splitlines() if line not in baseline]
+    if any("initial snapshot is" in line and "exceeds" in line for line in recent):
+        raise RuntimeError("owned retained diagnostic subscription still exceeds its queue")
+    capture("06-retained-diagnostic-view")
+    product.tap_bounds(adb, unique_observed_control(adb, "content-desc", "Back").get("bounds"))
+    adb.shell("input", "keyevent", "KEYCODE_HOME")
+    return {"actual_filter_replacements": ["warning", "info"], "delivery_health": summary,
+            "large_retained_history_observed": True, "snapshot_queue_failure": False}
+
+
+def reopened_library_action(nodes, expected_name):
+    labels = {node.get("text", "") for node in nodes}
+    if "Live" in labels and expected_name in labels:
+        return "live", None
+    if not labels.intersection({"Power Management", "Settings"}):
+        return "wait", None
+    backs = [node for node in nodes if node.get("content-desc") == "Back"]
+    if len(backs) != 1 or backs[0].get("enabled") != "true":
+        raise RuntimeError("owned retained-settings Back control is absent, ambiguous or disabled")
+    bounds = backs[0].get("bounds", "")
+    coordinates = [int(value) for value in re.findall(r"-?\d+", bounds)]
+    if len(coordinates) != 4 or coordinates[2] <= coordinates[0] or coordinates[3] <= coordinates[1]:
+        raise RuntimeError("owned retained-settings Back control is clipped")
+    return "back", bounds
 
 
 def disable_seeding_and_verify_joined_restart(adb, destination, expected_hash):
@@ -241,16 +294,22 @@ def disable_seeding_and_verify_joined_restart(adb, destination, expected_hash):
     # the restarted client finished restoring its retained library.
     expected_name = Path(destination).parent.name
     deadline = time.monotonic() + 120
+    back_steps = 0
     while time.monotonic() < deadline:
-        labels = {node.get("text", "") for node in product.dump_ui(adb).iter()}
-        if "Live" in labels and expected_name in labels:
+        action, bounds = reopened_library_action(list(product.dump_ui(adb).iter()), expected_name)
+        if action == "live":
             break
+        if action == "back":
+            if back_steps >= 2:
+                raise RuntimeError("owned retained-settings navigation exceeded its two-step budget")
+            product.tap_bounds(adb, bounds)
+            back_steps += 1
         time.sleep(.5)
     else:
         raise RuntimeError("joined restart did not restore the live owned library")
     return {"shutdown": joined[-1], "service_absent_after_join": True,
             "reopen_sha1": actual, "retained_saf_registry": "unchanged",
-            "reopen_live_library": True}
+            "reopen_live_library": True, "observed_settings_back_steps": back_steps}
 
 
 def native_maximize_arguments(result):
@@ -335,7 +394,11 @@ def main():
     parser.add_argument("--diagnostics", type=Path, help="new owned directory for bounded, package-scoped failure/observation logs")
     parser.add_argument("--completed-upload", action="store_true",
                         help="real seeding/listener UI, independent background leecher and joined restart")
+    parser.add_argument("--targeted-upload", action="store_true",
+                        help="only the bounded upload/resubscription/reopen stage; never an hour or cold-repetition pass")
     args = parser.parse_args()
+    if args.targeted_upload and not (args.completed_upload and 0 < args.observe_seconds <= 600):
+        parser.error("targeted upload requires a completed-upload short run of 1..600 seconds; cannot qualify an hour")
     if not 0 <= args.seed_port <= 65535:
         parser.error("seed port must be 0..65535")
     if not 0 <= args.observe_seconds <= 3600:
@@ -372,6 +435,8 @@ def main():
               "notification_setup": "granted_after_each_owned_profile_reset",
               "observation_lifetime": args.observation_lifetime,
               "completed_upload_requested": args.completed_upload, "fixture_run_id": run_id,
+              "targeted_upload_only": args.targeted_upload,
+              "cold_repetition_scope": "unrun_targeted_stage" if args.targeted_upload else "three_current_source",
               "repetitions": records, "result": "fail", "cleanup": "pending"}
     if args.screenshots:
         args.screenshots.mkdir(parents=True, exist_ok=False)
@@ -423,7 +488,8 @@ def main():
         with tempfile.TemporaryDirectory(prefix="rstorrent-253-seeds-") as temporary:
             directory = Path(temporary)
             port = wait_for_listener(session, [])
-            for ordinal in range(1, 4):
+            repetition_count = 0 if args.targeted_upload else 3
+            for ordinal in range(1, repetition_count + 1):
                 start = time.monotonic()
                 fixture = create_owned_fixture(directory / str(ordinal), run_id, str(ordinal), 256 * 1024)
                 handle = add_seed(session, fixture.torrent_info, fixture.seed_directory, [])
@@ -520,6 +586,7 @@ def main():
                 if not verified:
                     raise RuntimeError("observation completion did not verify within the recovery budget")
                 if args.completed_upload:
+                    report["retained_diagnostic_view"] = verify_retained_diagnostic_view(adb, capture)
                     handle.pause()
                     uploaded = verify_completed_upload(adb, fixture, args.registry, args.target, listener_port)
                     report["completed_background_upload"] = {"payload_bytes": uploaded, "sha1": fixture.payload_hash,

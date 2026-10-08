@@ -1,5 +1,6 @@
 """Portable safety checks for the physical qualification driver."""
 import shlex
+import sys
 import subprocess
 import tempfile
 import unittest
@@ -8,10 +9,46 @@ from unittest.mock import Mock, patch
 import xml.etree.ElementTree as ET
 
 import android_reactive_surface as product
-from chromeos_android_qualification import observation_result, PACKAGE, RemoteAdb, confirm_intake, finish_first_use, native_maximize_arguments, reset_owned_profile, create_owned_fixture, observation_payload_size
+from chromeos_android_qualification import observation_result, PACKAGE, RemoteAdb, confirm_intake, finish_first_use, native_maximize_arguments, reset_owned_profile, create_owned_fixture, observation_payload_size, reopened_library_action
 
 
 class QualificationSafety(unittest.TestCase):
+    def test_targeted_upload_cannot_be_used_to_skip_repetitions_for_an_hour(self):
+        command = [sys.executable, str(Path(__file__).with_name('chromeos_android_qualification.py')),
+                   '--machine-control', '/missing-owned-controller', '--registry', '/missing-owned-registry',
+                   '--target', 'owned-test', '--seed-address', '127.0.0.1', '--output', '/missing-owned-output.json', '--completed-upload',
+                   '--observation-lifetime', 'background', '--targeted-upload']
+        for seconds in [0, 601, 3600]:
+            result = subprocess.run(command + ['--observe-seconds', str(seconds)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn('cannot qualify an hour', result.stderr)
+
+    def test_reopen_requires_live_and_the_exact_owned_row(self):
+        def nodes(xml):
+            return list(ET.fromstring(xml).iter())
+        self.assertEqual(reopened_library_action(nodes('<h><n text="Live"/><n text="owned"/></h>'), 'owned'), ('live', None))
+        for xml in ['<h><n text="Live"/><n text="foreign"/></h>', '<h><n text="owned"/><n text="Connecting"/></h>']:
+            self.assertEqual(reopened_library_action(nodes(xml), 'owned'), ('wait', None))
+
+    def test_reopen_navigates_only_observed_known_settings(self):
+        back = '<n content-desc="Back" enabled="true" bounds="[1,2][31,42]"/>'
+        for title in ['Power Management', 'Settings']:
+            nodes = list(ET.fromstring(f'<h><n text="{title}"/>{back}</h>').iter())
+            self.assertEqual(reopened_library_action(nodes, 'owned'), ('back', '[1,2][31,42]'))
+        nodes = list(ET.fromstring(f'<h><n text="Unknown screen"/>{back}</h>').iter())
+        self.assertEqual(reopened_library_action(nodes, 'owned'), ('wait', None))
+
+    def test_reopen_refuses_ambiguous_disabled_or_clipped_navigation(self):
+        for backs in [
+            '',
+            '<n content-desc="Back" enabled="false" bounds="[1,2][31,42]"/>',
+            '<n content-desc="Back" enabled="true" bounds="[0,0][0,0]"/>',
+            '<n content-desc="Back" enabled="true" bounds="[1,2][31,42]"/>' * 2,
+        ]:
+            nodes = list(ET.fromstring(f'<h><n text="Settings"/>{backs}</h>').iter())
+            with self.assertRaises(RuntimeError):
+                reopened_library_action(nodes, 'owned')
+
     def test_concurrent_run_fixtures_have_distinct_swarm_identity(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

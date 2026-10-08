@@ -966,10 +966,21 @@ class ChromeForwardTransport:
                 stderr=subprocess.PIPE,
                 text=True,
             )
-            time.sleep(0.2)
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline and process.poll() is None:
+                try:
+                    with socket.create_connection(("127.0.0.1", local_port), timeout=0.2):
+                        return cls(local_port, process)
+                except OSError:
+                    time.sleep(0.05)
             if process.poll() is None:
-                return cls(local_port, process)
+                cls(local_port, process).close()
+                raise BootstrapFailure("ChromeOS upload tunnel never opened its owned listener")
             last_detail = process.stderr.read() if process.stderr else ""
+            if process.stderr is not None:
+                process.stderr.close()
+            if "Address already in use" not in last_detail:
+                raise BootstrapFailure(f"ChromeOS forward SSH tunnel failed: {last_detail}")
         raise BootstrapFailure(f"ChromeOS forward SSH tunnel failed: {last_detail}")
 
     def close(self) -> None:
@@ -979,6 +990,9 @@ class ChromeForwardTransport:
         except subprocess.TimeoutExpired:
             self.process.kill()
             self.process.wait(timeout=5)
+        finally:
+            if self.process.stderr is not None:
+                self.process.stderr.close()
 
 
 def clear_application(target: Any) -> None:
@@ -3621,7 +3635,14 @@ def verify_product_upload(
     magnet_only: bool = False,
     expect_hybrid_upgrade: bool = False,
     device_port: int = 6881,
+    leech_timeout_seconds: int = 30,
 ) -> int:
+    if (
+        not isinstance(leech_timeout_seconds, int)
+        or isinstance(leech_timeout_seconds, bool)
+        or not 1 <= leech_timeout_seconds <= 300
+    ):
+        raise BootstrapFailure("Android upload leech budget must be 1..300 seconds")
     import libtorrent as lt
 
     forwarded = target.run(
@@ -3635,8 +3656,6 @@ def verify_product_upload(
     host_port = int(host_port_text)
     chrome_forward = None
     target_host = getattr(target, "host", None)
-    if isinstance(target_host, str):
-        chrome_forward = ChromeForwardTransport.create(target_host, host_port)
     output_root = Path(tempfile.mkdtemp(prefix="rstorrent-android-upload-"))
     session = lt.session(
         {
@@ -3658,6 +3677,8 @@ def verify_product_upload(
     hash_proxy = None
     diagnostics: list[str] = []
     try:
+        if isinstance(target_host, str):
+            chrome_forward = ChromeForwardTransport.create(target_host, host_port)
         peer_port = (
             chrome_forward.local_port if chrome_forward is not None else host_port
         )
@@ -3705,10 +3726,23 @@ def verify_product_upload(
             parameters.flags &= ~lt.torrent_flags.auto_managed
             handle = session.add_torrent(parameters)
             handle.connect_peer(("127.0.0.1", peer_port))
-            deadline = time.monotonic() + 30
+            deadline = time.monotonic() + leech_timeout_seconds
+            next_sample = time.monotonic()
             while time.monotonic() < deadline:
                 diagnostics.extend(alert.message() for alert in session.pop_alerts())
                 status = handle.status()
+                if time.monotonic() >= next_sample:
+                    print(
+                        json.dumps({
+                            "stage": "android_upload_leech",
+                            "payload_download": int(status.total_payload_download),
+                            "peers": int(status.num_peers),
+                            "complete": bool(status.is_seeding),
+                        }),
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    next_sample = time.monotonic() + 5
                 if status.errc.value() != 0:
                     raise BootstrapFailure(
                         f"Android upload leech failed: {status.errc.message()}"
@@ -3717,8 +3751,11 @@ def verify_product_upload(
                     break
                 time.sleep(0.02)
             else:
+                status = handle.status()
                 raise BootstrapFailure(
-                    "libtorrent did not complete from Android SAF storage\n"
+                    f"libtorrent did not complete from Android SAF storage within {leech_timeout_seconds}s; "
+                    f"payload={int(status.total_payload_download)} peers={int(status.num_peers)} "
+                    f"tunnel_exit={chrome_forward.process.poll() if chrome_forward else None}\n"
                     + "\n".join(diagnostics[-30:])
                 )
             downloaded = int(handle.status().total_payload_download)

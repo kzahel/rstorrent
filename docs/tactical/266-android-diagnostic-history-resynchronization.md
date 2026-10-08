@@ -43,3 +43,13 @@ its existing bounded history. No library/network payload enters this queue.
 Record actual snapshot length/high-water evidence; do not imply an arbitrary
 unbounded history now fits. The separate upload failure has no proven causal
 connection and remains open under 259.
+
+## Local build checkpoint
+
+Source `2adf2eb1` passes the actual 473,255-byte retained-history regression,
+including old-budget refusal and unchanged supported-budget resync. Session
+clippy and all 387 passing session cases (two existing ignores) pass. Normal
+original-signed release and generated dual-ABI isolated debug builds pass;
+121 release JVM cases/lint and independent signing, labels, launcher, API,
+ABI/alignment and notice validation pass. The APK/AAB are retained by exact
+source/hash; code26 is not uploaded. Current physical stage trials remain active.

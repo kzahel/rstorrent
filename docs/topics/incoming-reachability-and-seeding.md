@@ -2,6 +2,14 @@
 
 Topic: `incoming-reachability-and-seeding`
 
+Tactical [267](../tactical/267-physical-upload-and-reopen-evidence.md) strengthens
+actual upload transport/readiness/counter and observed retained-settings
+navigation evidence. Both source-376 physical runs pass their full 3,600-second
+background transfer and whole 40-MiB hash; their subsequent upload phase fails.
+No complete end-to-end pass is inferred. Portable delayed-listener/failure
+ownership/refusal tests pass; short current-APK trials run before full retries.
+No engine/network/seeding policy changes or inherited app/data cleanup occurs.
+
 Tactical [260](../tactical/260-android-shutdown-failure-containment.md) preserves
 the existing uncertain IPv6 lease error while containing its propagation in the
 Android service after native shutdown. No mapping, pinhole, advertisement or
