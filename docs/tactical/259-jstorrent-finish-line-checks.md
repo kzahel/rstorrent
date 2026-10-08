@@ -746,3 +746,28 @@ appliance baseline with a sleep test. A configured unlock handoff and explicit
 sleep-policy disposition remain external inputs. Both default full runs have
 passed all three cold-start/download/source-offline restart repetitions; their
 hour stages remain active, with every earlier failed receipt preserved.
+
+## Same-package populated Linux ARM visual retry, 2026-10-08
+
+The same historical original-signed source-a359 ARM AppImage now repeats the
+real-old-writer populated migration: eight assertions, six installed refusal
+routes, normal native tray Quit, four imported records, stable restart identities,
+valid/corrupt/missing-root handling and independent source/payload preservation
+pass. Inherited scopes restore, owned root is removed, VM is off and claim is
+released. Earlier pre-launch staging failures remain separate retained receipts.
+
+Actual native accessibility exposes All torrents 4, Paused 3 and Needs attention
+1. The owned disclosure's checked statistics choice is explicitly unchecked,
+fresh unchecked state is observed and Save and continue removes the disclosure;
+restart retains the four-row library. The tray actually renders Show JSTorrent
+and Quit JSTorrent. Populated, post-disclosure and restarted native captures
+remain black, as does the native migration refusal dialog. This is a visual
+failure despite successful semantics and functional assertions. Earlier styled
+empty first-use pixels use a different isolated state and cannot close it.
+
+The separate Ubuntu crash prompt identifies spice-vdagent and is dismissed
+without sending. Product stderr reports a bundled/system GVfs symbol mismatch
+and missing canberra module; neither observation is accepted as the black-pixel
+cause. No GPU flags, graphics policy, product dependency or trust root changed.
+Final signed T261 source, usable populated ARM pixels and actual updater delivery
+remain unqualified.

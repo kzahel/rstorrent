@@ -19,6 +19,15 @@ GTK/GLib binding initializes the human-readable JSTorrent name before desktop
 or picker startup. Native Linux compilation, 73 tests and actual GNOME tray-name
 observation pass. Rebuilt final signed Linux artifacts remain open.
 
+The same historical signed ARM package repeats all eight manual migration
+assertions and six refusal routes with normal native Quit and complete restored
+state. Actual accessibility exposes four rows and an acknowledged disclosure,
+and JSTorrent tray menu pixels render, while populated/restarted and refusal-
+dialog captures remain black. This remains a visual failure; the separate styled
+empty first-use probe does not qualify populated visuals. Recorded GVfs/module
+warnings and a separate spice-vdagent crash do not establish its cause. Tactical
+259 retains the actual comparison and final signed/pixel acceptance gap.
+
 Tactical [258](../tactical/258-cross-surface-branding-and-design-audit.md)
 completes the broader branded surface audit with an
 [audit execution record](../tactical/258-cross-surface-branding-and-design-audit.md). The website uses
