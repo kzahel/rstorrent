@@ -4,8 +4,9 @@ Topic: `incoming-reachability-and-seeding`
 
 Tactical [269](../tactical/269-android-incoming-peer-diagnostic-evidence.md)
 adds a bounded read-only native incoming observer for the unresolved physical
-large-fixture refusal. Fifteen Android Rust cases/clippy pass; generated builds
-and actual snapshots remain pending. No engine/network policy is changed.
+large-fixture refusal. Fifteen Android Rust cases/clippy, normal original-key dual-ABI release,
+122 JVM cases, lint and independent package checks pass at sourceaeaa72f9.
+Both physical installs pass; actual current-port/rejection samples remain active. No engine/network policy is changed.
 Both source0aa physical cohorts independently hash the installed APK and pass
 small foreground/background/reopened upload plus joined Live-library restart,
 retained SAF registry and cleanup. This closes Tactical260's bounded local
@@ -26,8 +27,9 @@ No engine/network/seeding policy changes or inherited app/data cleanup occurs.
 Tactical [260](../tactical/260-android-shutdown-failure-containment.md) preserves
 the existing uncertain IPv6 lease error while containing its propagation in the
 Android service after native shutdown. No mapping, pinhole, advertisement or
-engine ownership behavior changes. Adapter build/JVM evidence passes; physical
-shutdown/restart remains pending under finish-line 259.
+engine ownership behavior changes. Adapter build/JVM evidence and both bounded physical small-fixture joined
+shutdown/Live restart pass;260 is complete locally. Final large-metadata/hour
+and managed delivery remain open under finish-line259.
 
 Tactical 253's startup follow-up overlaps four read-only file observations
 before constructing completed-seed availability. No early seed is admitted;

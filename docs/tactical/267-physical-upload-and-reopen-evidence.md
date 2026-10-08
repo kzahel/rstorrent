@@ -141,3 +141,11 @@ category can precede its backend snapshot. Wait for actual visible rows matching
 selected severity/category, or its explicit empty state; a changed button alone
 cannot pass. Two regressions bring portable driver coverage to26. Source-level
 observer work proceeds under269 without changing engine/network policy.
+
+A source0aa28-MiB fixture with two positive files and no empty files receives
+one peer in all three15-second states and actual4,276,224/4,734,963/4,505,600
+payload bytes. It remains incomplete; joined Live restart and cleanup pass.
+This differs from the zero-peer120-empty-file fixture, but also omits its Logs
+resubscription stage. Do not attribute the difference to empty files alone.
+A measured120-second current-source retry and native rejection observer run
+continue under269; no general background failure is inferred.
