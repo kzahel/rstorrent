@@ -90,3 +90,25 @@ Do not launch a transport operation with less than two seconds left in a sample.
 Logs/diagnostic messages remain evidence and never substitute for the actual
 registry snapshot. All40 driver cases pass, including these refusal/busy and
 exhausted-deadline cases. A second current physical retry follows.
+
+### Current physical readiness and fresh reopen observation
+
+Both original large-metadata current-source fixtures now independently upload
+and hash all29360128 bytes after actual native registration:107.99 seconds on
+cohortA and163.46 on cohortB, including retained unavailable samples. CohortA
+passes actual joined Live reopen and cleanup. CohortB's fresh UI capture fails
+while the actual failure screenshot shows Checking download folders; its overall
+receipt remains failed despite upload success and successful owned cleanup.
+
+The existing restart wait is120 seconds, but a single bounded UI capture failure
+currently aborts it early. Preserve a distinct error only for explicit idle/no-
+fresh-XML capture failures. The restart observer may continue sampling inside
+that same120-second deadline, with each transport bounded by remaining time.
+Retain unavailable capture counts; never infer Live from a delivered launch,
+payload hash, screenshot or missing XML. Authentication, ordinary transport,
+malformed XML and invalid navigation still refuse. This changes qualification
+observation only; no product startup, folder-check or engine policy changes.
+Required cases: unavailable then actual owned Live, permanent unavailable
+deadline, nonretryable transport/XML, no navigation beyond two steps and
+remaining-time transport bounds. CohortA's full default run proceeds unchanged
+while cohortB's bounded retry exercises the new observation.

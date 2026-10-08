@@ -3,9 +3,21 @@
 Topic: `client-surfaces`
 
 Tactical [269](../tactical/269-android-incoming-peer-diagnostic-evidence.md)
-adds a bounded read-only native incoming observer for the unresolved physical
-large-fixture refusal. Fifteen Android Rust cases/clippy pass; generated builds
-and actual snapshots remain pending. No engine/network policy is changed.
+is complete locally at application sourceaeaa72f9:15 Android Rust cases/clippy,
+normal original-key dual-ABI packaging,122 JVM cases/lint and actual bounded
+physical incoming snapshots pass. Full workspace1575 cases/fmt/clippy and
+web typecheck/470 cases also pass, with existing ignores/skips retained.
+The original failed probe observes zero then one native registration and two
+UnknownTorrent rejections for exactly its owned hash; it started before actual
+admission. Tactical270 waits for fresh native registry readiness and current
+port. Both devices now independently upload/hash all28 MiB with120 empty files;
+cohortA joins/reopens Live, while cohortB's subsequent fresh restart capture
+fails during folder checking. Its overall failure and cleanup remain intact.
+Normal diagnostic warnings intentionally remain across category filters. No
+engine/network/admission/retry policy changes. Full hour/managed delivery remain
+open;270 preserves bounded unavailable captures inside the existing restart
+deadline, never substituting launch/hash/screenshot for actual Live rows.
+
 Both source0aa physical cohorts independently hash the installed APK and pass
 small foreground/background/reopened upload plus joined Live-library restart,
 retained SAF registry and cleanup. This closes Tactical260's bounded local

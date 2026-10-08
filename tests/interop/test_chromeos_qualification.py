@@ -10,9 +10,54 @@ import xml.etree.ElementTree as ET
 
 import android_reactive_surface as product
 from chromeos_android_qualification import diagnostic_rows_match_filter, wait_unique_observed_control, observation_result, PACKAGE, RemoteAdb, confirm_intake, finish_first_use, native_maximize_arguments, reset_owned_profile, create_owned_fixture, observation_payload_size, reopened_library_action, owned_torrent_id, parse_incoming_observation, observe_owned_incoming, wait_owned_seed_readiness, IncomingObservationTimeout
+from chromeos_android_qualification import FreshUiCaptureUnavailable, wait_reopened_library
 
 
 class QualificationSafety(unittest.TestCase):
+    def test_reopen_unavailable_capture_requires_actual_owned_live_rows(self):
+        clock = [0.0]
+        def sleep(seconds):clock[0] += seconds
+        wrong = ET.fromstring('<h><n text="Live"/><n text="foreign"/></h>')
+        live = ET.fromstring('<h><n text="Live"/><n text="owned"/></h>')
+        with patch('chromeos_android_qualification.time.monotonic', side_effect=lambda:clock[0]), patch('chromeos_android_qualification.time.sleep', side_effect=sleep), patch.object(product, 'dump_ui', side_effect=[FreshUiCaptureUnavailable('no fresh XML'), wrong, live]):
+            result = wait_reopened_library(Mock(), 'owned')
+        self.assertEqual(result, {'observed_settings_back_steps':0,'unavailable_reopen_captures':1})
+
+    def test_permanently_unavailable_reopen_stops_at_original_deadline(self):
+        clock = [0.0]
+        def sleep(seconds):clock[0] += seconds
+        with patch('chromeos_android_qualification.time.monotonic', side_effect=lambda:clock[0]), patch('chromeos_android_qualification.time.sleep', side_effect=sleep), patch.object(product, 'dump_ui', side_effect=FreshUiCaptureUnavailable('no fresh XML')):
+            with self.assertRaisesRegex(RuntimeError, 'live owned library'):
+                wait_reopened_library(Mock(), 'owned', timeout=1)
+        self.assertEqual(clock[0], 1)
+
+    def test_reopen_does_not_retry_transport_or_malformed_xml(self):
+        for failure in [RuntimeError('authentication refused'), subprocess.TimeoutExpired(['transport'], 15), ET.ParseError('bad XML')]:
+            with patch.object(product, 'dump_ui', side_effect=failure) as capture:
+                with self.assertRaises(type(failure)):wait_reopened_library(Mock(), 'owned')
+                self.assertEqual(capture.call_count, 1)
+
+    def test_reopen_transport_and_navigation_share_one_remaining_deadline(self):
+        clock = [0.0];adb = Mock();live = ET.fromstring('<h><n text="Live"/><n text="owned"/></h>')
+        def capture(bounded):
+            clock[0] = .8
+            bounded.shell('uiautomator', 'dump', '/sdcard/rstorrent-window.xml')
+            bounded.shell('cat', '/sdcard/rstorrent-window.xml')
+            return live
+        with patch('chromeos_android_qualification.time.monotonic', side_effect=lambda:clock[0]), patch.object(product, 'dump_ui', side_effect=capture):
+            wait_reopened_library(adb, 'owned', timeout=1)
+        for call in adb.shell.call_args_list:self.assertAlmostEqual(call.kwargs['timeout'], .2)
+        settings = ET.fromstring('<h><n text="Settings"/><n content-desc="Back" enabled="true" bounds="[1,2][31,42]"/></h>')
+        with patch.object(product, 'dump_ui', return_value=settings), patch.object(product, 'tap_bounds') as tap, patch('chromeos_android_qualification.time.sleep'):
+            with self.assertRaisesRegex(RuntimeError, 'two-step'):wait_reopened_library(Mock(), 'owned')
+        self.assertEqual(tap.call_count, 2)
+
+    def test_reopen_invalid_budget_never_starts_transport(self):
+        for timeout in [0,121,True]:
+            adb = Mock()
+            with self.assertRaisesRegex(RuntimeError, 'budget'):wait_reopened_library(adb, 'owned', timeout=timeout)
+            self.assertEqual(adb.mock_calls, [])
+
     def test_selected_filter_label_cannot_establish_filtered_rows(self):
         nodes = list(ET.fromstring('<h><n text="Minimum: warning"/><n text="info · integrity.hash"/></h>').iter())
         self.assertFalse(diagnostic_rows_match_filter(nodes, 'warning'))
@@ -137,7 +182,7 @@ class QualificationSafety(unittest.TestCase):
             calls.append(options['input'])
             return subprocess.CompletedProcess(command,1 if 'test -s' in options['input'] else 0,'','')
         with patch('chromeos_android_qualification.subprocess.run',side_effect=run),patch('chromeos_android_qualification.time.sleep'):
-            with self.assertRaisesRegex(RuntimeError,'no fresh owned XML'):
+            with self.assertRaisesRegex(FreshUiCaptureUnavailable,'no fresh owned XML'):
                 RemoteAdb(['machine-control']).shell('uiautomator','dump','/sdcard/rstorrent-window.xml')
         self.assertEqual(len(calls),9)
         self.assertTrue(all('rm -f /data/local/tmp/rstorrent253-ui.xml' in calls[i] for i in [0,3,6]))
@@ -148,7 +193,7 @@ class QualificationSafety(unittest.TestCase):
             calls.append(options['input'])
             return subprocess.CompletedProcess(command,0,'ERROR: could not get idle state.' if 'uiautomator' in options['input'] else '','')
         with patch('chromeos_android_qualification.subprocess.run',side_effect=run),patch('chromeos_android_qualification.time.sleep'):
-            with self.assertRaisesRegex(RuntimeError,'could not get idle state'):
+            with self.assertRaisesRegex(FreshUiCaptureUnavailable,'could not get idle state'):
                 RemoteAdb(['machine-control']).shell('uiautomator','dump','/sdcard/rstorrent-window.xml')
         self.assertEqual(len(calls),6)
         self.assertTrue(all('cat ' not in source for source in calls))

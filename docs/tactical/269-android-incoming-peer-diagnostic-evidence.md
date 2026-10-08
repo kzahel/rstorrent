@@ -1,6 +1,6 @@
 # Tactical 269: Android Incoming Peer Diagnostic Evidence
 
-Status: Active, 2026-10-08. Bounded diagnostic follow-up to259/267.
+Status: Complete locally, 2026-10-08. Bounded diagnostic follow-up to259/267.
 
 Topics: `client-surfaces`, `application-view-api`, `incoming-reachability-and-seeding`.
 
@@ -61,3 +61,25 @@ API28/target36,16-KiB alignment/notices, lint and122 JVM cases pass at
 sourceaeaa72f9. Both isolated physical installs pass; actual current-port and
 rejection samples remain active. The one owned temporary directory from the
 initial failed test was removed. No inherited fixture or profile was deleted.
+
+## Physical diagnostic stopping condition
+
+Both exact installed sourceaeaa APKs expose actual current port6881 and
+registrations without addresses/paths. Original cohortA diagnosis records
+zero registrations before its failed probe, one afterward and two actual
+UnknownTorrent rejections for exactly the owned fixture hash. Subsequent
+Tactical270 runs wait for actual registry admission:107.99 seconds on cohortA,
+163.46 on cohortB. Both independently upload/hash all29360128 bytes; the native
+observer records the same actual outgoing payload counter. The one
+HandshakeInvalid count is the controlled tunnel readiness connection, which
+opens and closes without a BitTorrent handshake, not an engine regression.
+
+This resolves the bounded refusal diagnosis and completes269 locally without
+changing network/admission/retry policy. CohortA's joined actual Live restart
+and cleanup pass. CohortB subsequently refuses its fresh restart capture while
+Checking download folders; its overall receipt remains failed with cleanup ok.
+The qualification-only270 follow-up owns that observation and full259 hour
+acceptance remains open. Normal original-signed release, isolated dual-ABI
+build,122 JVM/lint/package checks and full workspace1575 tests/clippy/fmt pass.
+Web typecheck/470 cases pass with2 existing skipped; workspace has18 existing
+ignored cases. Managed Play and publication remain unperformed.

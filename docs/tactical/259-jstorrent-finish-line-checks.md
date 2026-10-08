@@ -634,3 +634,24 @@ The older exact31 desktop push review is superseded by the new prepared
 workflow and qualification code; request a concrete new-source nonpublishing
 build when ready. No push, tag, dispatch, draft/upload, feed or store changes.
 Current targeted native-readiness retries continue independently; VMs stay off.
+
+### Current native readiness, observer closure and final source review
+
+269 completes locally: current sourceaeaa normal original-key release/isolated
+build,122 JVM/lint/package checks,15 native observer cases and actual physical
+current-port/rejection evidence pass. Workspace1575 cases/fmt/clippy and web
+typecheck/470 cases pass, retaining18 ignored and2 skipped cases.
+270's actual registry barrier resolves the large-fixture upload ordering: both
+physical devices independently hash all28 MiB after107.99/163.46-second native
+readiness. CohortA passes joined actual Live restart/cleanup; cohortB fails fresh
+UI capture while folder checking after successful upload, with cleanup ok. Its
+failed receipt is retained; bounded reopen observation retries only explicit
+fresh-capture unavailability inside the existing120-second restart budget.
+The45 portable qualification cases pass; cohortB retry and cohortA's default
+three-cold-repetition/hour run proceed. No full hour pass is inferred yet.
+
+Concrete ignored desktop review now pins8c06f48e8c633052d80cfe76f9dd358266dcd3fd
+for the nonpublishing five-target build. It supersedes the old31 request and
+explicitly includes the preview-site deployment side effect of the source push.
+Git identity is the maintainer identity; no push/dispatch/tag/release occurs
+without explicit instruction. Report/images remain ignored.

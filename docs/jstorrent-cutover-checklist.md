@@ -35,8 +35,12 @@ change engine, listener or seeding policy. Normal original-upload-signed
 release, 122 JVM tests, lint and independent APK/AAB package/signature/labels/
 API/ABI/alignment/notices checks pass. AAB SHA-256:
 `19f9c3585ea2ac8d596bdd19bc4e1ab7ffcb5bf73e96b22b0c3c1f595baa9644`.
-Both physical devices now have the exact isolated observer APK; current native
-diagnosis and large two-positive-file upload trials are active. No code26
+Both physical devices have the exact isolated observer APK. Tactical269
+completes locally with actual current-port/rejection samples. After native
+registry readiness, both original large fixtures independently upload/hash
+all28 MiB; cohortA joins/reopens Live, while cohortB's final fresh capture fails
+during folder checking with cleanup ok. Tactical270's bounded observer retry
+and default full-hour acceptance proceed separately. No code26
 upload or managed Play acceptance is claimed.
 
 Both source0aa physical small-fixture runs independently receive/hash all

@@ -63,6 +63,10 @@ def observation_result(seconds, transferred, verified, sha1):
     }
 
 
+class FreshUiCaptureUnavailable(RuntimeError):
+    """Explicit idle or missing-fresh-XML failure, never a transport refusal."""
+
+
 class RemoteAdb:
     def __init__(self, command: list[str]):
         self.command = command
@@ -103,7 +107,8 @@ class RemoteAdb:
                 break
             time.sleep(min(.3, max(0, deadline - time.monotonic())))
         if check and result.returncode:
-            raise RuntimeError(
+            error = FreshUiCaptureUnavailable if capture and (idle_failure or missing_capture) else RuntimeError
+            raise error(
                 f"owned Android command failed ({result.returncode}): "
                 f"stdout={result.stdout[-1500:]!r}; stderr={result.stderr[-1500:]!r}"
             )
@@ -433,6 +438,43 @@ def reopened_library_action(nodes, expected_name):
     return "back", bounds
 
 
+def wait_reopened_library(adb, expected_name, *, timeout=120):
+    if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or not 0 < timeout <= 120:
+        raise RuntimeError("invalid owned library-reopen budget")
+    beginning = time.monotonic()
+    deadline = beginning + timeout
+
+    class DeadlineAdb:
+        def shell(self, *arguments, **options):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError("joined restart did not restore the live owned library")
+            options["timeout"] = min(options.get("timeout", 30), remaining)
+            return adb.shell(*arguments, **options)
+
+    bounded = DeadlineAdb()
+    back_steps = unavailable_captures = 0
+    while time.monotonic() < deadline:
+        try:
+            action, bounds = reopened_library_action(list(product.dump_ui(bounded).iter()), expected_name)
+        except FreshUiCaptureUnavailable:
+            unavailable_captures += 1
+            print(json.dumps({"stage": "reopened_library", "status": "fresh_capture_unavailable",
+                              "unavailable_captures": unavailable_captures,
+                              "elapsed_seconds": round(time.monotonic() - beginning, 2)}), flush=True)
+        else:
+            if action == "live":
+                return {"observed_settings_back_steps": back_steps,
+                        "unavailable_reopen_captures": unavailable_captures}
+            if action == "back":
+                if back_steps >= 2:
+                    raise RuntimeError("owned retained-settings navigation exceeded its two-step budget")
+                product.tap_bounds(bounded, bounds)
+                back_steps += 1
+        time.sleep(min(.5, max(0, deadline - time.monotonic())))
+    raise RuntimeError("joined restart did not restore the live owned library")
+
+
 def disable_seeding_and_verify_joined_restart(adb, destination, expected_hash):
     uid = re.search(r"\buserId=(\d+)\b", adb.shell("dumpsys", "package", PACKAGE).stdout)
     if uid is None:
@@ -475,23 +517,10 @@ def disable_seeding_and_verify_joined_restart(adb, destination, expected_hash):
     # A delivered launch and unchanged filesystem bytes do not prove that
     # the restarted client finished restoring its retained library.
     expected_name = Path(destination).parent.name
-    deadline = time.monotonic() + 120
-    back_steps = 0
-    while time.monotonic() < deadline:
-        action, bounds = reopened_library_action(list(product.dump_ui(adb).iter()), expected_name)
-        if action == "live":
-            break
-        if action == "back":
-            if back_steps >= 2:
-                raise RuntimeError("owned retained-settings navigation exceeded its two-step budget")
-            product.tap_bounds(adb, bounds)
-            back_steps += 1
-        time.sleep(.5)
-    else:
-        raise RuntimeError("joined restart did not restore the live owned library")
+    navigation = wait_reopened_library(adb, expected_name)
     return {"shutdown": joined[-1], "service_absent_after_join": True,
             "reopen_sha1": actual, "retained_saf_registry": "unchanged",
-            "reopen_live_library": True, "observed_settings_back_steps": back_steps}
+            "reopen_live_library": True, **navigation}
 
 
 def native_maximize_arguments(result):
