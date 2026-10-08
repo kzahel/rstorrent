@@ -68,6 +68,29 @@ with statistics disabled in the owned test profile; persisted choice is checked.
 Every completed Mac repeat restores the guest, removes owned captures/staging,
 powers off and releases its claim. Failed coordinator repeats stay failed.
 
+The final ARM Mac DMG also passes actual read-only mounting and standard app
+bundle installation into the controlled guest's normal Applications location.
+DMG SHA-256 is `8d2d1bba23d47f744f2feda4dcb9fd0f6af1c50eb7bbfb669ebd509f4a0a1373`;
+strict/deep source and copied-bundle signatures pass and the mount is detached.
+Eight migration assertions, nine refusal routes, stable four-row restart and
+source/payload preservation pass. Settled/restarted native screenshots are
+visually inspected for JSTorrent menu/title/icon/header and the styled library.
+Independent inherited trees match; exact owned captures/staging are removed,
+the transfer server is joined, VM is off and its claim released. This qualifies
+DMG-mounted bundle installation, not GUI drag/drop or automatic updating.
+
+The failed Linux launch probe remains failed. A bounded exact-owned cleanup
+checks the actual apport crash-report backend for only that driver's command;
+no retained matching report exists and zero files are removed. Unrelated crash
+reports, markers and journals remain intact. Cleanup verifies VM off and claim
+release. The first incorrect backend assumption stays failed.
+
+The maintainer authorizes destruction/recreation of the rejected-login native
+Windows x64 test appliance. A delegated YepAnywhere session now owns that
+bounded provisioning task; canonical private credential-file/registry handoff,
+real cold-boot stored-password login and native readiness are required before
+resuming product qualification. This does not qualify Windows execution yet.
+
 D-01 now qualifies for the exact signed desktop source8c candidate and selected
 legacy0.2.1 sources. Independent Mac archive metadata and embedded original
 icons match JSTorrent/com.jstorrent.desktop/0.3.0; the other three signed lane

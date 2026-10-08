@@ -24,9 +24,33 @@ assertions and six refusal routes, with readable populated/restarted/refusal
 compositor captures and JSTorrent window/tray labels. Owned staging/captures and
 recent-file metadata are removed, VMs return off and claims are released.
 
+The final ARM Mac DMG also passes actual read-only mounting and standard app
+bundle installation into the controlled guest's normal Applications location.
+DMG SHA-256 is `8d2d1bba23d47f744f2feda4dcb9fd0f6af1c50eb7bbfb669ebd509f4a0a1373`;
+strict/deep source and copied-bundle signatures pass and the mount is detached.
+Eight migration assertions, nine refusal routes, stable four-row restart and
+source/payload preservation pass. Settled/restarted native screenshots are
+visually inspected for JSTorrent menu/title/icon/header and the styled library.
+Independent inherited trees match; exact owned captures/staging are removed,
+the transfer server is joined, VM is off and its claim released. This qualifies
+DMG-mounted bundle installation, not GUI drag/drop or automatic updating.
+
+The failed Linux launch probe remains failed. A bounded exact-owned cleanup
+checks the actual apport crash-report backend for only that driver's command;
+no retained matching report exists and zero files are removed. Unrelated crash
+reports, markers and journals remain intact. Cleanup verifies VM off and claim
+release. The first incorrect backend assumption stays failed.
+
+The maintainer authorizes destruction/recreation of the rejected-login native
+Windows x64 test appliance. A delegated YepAnywhere session now owns that
+bounded provisioning task; canonical private credential-file/registry handoff,
+real cold-boot stored-password login and native readiness are required before
+resuming product qualification. This does not qualify Windows execution yet.
+
 Final automatic/GUI updating, AppImage visual acceptance and the remaining native
-Windows/Intel Mac/x64 cohorts remain unqualified. Windows login repair and Intel Mac availability
-remain external testbed inputs. No public tag, release or feed changes.
+Windows/Intel Mac/x64 cohorts remain unqualified. The authorized Windows x64
+rebuild is in progress; Intel Mac availability remains an external testbed input.
+No public tag, release or feed changes.
 
 The final signed ARM Debian package also passes actual `dpkg --install` and
 installed `/usr/bin/rstorrent-desktop` execution: eight migration assertions,
@@ -52,8 +76,8 @@ Show, overview and maximize. Debian pixels render on the same guest; a product
 rendering cause is not established. The configured testbed policy absolutely
 prohibits outer UTM capture/input even with a disruptive claim; it is preserved.
 AppImage FUSE mounting, associations and automatic updating remain separate.
-Next executable local check: final signed Linux native launch/ownership and
-controlled file/magnet delivery in an owned isolated scope.
+The final signed controlled Linux native launch check is recorded below.
+Next executable native cohort: Windows x64 after verified appliance rebuild.
 
 D-02 now qualifies for the final signed source8c packages. Native Windows ARM
 administration verifies the exact NSIS and MSI hashes, valid Authenticode,

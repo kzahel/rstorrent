@@ -54,8 +54,9 @@ a checked local task does not close a delivery row.
   cold repetitions, the detached hour, full 40-MiB independent download/upload,
   retained filters, joined actual Live/owned-row reopen, SAF continuity and
   cleanup. The first whole-run reopen failure remains recorded unchanged.
-- [x] Linux, Windows and macOS VMs are off; idle claims released. Task evidence
-  stays ignored and hash-bound exported guest screenshot copies are removed.
+- [x] Every completed Linux, Windows and macOS session verifies VM off and claim
+  release; only prepared active checks use a running VM. Task evidence stays
+  ignored and hash-bound exported guest screenshot copies are removed.
 - [x] Approved exact source8c push to existing main and nonpublishing desktop
   dispatch37735081504 record the same SHA and publish=false. Fresh strict
   three-lockfile review passes; the existing expiry remains unchanged.
@@ -67,8 +68,10 @@ a checked local task does not close a delivery row.
 - [x] Final signed Mac ARM manual replacement: eight migration assertions/nine
   refusal routes, readable settled/restarted JSTorrent library, source/payload
   preservation, independent inherited-tree restoration and exact owned cleanup;
-  transfer server reaped, VM off and claim released. Automatic updating and DMG
-  drag/drop qualification remain separate.
+  transfer server reaped, VM off and claim released. Separate actual final DMG
+  read-only mount/signature/bundle installation passes the same eight/nine
+  checks and native restart, with its mount detached. Automatic updating and
+  GUI drag/drop qualification remain separate.
 - [x] Final ARM Debian actual package-manager installation and installed binary:
   eight migration assertions/six refusal routes, readable settled/restart pixels,
   retained source/payload and owned disclosure choice. Owned package/files are
@@ -101,7 +104,8 @@ a checked local task does not close a delivery row.
 - [ ] Explicit revised-source push/CI and code27 internal delivery instruction;
   these newer bytes are not covered by the exact8c/code26 delivery approval.
 - [ ] Final signed installed desktop updates and recovery matrix; native Windows
-  credential repair and Intel Mac availability are external machine inputs.
+  x64 appliance rebuild is delegated with verified stored-password cold login
+  and private registry handoff required. Intel Mac availability remains open.
 - [x] Approved exact sourceaeaa original-key AAB uploads and publishes code26
   to the existing internal track/testers. Play reports Available to internal
   testers; production23 and supported devices are unchanged from internal25.
