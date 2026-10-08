@@ -88,6 +88,12 @@ a checked local task does not close a delivery row.
   captures and exact guest/controller roots removed; VM off and claim released.
   Old-app blank pixels, raw recovery copy and unowned system crash dialog remain
   recorded; FUSE/normal association/updater acceptance stays separate.
+- [x] Final signed Linux x64 Debian actual installation/installed binary:
+  eight migration assertions/six refusal routes, readable native restart,
+  preserved bytes and owned disclosure persistence. Exact package/files purged,
+  inherited cache/directory/profile state restored, guest/controller staging and
+  six native captures removed; VM off/claim released. Association/updater gates
+  remain separate; only exact-owned crash metadata is checked.
 - [x] Final signed Linux ARM controlled native launch: twelve post-Quit Retry
   responses, busy-owner retry/timeout, native/background/magnet/file and both
   owned OS associations, spaces/Unicode, twelve-way one-owner concurrency,

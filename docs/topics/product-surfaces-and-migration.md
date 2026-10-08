@@ -28,6 +28,10 @@ The rejected-login Windows x64 appliance rebuild is explicitly authorized and
 delegated; actual cold login and canonical private credential handoff are
 required before native product qualification resumes.
 
+Final signed x64 Debian actual installation also passes eight migration/six
+refusal checks, readable native restart and exact owned package/cache/profile
+restoration, with VM off/claim released. Normal launcher/updater gates remain.
+
 Final signed desktop identity/signature gates D-01/D-02 now qualify. Native
 Windows ARM verifies the exact installer hashes, accepted publisher and valid
 Microsoft-timestamped Authenticode without login/install; both Mac archives

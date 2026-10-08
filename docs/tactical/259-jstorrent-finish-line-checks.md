@@ -106,6 +106,19 @@ verify. FUSE, normal association delivery and automatic/GUI updating remain
 separate. This is final source8c evidence, superseding historical manual x64
 candidate scope without rewriting those receipts.
 
+Actual final signed Linux x64 Debian installation now passes separately from
+AppImage extraction. Exact candidate `0a71e2a3` installs `js-torrent` 0.3.0 amd64
+with package-absence/file-collision guards; installed desktop/native-host hashes
+match the signed package inventory. Eight migration assertions, six refusal
+routes, source/payload preservation and readable settled/restarted JSTorrent
+pass. Native owned disclosure input independently persists statistics false.
+Cleanup purges only the owned package/files, restores inherited directory modes,
+icon/application cache bytes and profile scopes, removes six exact exported
+guest captures and guest/controller staging, then verifies VM off/claim release.
+Bounded before/after apport metadata checks find no report tied to either exact
+owned root; unrelated reports/markers/journals/dialogs remain intact. This does
+not qualify normal launcher/associations or automatic updating.
+
 D-01 now qualifies for the exact signed desktop source8c candidate and selected
 legacy0.2.1 sources. Independent Mac archive metadata and embedded original
 icons match JSTorrent/com.jstorrent.desktop/0.3.0; the other three signed lane
