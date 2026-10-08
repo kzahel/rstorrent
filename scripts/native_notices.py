@@ -22,6 +22,38 @@ COMMON_LICENSE_ROOT = Path('/usr/share/common-licenses')
 # Ubuntu base-files names for SPDX-style paths found in package copyrights.
 COMMON_LICENSE_ALIASES = {'GPL-2.0': 'GPL-2', 'GPL-3.0': 'GPL-3',
                           'LGPL-2.0': 'LGPL-2', 'LGPL-3.0': 'LGPL-3'}
+# USN-8847-1, verified 2026-10-08. These are reviewed Ubuntu source
+# revision families, not upstream semver or a general Debian comparator.
+OPENSSL_FLOORS = {'3.0.2-0ubuntu1.': 30, '3.0.13-0ubuntu3.': 16}
+
+
+def verify_security_floor(packages):
+    """One known advisory gate; not comprehensive native security clearance."""
+    runtime = []
+    for item in packages:
+        if item['package'].split(':')[0] not in {'libssl3', 'libssl3t64'}:
+            continue
+        if item['source_package'] != 'openssl' or item['version'] != item['source_version']:
+            raise ValueError('OpenSSL runtime source/binary attribution differs')
+        version = item['source_version']
+        matched = False
+        for prefix, floor in OPENSSL_FLOORS.items():
+            if version.startswith(prefix):
+                revision = version[len(prefix):]
+                if not re.fullmatch(r'[1-9][0-9]{0,8}', revision):
+                    break
+                if int(revision) < floor:
+                    raise ValueError(f'OpenSSL {version} is below USN-8847-1 floor {prefix}{floor}')
+                matched = True
+                runtime.append({'package': item['package'], 'version': version,
+                                'minimum': prefix + str(floor)})
+                break
+        if not matched:
+            raise ValueError(f'OpenSSL version requires security-floor review: {version}')
+    if len(runtime) != 1:
+        raise ValueError('AppImage must attribute exactly one OpenSSL runtime package')
+    return {'advisory': 'USN-8847-1', 'packages': runtime,
+            'scope': 'Reviewed Ubuntu OpenSSL revision floor only; not full native security clearance'}
 
 
 def sha(path):
@@ -228,6 +260,7 @@ def collect(root, provenance=None):
               'scope': 'Selected distro ELF files and copied xdg helpers; original copyright and referenced common-license texts.',
               'remaining_review': ['AppImage launcher and outer runtime provenance/source obligations',
                                    'Per-package redistribution and corresponding-source obligations; source locators are not a source offer']}
+    verify_security_floor(result['packages'])
     destination = root / MANIFEST
     if not destination.resolve().is_relative_to(root):
         raise ValueError('native manifest destination escapes package')
@@ -282,5 +315,7 @@ def verify(root):
             raise ValueError('unknown native component kind')
     if observed != set(packages) or not FIRST_PARTY.issubset(declared):
         raise ValueError('native package provenance is incomplete')
+    security = verify_security_floor(data['packages'])
     return {'components': len(actual), 'distro_packages': len(packages), 'notice_files': len(notices),
+            'security_floor': security,
             'manifest_sha256': sha(manifest), 'remaining_review': data['remaining_review']}

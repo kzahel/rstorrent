@@ -107,6 +107,8 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             libwebkit2gtk-4.1-dev \
+            libssl-dev \
+            openssl \
             patchelf
 
       - name: Install locked web dependencies
@@ -321,6 +323,8 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             libwebkit2gtk-4.1-dev \
+            libssl-dev \
+            openssl \
             patchelf \
             xdg-utils
 

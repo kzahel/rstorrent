@@ -1,5 +1,17 @@
 # JSTorrent In-Place Cutover Checklist
 
+Tactical [279](tactical/279-appimage-openssl-security-floor.md) records a
+new native security shipment blocker: the exact signed source8c ARM AppImage
+bundles OpenSSL `3.0.2-0ubuntu1.29`, below Ubuntu USN-8847-1's Jammy fixed
+revision `3.0.2-0ubuntu1.30`. The x64 candidate contains the fixed revision.
+A local packaging/extraction guard now refuses the ARM manifest, and Linux
+builders explicitly refresh OpenSSL development/runtime packages. All 21
+focused distribution cases and workflow lint pass locally. Rebuilding and
+qualifying new signed bytes remain required; this is one advisory floor, not
+complete native security clearance, and product exploitability is unestablished.
+Original trust/integrity and functional receipts remain scoped to their bytes.
+
+
 Owner: [product-surfaces-and-migration](topics/product-surfaces-and-migration.md).
 Campaign: [231](tactical/231-jstorrent-migration-working-campaign.md).
 Candidate mechanics: [250](tactical/250-jstorrent-production-identity-candidates.md).

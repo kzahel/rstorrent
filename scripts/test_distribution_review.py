@@ -137,7 +137,7 @@ class NativeNoticeTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve() / 'AppDir'
         self.root.mkdir()
-        for name in native_notices.FIRST_PARTY | {'usr/lib/libexample.so.1', 'usr/bin/xdg-mime'}:
+        for name in native_notices.FIRST_PARTY | {'usr/lib/libexample.so.1', 'usr/lib/libssl.so.3', 'usr/bin/xdg-mime'}:
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b'#!/bin/sh\n' if name.endswith('xdg-mime') else b'\x7fELFexample')
@@ -149,6 +149,11 @@ class NativeNoticeTests(unittest.TestCase):
 
         class Provenance:
             def identify(self, path, digest):
+                if path.name == 'libssl.so.3':
+                    return {'package': 'libssl3:amd64', 'version': '3.0.2-0ubuntu1.30',
+                            'source_package': 'openssl', 'source_version': '3.0.2-0ubuntu1.30',
+                            'original_path': '/usr/lib/libssl.so.3',
+                            'original_sha256': digest, 'build_id': 'abcdef'}
                 return {'package': 'example:amd64', 'version': '1.2-1',
                         'source_package': 'example', 'source_version': '1.2-1',
                         'original_path': '/usr/lib/libexample.so.1.2',
@@ -164,14 +169,65 @@ class NativeNoticeTests(unittest.TestCase):
 
     def test_selected_components_and_original_license_bytes_round_trip(self):
         result = self.native.collect(self.root, self.provenance)
-        self.assertEqual(len(result['components']), 4)
-        self.assertEqual(len(result['packages']), 1)
-        self.assertEqual(len(result['notices']), 2)
+        self.assertEqual(len(result['components']), 5)
+        self.assertEqual(len(result['packages']), 2)
+        self.assertEqual(len(result['notices']), 3)
         copyright_path = self.root / result['packages'][0]['copyright']
         self.assertEqual(copyright_path.read_bytes(), self.copyright.read_bytes())
-        self.assertEqual(self.native.verify(self.root)['distro_packages'], 1)
+        self.assertEqual(self.native.verify(self.root)['distro_packages'], 2)
         self.assertNotIn(str(self.root.parent), json.dumps(result))
         self.assertTrue(result['remaining_review'])
+
+    def test_reviewed_openssl_floors_and_future_security_revisions(self):
+        for version in ('3.0.2-0ubuntu1.30', '3.0.2-0ubuntu1.100',
+                        '3.0.13-0ubuntu3.16', '3.0.13-0ubuntu3.20'):
+            with self.subTest(version=version):
+                package = {'package': 'libssl3t64:arm64', 'version': version,
+                           'source_package': 'openssl', 'source_version': version}
+                result = self.native.verify_security_floor([package])
+                self.assertEqual(result['packages'][0]['version'], version)
+        for version in ('3.0.2-0ubuntu1.29', '3.0.13-0ubuntu3.9'):
+            with self.subTest(version=version):
+                package = {'package': 'libssl3:amd64', 'version': version,
+                           'source_package': 'openssl', 'source_version': version}
+                with self.assertRaisesRegex(ValueError, 'below USN-8847-1'):
+                    self.native.verify_security_floor([package])
+
+    def test_unreviewed_or_missing_openssl_provenance_fails_closed(self):
+        for version in ('3.5.5-1ubuntu3.6', '1:3.0.2-0ubuntu1.30',
+                        '3.0.2-0ubuntu1.30+local', '3.0.2-0ubuntu1.030'):
+            package = {'package': 'libssl3:amd64', 'version': version,
+                       'source_package': 'openssl', 'source_version': version}
+            with self.subTest(version=version), self.assertRaisesRegex(ValueError, 'requires security-floor review'):
+                self.native.verify_security_floor([package])
+        package = {'package': 'libssl3:amd64', 'version': '3.0.2-0ubuntu1.30',
+                   'source_package': 'openssl', 'source_version': '3.0.2-0ubuntu1.30'}
+        for changed in ({'source_package': 'unreviewed'}, {'version': '3.0.2-0ubuntu1.29'}):
+            with self.assertRaisesRegex(ValueError, 'attribution differs'):
+                self.native.verify_security_floor([{**package, **changed}])
+        for packages in ([], [package, {**package, 'package': 'libssl3:arm64'}]):
+            with self.assertRaisesRegex(ValueError, 'exactly one'):
+                self.native.verify_security_floor(packages)
+
+    def test_old_openssl_refused_before_manifest_and_after_extraction(self):
+        from unittest.mock import patch
+        identify = self.provenance.identify
+        def old(path, digest):
+            item = identify(path, digest)
+            if item['source_package'] == 'openssl':
+                item.update(version='3.0.2-0ubuntu1.29', source_version='3.0.2-0ubuntu1.29')
+            return item
+        with patch.object(self.provenance, 'identify', side_effect=old):
+            with self.assertRaisesRegex(ValueError, 'below USN-8847-1'):
+                self.native.collect(self.root, self.provenance)
+        self.assertFalse((self.root / self.native.MANIFEST).exists())
+        result = self.native.collect(self.root, self.provenance)
+        for item in result['packages'] + result['components']:
+            if item.get('source_package') == 'openssl':
+                item.update(version='3.0.2-0ubuntu1.29', source_version='3.0.2-0ubuntu1.29')
+        (self.root / self.native.MANIFEST).write_text(json.dumps(result))
+        with self.assertRaisesRegex(ValueError, 'below USN-8847-1'):
+            self.native.verify(self.root)
 
     def test_spdx_common_license_name_uses_ubuntu_canonical_text(self):
         from unittest.mock import patch
