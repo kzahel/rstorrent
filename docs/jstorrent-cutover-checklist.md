@@ -1,5 +1,27 @@
 # JSTorrent In-Place Cutover Checklist
 
+The authorized native Windows x64 appliance rebuild is handed off with verified
+AMD64 Windows11, real Python3.13 sqlite3/winreg, native semantic/capture/input
+readiness and a real cold locked-to-unlocked stored-password login. Credential
+bytes stay in a private0600 file/0700 parent; the registry stores its locator.
+Native login delivery is confirmed while its effect field says no_effect;
+independent unlocked state is recorded separately. Seed/staging cleanup and
+restored inventory pass; VM off/claim available at handoff. One timed-out
+factory-status journal intent lacks a result, so ready-close remains incomplete
+without history alteration. Parent signed product qualification now resumes;
+no product acceptance row is closed by rebuilding a machine.
+
+Both exact signed source8c AppImages additionally bundle WebKitGTK
+`2.50.4-0ubuntu0.22.04.1`. [Upstream WSA-2026-0003](https://webkitgtk.org/security/WSA-2026-0003.html)
+lists affected versions before2.52.4, including CSP enforcement. Ubuntu's
+[CVE-2026-43742 status](https://ubuntu.com/security/CVE-2026-43742) marks Jammy
+Ignored and says current WebKit cannot be built on Jammy and earlier; Noble
+has a fixed2.52.6 package. R-05 holds Linux shipment pending maintained runtime
+and compatibility disposition; no product exploitability is asserted. T279's
+OpenSSL floor does not resolve this separate WebKit gap or authorize a silent
+minimum-OS change. Both bundled GLib versions meet the specific USN-8794-1
+floor; this selected review is not a full native vulnerability inventory.
+
 Tactical [279](tactical/279-appimage-openssl-security-floor.md) records a
 new native security shipment blocker: the exact signed source8c ARM AppImage
 bundles OpenSSL `3.0.2-0ubuntu1.29`, below Ubuntu USN-8847-1's Jammy fixed
