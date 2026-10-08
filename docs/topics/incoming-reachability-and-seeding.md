@@ -19,6 +19,12 @@ Normal diagnostic warnings intentionally remain across category filters. No
 engine/network/admission/retry policy changes. Default three-repetition/hour
 and managed delivery remain open under259; a short pass is not an hour.
 
+Tactical272 keeps the measured28-MiB upload's120-second allowance and scales
+the40-MiB hourly fixture to172 seconds, below the existing300-second helper
+bound. Native admission still has180 seconds; independent file hashes and
+joined cleanup remain mandatory. All51 qualification/five transport cases pass.
+Default current-source full runs are active; no hour or managed pass is inferred.
+
 Both source0aa physical cohorts independently hash the installed APK and pass
 small foreground/background/reopened upload plus joined Live-library restart,
 retained SAF registry and cleanup. This closes Tactical260's bounded local

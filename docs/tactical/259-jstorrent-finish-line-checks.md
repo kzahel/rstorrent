@@ -706,3 +706,24 @@ All48 qualification cases pass. The old capture/ordering failures stay failed.
 CohortA's full default three-repetition/hour run remains active; cohortB's
 default full run follows. Targeted passes do not qualify an hour or managed
 Play delivery.
+
+### Proportional hourly upload allowance and supported physical boundaries
+
+272 keeps120 seconds for the independently proven28-MiB upload and scales the
+bounded40-MiB hourly fixture to172 seconds. Actual cohortB sample progression
+spans at least85 seconds before its28-MiB full hash, so proportional allowance
+avoids imposing a stricter throughput threshold on the larger fixture. Native
+readiness stays180 seconds; every file still needs independent verification.
+Call elapsed time is recorded separately from the inner leecher allowance.
+All51 qualification and five transport cases pass after correcting one test
+fixture that accidentally included its registry file in the payload root.
+CohortB's default three-repetition/hour run is active; cohortA continues with
+its earlier distinct loaded driver. Neither whole result is inferred yet.
+
+Fresh common read-only doctors pass both physical appliances. Their current
+common lifecycle operation lists are empty; maintenance audit prohibits reboot,
+certify is unavailable and repair allows only an explicit reboot. Always-awake
+idle/lid policy remains the documented baseline, with no pending OS update.
+These facts do not substitute for physical reboot/network/sleep/provider tests,
+and no unsupported transport route or policy reset is invented. The unrelated
+Chrome Save dialog remains intact; privileged Web Store inspection is blocked.

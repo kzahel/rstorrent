@@ -245,8 +245,16 @@ def configure_background_observation(adb, *, keep_seeding=False):
     return listener_port
 
 
+def completed_upload_budget(payload_bytes):
+    if not isinstance(payload_bytes, int) or isinstance(payload_bytes, bool) or not 0 < payload_bytes <= 40 * 1024 * 1024:
+        raise RuntimeError("owned upload fixture must contain 1..40 MiB of payload")
+    baseline = 28 * 1024 * 1024
+    return max(120, (120 * payload_bytes + baseline - 1) // baseline)
+
+
 def verify_completed_upload(adb, fixture, registry, target, listener_port):
     """Reuse the existing controlled leecher and its bounded forward cleanup."""
+    budget = completed_upload_budget(fixture.payload_path.stat().st_size)
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "clients/android"))
     import run_bootstrap as bootstrap
     host = json.loads(registry.read_text())["targets"][target]["environment"]["CHROMEBOOK_HOST"]
@@ -262,7 +270,7 @@ def verify_completed_upload(adb, fixture, registry, target, listener_port):
         expected_file_hashes={str(path.relative_to(root)): hashlib.sha1(path.read_bytes()).hexdigest()
                               for path in root.rglob("*") if path.is_file()},
     )
-    return bootstrap.verify_product_upload(ForwardedAdb(), upload_fixture, device_port=listener_port, leech_timeout_seconds=120)
+    return bootstrap.verify_product_upload(ForwardedAdb(), upload_fixture, device_port=listener_port, leech_timeout_seconds=budget)
 
 
 def owned_torrent_id(log, info_hash):
@@ -826,7 +834,17 @@ def main():
                     handle.pause()
                     report["incoming_seed_readiness"] = {}
                     listener_port = wait_owned_seed_readiness(adb, fixture.info_hash, report["incoming_seed_readiness"])
-                    uploaded = verify_completed_upload(adb, fixture, args.registry, args.target, listener_port)
+                    report["upload_verification"] = {"status": "running", "leecher_budget_seconds": completed_upload_budget(fixture.payload_path.stat().st_size)}
+                    upload_beginning = time.monotonic()
+                    try:
+                        uploaded = verify_completed_upload(adb, fixture, args.registry, args.target, listener_port)
+                    except BaseException:
+                        report["upload_verification"]["status"] = "fail"
+                        raise
+                    else:
+                        report["upload_verification"]["status"] = "pass_independent_file_hashes"
+                    finally:
+                        report["upload_verification"]["verification_call_seconds"] = round(time.monotonic() - upload_beginning, 2)
                     report["completed_background_upload"] = {"payload_bytes": uploaded, "sha1": fixture.payload_hash,
                                                              "actual_listener_port": listener_port}
                     diagnostic("completed-background-upload")

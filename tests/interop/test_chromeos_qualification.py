@@ -7,13 +7,44 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 import xml.etree.ElementTree as ET
+from types import SimpleNamespace
 
 import android_reactive_surface as product
 from chromeos_android_qualification import diagnostic_rows_match_filter, wait_unique_observed_control, observation_result, PACKAGE, RemoteAdb, confirm_intake, finish_first_use, native_maximize_arguments, reset_owned_profile, create_owned_fixture, observation_payload_size, reopened_library_action, owned_torrent_id, parse_incoming_observation, observe_owned_incoming, wait_owned_seed_readiness, IncomingObservationTimeout
 from chromeos_android_qualification import FreshUiCaptureUnavailable, wait_reopened_library, wait_diagnostic_filter_rows
+from chromeos_android_qualification import completed_upload_budget, verify_completed_upload
 
 
 class QualificationSafety(unittest.TestCase):
+    def test_large_upload_budget_preserves_measured_short_baseline_and_bound(self):
+        self.assertEqual(completed_upload_budget(1), 120)
+        self.assertEqual(completed_upload_budget(28*1024*1024), 120)
+        self.assertEqual(completed_upload_budget(28*1024*1024+1), 121)
+        self.assertEqual(completed_upload_budget(40*1024*1024), 172)
+
+    def test_invalid_fixture_size_refuses_before_any_transport_or_registry_read(self):
+        for size in [0,-1,40*1024*1024+1,True,'40']:
+            adb=Mock();registry=Mock();fixture=Mock();fixture.payload_path.stat.return_value.st_size=size
+            with self.assertRaisesRegex(RuntimeError, 'owned upload fixture'):
+                verify_completed_upload(adb,fixture,registry,'owned',6881)
+            self.assertEqual(adb.mock_calls,[])
+            self.assertEqual(registry.mock_calls,[])
+
+    def test_actual_upload_helper_receives_proportional_budget_and_independent_hashes(self):
+        sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'clients/android'))
+        import run_bootstrap as bootstrap
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);payload_root=root/'payload';payload_root.mkdir();payload=payload_root/'payload.bin'
+            with payload.open('wb') as stream:stream.truncate(40*1024*1024)
+            registry=root/'registry.json';registry.write_text('{"targets":{"owned":{"environment":{"CHROMEBOOK_HOST":"owned-test-alias"}}}}')
+            fixture=SimpleNamespace(payload_path=payload,torrent_path=root/'fixture.torrent')
+            with patch.object(bootstrap,'verify_product_upload',return_value=40*1024*1024) as verify:
+                self.assertEqual(verify_completed_upload(Mock(),fixture,registry,'owned',6900),40*1024*1024)
+            self.assertEqual(verify.call_args.kwargs,{'device_port':6900,'leech_timeout_seconds':172})
+            self.assertEqual(verify.call_args.args[0].host,'owned-test-alias')
+            self.assertEqual(set(verify.call_args.args[1].expected_file_hashes),{'payload.bin'})
+            self.assertEqual(len(verify.call_args.args[1].expected_file_hashes['payload.bin']),40)
+
     def test_control_capture_unavailability_requires_fresh_enabled_bounds(self):
         actual = ET.fromstring('<h><n text="Minimum: warning" enabled="true" bounds="[1,2][31,42]"/></h>')
         with patch.object(product, 'dump_ui', side_effect=[FreshUiCaptureUnavailable('no fresh XML'),actual]), patch('chromeos_android_qualification.time.sleep'):
