@@ -853,3 +853,18 @@ provider, physical profile-unlock/reboot, network/sleep and managed delivery
 remain unqualified. A's exact APK staging and marker are removed; an initially
 hard-coded endpoint verification fails and is retained. The supported adapter
 then proves owned paths absent and unchanged production version/timestamps.
+
+### Native wake effect and fresh whole-run repeat
+
+Tactical273's corrected sixty-second targeted B run passes full28-MiB independent
+download/upload hashes, retained actual filters, clean joined idle shutdown,
+modifier-only native display wake and fresh actual Live with the exact owned
+completed row. The joined-library PNG is visually inspected; SAF/payload
+continuity and owned cleanup pass. One-second setup failure remains preserved
+as a pre-wake controller failure. Fresh default B attempt2 is active with the
+unchanged current APK; no full pass is inferred before its receipt and cleanup.
+
+Tactical274 begins a bounded installed native GNOME default-encoder recording
+prerequisite to resolve transparent ARM PNG capture data. No graphics setting,
+permission bypass or product change is authorized. Boot occurs only after the
+controller is prepared, with serialized finally shutdown/claim release.

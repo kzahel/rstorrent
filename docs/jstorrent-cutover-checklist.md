@@ -48,7 +48,8 @@ a checked local task does not close a delivery row.
   B full 40-MiB independent upload within the 172-second bound.
 - [ ] Second physical cohort: its hour/download/upload/filter components pass;
   whole receipt fails reopened-library observation while ARC is stopped/sleeping.
-  Native display-wake 273 passes 54 portable cases; targeted/full repeat pending.
+  Native display-wake 273 passes 54 portable cases and targeted actual Live
+  reopen with full 28-MiB independent hashes/cleanup; fresh full repeat active.
 - [x] Linux, Windows and macOS VMs are off; idle claims released. Task evidence
   stays ignored and hash-bound exported guest screenshot copies are removed.
 - [ ] Explicitly approved exact-source push/nonpublishing desktop CI build, then

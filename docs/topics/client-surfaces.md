@@ -34,8 +34,9 @@ at fresh reopened-library XML, with stopped/sleeping activity and cleanup ok.
 All seven current-APK SAF/source recovery cases subsequently pass B too.
 Tactical273 adds ordinary native display wake inside the existing120-second
 reopen budget, without changing product or power policy. All54 qualification
-and five transport cases pass; current targeted then full repeat remain under
-259. Tactical272's bounded proportional upload scope completes locally.
+and five transport cases pass. The targeted current-APK native wake, actual
+Live/owned row, full28-MiB hashes, SAF continuity and cleanup pass; a fresh
+full default B repeat is active under259. Tactical272's bounded proportional upload scope completes locally.
 Managed/provider/reboot/network/sleep delivery stays unqualified.
 
 Both source0aa physical cohorts independently hash the installed APK and pass
