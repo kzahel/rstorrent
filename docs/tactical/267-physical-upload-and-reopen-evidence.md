@@ -110,3 +110,15 @@ row after Back before detaching. Existing finally cleanup remains; peer
 diagnostics collected after an upload failure cannot relabel that run pass.
 Five transport tests still pass, including captured stderr from a real
 joined child. No engine, lifetime, encryption or incoming policy changes.
+
+### Freshness and provenance guard
+
+UIAutomator can fail without replacing a previous XML file. Remove only the
+existing namespaced owned XML before every dump; a failed capture can no longer
+reuse that old state. A refusal test brings the portable driver count to24.
+Record the loaded driver's SHA256 at import, so edits during long trials do
+not silently change receipt provenance. A corrected detached raw probe sends
+exactly68 handshake bytes with a unique peer identity and receives zero bytes,
+with clean joined tunnel stderr; no specific engine/lifetime cause is inferred.
+Latest-source trial3 captures actual Live/owned-row after diagnostic filter
+replacement on cohortB. Peer failure UI capture and cleanup are pending.

@@ -144,6 +144,21 @@ class QualificationSafety(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "ambiguous"):
             native_maximize_arguments(result)
 
+    def test_failed_fresh_ui_dump_cannot_leave_the_previous_owned_snapshot(self):
+        calls = []
+        def run(_command, **options):
+            calls.append(options["input"])
+            if "uiautomator" in options["input"]:
+                return subprocess.CompletedProcess([], 1, "", "ERROR: could not get idle state")
+            return subprocess.CompletedProcess([], 0, "", "")
+        with patch("chromeos_android_qualification.subprocess.run", side_effect=run):
+            with self.assertRaisesRegex(RuntimeError, "could not get idle state"):
+                RemoteAdb(["machine-control"]).shell("uiautomator", "dump", "/sdcard/rstorrent-window.xml")
+        self.assertEqual(len(calls), 2)
+        self.assertIn("rm -f /data/local/tmp/rstorrent253-ui.xml", calls[0])
+        self.assertIn("uiautomator dump /data/local/tmp/rstorrent253-ui.xml", calls[1])
+        self.assertTrue(all("/sdcard/rstorrent-window.xml" not in call for call in calls))
+
     def test_remote_failure_retains_transport_diagnostic(self):
         failure = subprocess.CompletedProcess([], 1, "", "cat: owned UI capture does not exist")
         with patch("chromeos_android_qualification.subprocess.run", return_value=failure):

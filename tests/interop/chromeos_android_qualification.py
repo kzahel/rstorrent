@@ -30,6 +30,7 @@ PACKAGE = "org.rstorrent.qualification253"
 ACTIVITY = f"{PACKAGE}/org.rstorrent.bootstrap.MainActivity"
 FOLDER = "RSTorrentQualification253"
 ROOT = f"/sdcard/Download/{FOLDER}"
+DRIVER_SOURCE_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 
 def create_owned_fixture(path, run_id, phase, payload_size):
@@ -69,6 +70,10 @@ class RemoteAdb:
     def run(self, *arguments: str, timeout: float = 30, check: bool = True):
         if arguments[:2] == ("logcat", "-c"):
             raise RuntimeError("device-wide log clearing is prohibited")
+        if arguments[:3] == ("shell", "uiautomator", "dump"):
+            # UIAutomator can fail to become idle without replacing its XML.
+            # An old owned file must never establish fresh observed state.
+            self.shell("rm", "-f", "/sdcard/rstorrent-window.xml")
         arguments = tuple("/data/local/tmp/rstorrent253-ui.xml" if value == "/sdcard/rstorrent-window.xml" else value for value in arguments)
         if arguments[0] == "shell":
             arguments = ("shell", "-n", shlex.join(arguments[1:]))
@@ -462,7 +467,8 @@ def main():
         raise RuntimeError("qualification UI artifact exists; refusing to overwrite")
     run_id = uuid.uuid4().hex
     records = []
-    report = {"schema": "chromeos-android-qualification/v1", "cohort": args.target,
+    report = {"schema": "chromeos-android-qualification/v1",
+        "driver_source_sha256": DRIVER_SOURCE_SHA256, "cohort": args.target,
               "delivery": "isolated_debug_sideload", "play_installation": "unrun",
               "notification_setup": "granted_after_each_owned_profile_reset",
               "observation_lifetime": args.observation_lifetime,
