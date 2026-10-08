@@ -51,6 +51,25 @@ def linux_legacy_pins(architecture):
     if architecture in ("aarch64", "arm64"):
         return ARM_APPIMAGE_PACKAGE, ARM_APPIMAGE_BINARIES
     raise ValueError("unsupported native Linux rehearsal architecture")
+
+
+def inspect_debian_candidate(platform, architecture, updater_trial, package):
+    """Read the trusted package's architecture before changing guest state."""
+    if platform != "linux":
+        raise ValueError("Debian comparison requires native Linux")
+    if updater_trial:
+        raise ValueError("extracted Debian comparison cannot qualify updater trials")
+    expected = {"aarch64": "arm64", "arm64": "arm64",
+                "x86_64": "amd64", "amd64": "amd64"}.get(architecture)
+    if expected is None:
+        raise ValueError("unsupported native Linux rehearsal architecture")
+    actual = subprocess.check_output(
+        ["dpkg-deb", "--field", str(package), "Architecture"],
+        text=True, timeout=15,
+    ).strip()
+    if actual != expected:
+        raise ValueError("Debian package architecture does not match native guest")
+    return actual
 BROWSERS = ("google-chrome", "google-chrome-for-testing", "chromium",
             "BraveSoftware/Brave-Browser", "microsoft-edge")
 WIN_BROWSERS = (r"Google\Chrome", "Chromium", r"BraveSoftware\Brave-Browser", r"Microsoft\Edge")
@@ -182,6 +201,9 @@ def main():
     parser.add_argument("--legacy", type=Path, required=True)
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--candidate-sha256", required=True)
+    parser.add_argument("--linux-candidate-format", choices=("appimage", "deb"),
+                        default="appimage",
+                        help="deb is an extracted native-payload comparison, not an installed update")
     parser.add_argument("--trial-installation-id", type=Path,
                         help="Use the released HTTPS updater instead of manual replacement")
     parser.add_argument("--trial-gui", action="store_true")
@@ -198,6 +220,10 @@ def main():
     )
     assert digest(args.legacy) == legacy_package
     assert digest(args.candidate) == args.candidate_sha256
+    candidate_architecture = None
+    if args.linux_candidate_format == "deb":
+        candidate_architecture = inspect_debian_candidate(
+            platform, architecture, bool(args.trial_installation_id), args.candidate)
     assert not old_running() and not {"rstorrent-desktop", "rstorrent-deskt"}.intersection(process_names())
     args.root.mkdir(parents=True)
     sys.stdout = sys.stderr = (args.root / "driver.log").open("w", encoding="utf-8", buffering=1)
@@ -223,6 +249,10 @@ def main():
     results = {"platform": platform, "hostArchitecture": architecture,
                "legacyPackageSha256": legacy_package,
                "candidatePackageSha256": args.candidate_sha256, "checks": []}
+    if candidate_architecture:
+        results.update(candidateFormat="deb_extracted_native_payload",
+                       candidateArchitecture=candidate_architecture,
+                       packageManagerInstallation="unrun")
 
     def phase(name):
         (root / "phase.json").write_text(json.dumps({"phase": name, "pid": os.getpid()}), encoding="utf-8")
@@ -252,6 +282,15 @@ def main():
             path.mkdir()
 
     def install(package):
+        if platform == "linux" and package == args.candidate and candidate_architecture:
+            destination = root / "debian-candidate"
+            subprocess.run(["dpkg-deb", "--extract", str(package), str(destination)],
+                           check=True, timeout=60)
+            for name in ("rstorrent-desktop", "rstorrent-native-host"):
+                binary = destination / "usr/bin" / name
+                assert binary.is_file() and not binary.is_symlink()
+                results.setdefault("debianBinaries", {})[name] = digest(binary)
+            return
         ensure_dir(app.parent)
         if platform == "windows":
             # /D must be the final NSIS argument, without embedded quotes.
@@ -268,10 +307,12 @@ def main():
         if platform == "windows":
             binary = app / ("jstorrent-desktop.exe" if name == "legacy" else "rstorrent-desktop.exe")
             command = [str(binary), *arguments]
+        elif candidate_architecture and name != "legacy":
+            command = [str(root / "debian-candidate/usr/bin/rstorrent-desktop"), *arguments]
         else:
             command = [str(app), "--appimage-extract-and-run", *arguments]
         environment = dict(os.environ)
-        if platform == "linux":
+        if platform == "linux" and not (candidate_architecture and name != "legacy"):
             # Tauri's restart retains the environment, not AppImage's consumed
             # runtime flag. Keep the same supported no-FUSE route on relaunch.
             environment["APPIMAGE_EXTRACT_AND_RUN"] = "1"

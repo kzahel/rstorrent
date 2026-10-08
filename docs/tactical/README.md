@@ -59,6 +59,9 @@ Latest release qualification work:
 - [`274-linux-arm-native-compositor-capture.md`](274-linux-arm-native-compositor-capture.md):
   complete locally; native GNOME recordings and restored migration evidence
   retain the ARM visual gap, with exact-owned cleanup and no graphics override.
+- [`275-linux-arm-signed-deb-visual-comparison.md`](275-linux-arm-signed-deb-visual-comparison.md):
+  active; compare the original-signed extracted Debian native payload against
+  the same real migration fixtures, without package-manager installation.
 
 ## Work Selection And Concurrency
 

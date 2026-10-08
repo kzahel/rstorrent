@@ -43,6 +43,12 @@ or establishing its cause. Final cleanup removes eight exact owned recording
 URIs after delayed recent-file flush, verifies all recording roots absent and
 serializes verified off/claim release.
 
+Tactical [275](../tactical/275-linux-arm-signed-deb-visual-comparison.md) prepares
+a bounded comparison of the same historical source's original-signed ARM Debian
+native payload using installed guest libraries and real old-writer fixtures.
+Architecture/updater refusal tests pass and all ten historical signatures verify
+against the retained key. Native migrated/restarted pixels remain pending.
+
 Tactical [258](../tactical/258-cross-surface-branding-and-design-audit.md)
 completes the broader branded surface audit with an
 [audit execution record](../tactical/258-cross-surface-branding-and-design-audit.md). The website uses
