@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -9,6 +10,7 @@ import {
   assembleDesktopRelease,
   stageDesktopReleaseLeg,
   verifyUploadedAssets,
+  verifyProductionFinalDraft,
 } from "./desktop-release-artifacts.mjs";
 import { validateDesktopRelease } from "./validate-desktop-release.mjs";
 
@@ -188,4 +190,52 @@ test("JSTorrent candidates use exact product receipts and cannot publish", async
     meta.product="RSTorrent";writeFileSync(join(directory,"meta.json"),JSON.stringify(meta));
     await assert.rejects(assembleDesktopRelease({...options,output:join(data.root,"mixed")}),/mixed release products/u);
   } finally {rmSync(data.root,{recursive:true,force:true});}
+});
+
+test("explicit Stable production assembly preserves all 23 core assets", async () => {
+  const data = fixture("JSTorrent");
+  try {
+    await data.stage();
+    const options = { root:data.root, input:data.input, output:data.output, sourceSha, runId, attempt, repository,
+      channel:"stable", version, product:"JSTorrent", tag:`desktop-v${version}`, productionPublication:true };
+    const result = await assembleDesktopRelease(options);
+    validateDesktopRelease({ ...result, tag:result.release.tagName, repository });
+    assert.equal(result.release.assets.length, 23);
+    assert.equal(result.release.assets.filter(asset => asset.name.endsWith(".sig")).length, 10);
+    assert.equal(result.release.isPrerelease, false);
+    assert(Object.values(result.latest.platforms).every(platform => platform.url.includes(`/desktop-v${version}/JSTorrent`)));
+    for (const overrides of [{ channel:"latest" }, { product:"RSTorrent" }, { tag:"" },
+      { tag:`desktop-v9.9.9` }, { productionPublication:"true" }]) {
+      await assert.rejects(assembleDesktopRelease({ ...options, ...overrides, output:join(data.root,"refused-"+Math.random()) }));
+    }
+  } finally { rmSync(data.root, { recursive:true, force:true }); }
+});
+
+test("final production private draft requires every core byte and exact checksum asset", async () => {
+  const data = fixture("JSTorrent");
+  try {
+    await data.stage();
+    const result = await data.assemble({ channel:"stable", product:"JSTorrent", tag:`desktop-v${version}`, productionPublication:true });
+    const checksumPath = join(data.root,"SHA256SUMS");
+    writeFileSync(checksumPath,"actual bounded checksum fixture\n");
+    const checksumBytes = readFileSync(checksumPath);
+    const remote = structuredClone(result.release);
+    remote.assets.push({ name:"SHA256SUMS", size:checksumBytes.length,
+      digest:`sha256:${createHash("sha256").update(checksumBytes).digest("hex")}` });
+    await verifyProductionFinalDraft({ local:result.release, remote, checksumPath });
+    for (const mutate of [
+      value => value.assets.splice(value.assets.findIndex(asset => asset.name.endsWith(".sig")),1),
+      value => value.assets.pop(),
+      value => value.assets.push({ name:"unexpected",size:1,digest:"sha256:"+"f".repeat(64) }),
+      value => value.assets.at(-1).digest="sha256:"+"f".repeat(64),
+      value => value.assets[0].size+=1,
+      value => value.isDraft=false,
+      value => value.isPrerelease=true,
+    ]) {
+      const wrong = structuredClone(remote);mutate(wrong);
+      await assert.rejects(verifyProductionFinalDraft({ local:result.release, remote:wrong, checksumPath }));
+    }
+    const preview = structuredClone(result.release);preview.assets[0].name="JSTorrent Preview_wrong.dmg";
+    await assert.rejects(verifyProductionFinalDraft({ local:preview,remote,checksumPath }),/23 JSTorrent core/u);
+  } finally { rmSync(data.root, { recursive:true, force:true }); }
 });

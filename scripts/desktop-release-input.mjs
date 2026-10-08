@@ -1,7 +1,16 @@
 import { appendFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-export function resolveDesktopReleaseInput({ event, ref, sha, sourceSha, version, tag, productionCandidate = false }) {
+export function resolveDesktopReleaseInput({ event, ref, sha, sourceSha, version, tag, productionCandidate = false, productionPublication = false }) {
+  if (productionPublication) {
+    if (productionCandidate || event !== "workflow_dispatch" || sourceSha || version || tag ||
+        !/^refs\/tags\/desktop-v\d+\.\d+\.\d+$/.test(ref ?? "") || !/^[0-9a-f]{40}$/.test(sha ?? "")) {
+      throw new Error("Production publication requires an explicit manual Stable tag dispatch without candidate or override inputs");
+    }
+    const stableTag = ref.slice("refs/tags/".length);
+    return { sourceSha: sha, version: stableTag.slice("desktop-v".length), tag: stableTag,
+      channel: "stable", publish: true, production: true, productionPublication: true };
+  }
   if (productionCandidate) {
     if (event !== "workflow_dispatch" || sourceSha || version || tag || !ref?.startsWith("refs/heads/")) {
       throw new Error("Production candidates require a manual branch build without publication inputs");
@@ -16,7 +25,7 @@ export function resolveDesktopReleaseInput({ event, ref, sha, sourceSha, version
   }
   if (event === "push" && /^refs\/tags\/desktop-v\d+\.\d+\.\d+$/.test(ref)) {
     const stableTag = ref.slice("refs/tags/".length);
-    return { sourceSha: sha, version: stableTag.slice("desktop-v".length), tag: stableTag, channel: "stable", publish: true };
+    return { sourceSha: sha, version: stableTag.slice("desktop-v".length), tag: "", channel: "stable", publish: false, production: true };
   }
   if (event === "push" && ref?.startsWith("refs/tags/desktop-v")) {
     throw new Error("Invalid Stable desktop release tag");
@@ -34,6 +43,7 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       version: process.env.INPUT_RELEASE_VERSION,
       tag: process.env.INPUT_RELEASE_TAG,
       productionCandidate: process.env.INPUT_PRODUCTION_CANDIDATE === "true",
+      productionPublication: process.env.INPUT_PRODUCTION_PUBLICATION === "true",
     });
     appendFileSync(process.env.GITHUB_OUTPUT, Object.entries(result).map(([key, value]) => `${key}=${value}\n`).join(""));
     console.log(JSON.stringify(result));

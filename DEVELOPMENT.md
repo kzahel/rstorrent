@@ -616,6 +616,31 @@ The nonce proof and all ten updater payload signatures must verify against the
 original public root. A diagnostic artifact from a failed attempt does not
 qualify delivery. Publication remains gated by the cutover checklist.
 
+### Explicit production desktop publication
+
+The existing workflow defaults to a nonpublishing production candidate. A
+stable tag push also builds the production identity without publishing.
+Tactical271 prepares publication only through an explicit manual dispatch
+against the exact `desktop-v<version>` tag, with candidate mode disabled and
+`production_publication=true`. Branch refs, nightly/source/version overrides
+and simultaneous candidate mode refuse. Do not invoke this until the complete
+cutover capsule is qualified and the maintainer explicitly authorizes this
+publication. Tag creation/push remains a separate authorized operation.
+
+For the reviewed0.3.0 tag, the eventual authorized dispatch is:
+
+```bash
+gh workflow run desktop-release.yml --repo kzahel/rstorrent --ref desktop-v0.3.0 -f production_candidate=false -f production_publication=true
+```
+
+The collector rechecks that the fetched tag still resolves to the exact built
+source before draft creation and publication. It validates every same-run leg,
+all original-root updater signatures and the complete private draft. Production
+retains its23 core assets, including ten signature sidecars; `SHA256SUMS` is
+an additional24th support asset. The website's curated inventory still owns
+exactly the23 core assets. Final native/store/public-route acceptance is not
+implied by this workflow mode or local publisher tests.
+
 ## Packaging The JSTorrent Beta Extension Seed
 
 Validate the Manifest V3 permission/local-code boundary and produce the exact

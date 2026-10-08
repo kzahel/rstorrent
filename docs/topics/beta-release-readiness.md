@@ -2,15 +2,26 @@
 
 Topic: `beta-release-readiness`
 
+
+Tactical [271](../tactical/271-manual-production-desktop-publisher.md) prepares
+an explicitly manual Stable JSTorrent publication path. Branch candidates and
+stable tag pushes never publish; manual publication requires the exact stable
+tag, no overrides and candidate mode disabled. Original-root signatures,
+same-source/run/attempt legs and a complete private draft remain gates. The
+production title uses JSTorrent, and all23 core assets/ten signature sidecars
+remain, plus the24th SHA256SUMS support asset. Tag source is rechecked before
+draft creation and publication. Local contract/refusal/shell tests, actionlint
+and historical original-signed capsule assembly pass; this is not final signed
+CI, installed qualification, a public release or updater/site activation.
+
 Tactical [265](../tactical/265-production-website-release-handoff.md) prepares
 sibling `0e935e75`'s disabled production website handoff. Its closed 23-asset
 inventory, original updater root and curated immutable links pass 22 guards,
 focused TypeScript and phone/wide actual/controlled views. Enabled links use
 actual DMGs/direct Linux packages and cannot be replaced by legacy discovery.
 Source/CI pointers follow the selected implementation; support recipients remain.
-The real descriptor stays disabled/null. Final signed qualification, production
-publisher activation and public deployment remain separate gates; no publication
-guard is removed and no external state changes.
+The real descriptor stays disabled/null. Final signed qualification, final production
+publisher CI and public deployment remain separate gates; no external state changes.
 
 Tactical [264](../tactical/264-hosted-website-dependency-qualification.md)
 qualifies sibling hosted website commit `56dc2299` locally. Frozen Astro 7.3.6

@@ -615,3 +615,22 @@ Next action: obtain actual current-port/rejection evidence for the large
 fixture, complete current full-hash upload trials, then repeat the whole
 three-cold-repetition/hour/diagnostic/upload/joined-Live sequence after any
 necessary bounded fix. Keep all failed receipts, scoped provenance and cleanup.
+
+### Prepared manual production publisher, 2026-10-08
+
+Tactical271 is complete locally. The explicit manual Stable-tag production
+path passes58 release/guard/signature tests and actionlint. Automatic stable
+tag pushes and branch candidates cannot publish. Production title/asset
+retention now match the prepared website:23 core assets/ten sidecars plus
+the extraSHA256SUMS support asset. Exact tag source is rechecked before draft
+creation and publication; all24 final draft hashes/sizes are checked.
+
+Actual historical signed core bytes assemble through this local mode, with
+all ten original-root signatures passing and15 updater selections. Clearly
+synthetic remote draft metadata passes final24-asset validation. Owned local
+rehearsal copies are removed; original bytes and ignored receipts remain.
+This is not final native CI, installed/public availability or publication.
+The older exact31 desktop push review is superseded by the new prepared
+workflow and qualification code; request a concrete new-source nonpublishing
+build when ready. No push, tag, dispatch, draft/upload, feed or store changes.
+Current targeted native-readiness retries continue independently; VMs stay off.

@@ -150,7 +150,7 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
       tag: args.tag,
       repository: args.repository,
     });
-    console.log(`Validated complete RSTorrent desktop release ${result.version}`);
+    console.log(`Validated complete desktop release ${result.version}`);
   } catch (error) {
     console.error(`Desktop release validation failed: ${error.message}`);
     process.exitCode = 1;

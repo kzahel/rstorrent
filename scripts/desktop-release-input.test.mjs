@@ -13,14 +13,29 @@ test("a scheduled reusable call resolves the exact verified Latest identity", ()
   });
 });
 
-test("stable tags publish while manual rehearsals do not", () => {
+test("stable tag pushes build production candidates without publishing", () => {
   const sha = "a".repeat(40);
   assert.deepEqual(resolveDesktopReleaseInput({ event: "push", ref: "refs/tags/desktop-v0.1.4", sha }), {
-    sourceSha: sha, version: "0.1.4", tag: "desktop-v0.1.4", channel: "stable", publish: true,
+    sourceSha: sha, version: "0.1.4", tag: "", channel: "stable", publish: false, production: true,
   });
   assert.equal(resolveDesktopReleaseInput({ event: "workflow_dispatch", ref: "refs/heads/main", sha }).publish, false);
   assert.throws(() => resolveDesktopReleaseInput({ event: "push", ref: "refs/tags/desktop-vbad", sha }), /Invalid Stable/);
   assert.throws(() => resolveDesktopReleaseInput({ event: "schedule", ref: "refs/heads/main", sha, sourceSha: sha, version: "0.2.101", tag: "desktop-v0.2.101" }), /matching Latest tag/);
+});
+
+test("only an explicit manual stable tag dispatch selects production publication", () => {
+  const sha = "a".repeat(40);
+  const input = { event: "workflow_dispatch", ref: "refs/tags/desktop-v0.3.0", sha, productionPublication: true };
+  assert.deepEqual(resolveDesktopReleaseInput(input), {
+    sourceSha: sha, version: "0.3.0", tag: "desktop-v0.3.0", channel: "stable",
+    publish: true, production: true, productionPublication: true,
+  });
+  for (const overrides of [
+    { event: "push" }, { event: "schedule" }, { productionCandidate: true },
+    { ref: "refs/heads/main" }, { ref: "refs/tags/desktop-latest-v0.3.0" },
+    { ref: "refs/tags/desktop-v0.3.0-extra" }, { sha: "invalid" },
+    { sourceSha: sha }, { version: "0.3.0" }, { tag: "desktop-v0.3.0" },
+  ]) assert.throws(() => resolveDesktopReleaseInput({ ...input, ...overrides }), /explicit manual Stable tag dispatch/u);
 });
 
 test("production candidates cannot publish or reuse nightly/tag inputs", () => {

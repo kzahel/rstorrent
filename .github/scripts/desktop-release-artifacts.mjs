@@ -160,14 +160,17 @@ function updaterPlatforms(version, tag, repository, assetDirectory, product) {
   return platforms;
 }
 
-export async function assembleDesktopRelease({ root, input, output, sourceSha, runId, attempt, repository, channel, version, tag, now = new Date(), product = "RSTorrent" }) {
+export async function assembleDesktopRelease({ root, input, output, sourceSha, runId, attempt, repository, channel, version, tag, now = new Date(), product = "RSTorrent", productionPublication = false }) {
   requireValue(sourceSha, SOURCE_SHA, "source SHA");
   requireValue(runId, /^\d+$/, "run ID");
   requireValue(attempt, /^\d+$/, "run attempt");
   requireValue(repository, /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, "repository");
   if (!["stable", "latest"].includes(channel)) fail(`invalid channel: ${channel}`);
   if (!["RSTorrent", "JSTorrent"].includes(product)) fail("unknown release product");
-  if (product === "JSTorrent" && tag) fail("JSTorrent candidate publication is not enabled");
+  if (productionPublication && (product !== "JSTorrent" || channel !== "stable" || !tag)) {
+    fail("Production publication requires a tagged Stable JSTorrent release");
+  }
+  if (product === "JSTorrent" && tag && productionPublication !== true) fail("JSTorrent candidate publication is not enabled");
   const publish = Boolean(tag);
   const metadataDirs = readdirSync(input, { withFileTypes: true });
   if (metadataDirs.length !== RELEASE_LANES.length || metadataDirs.some((entry) => !entry.isDirectory())) {
@@ -250,6 +253,22 @@ export function verifyUploadedAssets(local, remote) {
   if (expected.size) fail(`missing uploaded release assets: ${[...expected.keys()].join(", ")}`);
 }
 
+export async function verifyProductionFinalDraft({ local, remote, checksumPath }) {
+  const match = /^desktop-v(\d+\.\d+\.\d+)$/.exec(local.tagName ?? "");
+  if (!match || local.isPrerelease !== false || local.isDraft !== true) {
+    fail("final production draft requires a Stable candidate");
+  }
+  const expected = RELEASE_LANES.flatMap(lane => laneFiles(lane, match[1], "JSTorrent").map(asset => asset.name));
+  expected.push("latest.json");
+  if (!Array.isArray(local.assets) ||
+      JSON.stringify(local.assets.map(asset => asset.name).sort()) !== JSON.stringify(expected.sort())) {
+    fail("final production draft requires exactly 23 JSTorrent core assets");
+  }
+  const checksum = { name: "SHA256SUMS", size: checkedFile(checksumPath, MAX_METADATA_BYTES),
+    digest: `sha256:${await digestFile(checksumPath)}` };
+  verifyUploadedAssets({ ...local, assets: [...local.assets, checksum] }, remote);
+}
+
 function parseArgs(argv) {
   const options = {};
   for (let index = 0; index < argv.length; index += 2) {
@@ -275,6 +294,7 @@ async function main() {
       root: process.cwd(), input: resolve(args.input), output: resolve(args.output),
       sourceSha: args["source-sha"], runId: args["run-id"], attempt: args.attempt,
       repository: args.repository, channel: args.channel, version: args.version, tag: args.tag, product: args.product,
+      productionPublication: args["production-publication"] === "true",
     });
     console.log(`Assembled ${result.release.tagName}: ${result.release.assets.length} assets, ${Object.keys(result.latest.platforms).length} updater keys`);
   } else if (command === "verify-upload") {
@@ -282,6 +302,13 @@ async function main() {
     const remote = JSON.parse(readFileSync(resolve(args.remote), "utf8"));
     verifyUploadedAssets(local, remote);
     console.log(`Verified ${local.assets.length} uploaded release assets`);
+  } else if (command === "verify-production-draft") {
+    await verifyProductionFinalDraft({
+      local: JSON.parse(readFileSync(resolve(args.local), "utf8")),
+      remote: JSON.parse(readFileSync(resolve(args.remote), "utf8")),
+      checksumPath: resolve(args.checksums),
+    });
+    console.log("Verified 23 production core assets and SHA256SUMS in the complete private draft");
   } else {
     fail(`unknown desktop release artifact command: ${command}`);
   }

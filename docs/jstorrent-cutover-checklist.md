@@ -14,6 +14,18 @@ certificate/key fingerprints, platform/build, observation and recovery outcome
 for each installed cohort. Keep personal paths, credentials and private keys out
 of the public evidence. No row authorizes publication by itself.
 
+## Local Production Publisher Checkpoint, 2026-10-08
+
+Tactical271 prepares an explicitly manual Stable-tag production publication
+mode. Branch candidates and automatic stable tag pushes cannot publish.
+Production keeps all23 core assets/ten signature sidecars, uses the JSTorrent
+release title and validates the complete private draft with its additional
+SHA256SUMS asset. Source tag drift refuses before draft/publication. Local
+refusal/shell tests, workflow lint and historical original-signed capsule
+rehearsal pass; final CI, installed cohorts and explicitly approved publication,
+updater-route activation and public website delivery remain open. No tag, push,
+release, feed or store change is performed.
+
 ## Latest Android And Physical Checkpoint, 2026-10-08
 
 Android application source `aeaa72f97b816c7f7fbad71dfb7aee5ea46499ca` supersedes
@@ -83,9 +95,9 @@ call-path limits remain explicit. Sibling Tactical 264 completes locally at `56d
 112 client cases/12 hosted route cases and 18 responsive captures pass; actual
 logo/phone-header defects are fixed. Tactical 265 prepares the production
 website handoff at `0e935e75`, with 22 inventory guards and actual/controlled
-phone/wide checks. It remains disabled/null. Official JSTorrent publication is
-intentionally rejected by the current publisher; final activation and public
-website delivery remain explicit technical/release gates. Managed Play and
+phone/wide checks. It remains disabled/null. Official JSTorrent publication requires the separately prepared manual271
+mode, final CI/installed qualification and explicit instruction; public
+website delivery remains an explicit technical/release gate. Managed Play and
 broader physical delivery gates remain open.
 All owned VMs are stopped between uses and their idle claims released.
 The tactical and ignored local report bind exact results and next actions.

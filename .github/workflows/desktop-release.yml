@@ -10,6 +10,10 @@ on:
         description: Build JSTorrent identity using existing signing inputs; never publish
         type: boolean
         default: true
+      production_publication:
+        description: Publish JSTorrent only from an explicitly approved desktop-v tag; candidate must be false
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       source_sha:
@@ -43,6 +47,7 @@ jobs:
       channel: ${{ steps.identity.outputs.channel }}
       publish: ${{ steps.identity.outputs.publish }}
       production: ${{ steps.identity.outputs.production }}
+      production_publication: ${{ steps.identity.outputs.productionPublication }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
@@ -51,6 +56,7 @@ jobs:
       - id: identity
         env:
           INPUT_PRODUCTION_CANDIDATE: ${{ inputs.production_candidate || false }}
+          INPUT_PRODUCTION_PUBLICATION: ${{ inputs.production_publication || false }}
           INPUT_SOURCE_SHA: ${{ inputs.source_sha }}
           INPUT_RELEASE_VERSION: ${{ inputs.release_version }}
           INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
@@ -130,6 +136,7 @@ jobs:
             scripts/validate-desktop-package.test.mjs \
             scripts/validate-desktop-release.test.mjs \
             .github/scripts/desktop-release-artifacts.test.mjs \
+            .github/scripts/desktop-production-publisher.test.mjs \
             .github/scripts/validate-desktop-release.test.mjs \
             .github/scripts/write-release-checksums.test.mjs \
             scripts/nightly-desktop-release.test.mjs \
@@ -638,6 +645,7 @@ jobs:
       RELEASE_TAG: ${{ needs.release-input.outputs.tag }}
       RELEASE_VERSION: ${{ needs.release-input.outputs.version }}
       RELEASE_CHANNEL: ${{ needs.release-input.outputs.channel }}
+      PRODUCTION_PUBLICATION: ${{ needs.release-input.outputs.production_publication }}
       PACKAGE_PRODUCT: ${{ needs.release-input.outputs.production == 'true' && 'JSTorrent' || 'RSTorrent' }}
       PACKAGE_DISPLAY_NAME: ${{ needs.release-input.outputs.production == 'true' && 'JSTorrent' || 'JSTorrent Preview' }}
       SOURCE_SHA: ${{ needs.release-input.outputs.source_sha }}
@@ -678,7 +686,8 @@ jobs:
             --repository "$GITHUB_REPOSITORY" \
             --channel "$RELEASE_CHANNEL" \
             --version "$RELEASE_VERSION" \
-            --tag "$RELEASE_TAG" --product "$PACKAGE_PRODUCT"
+            --tag "$RELEASE_TAG" --product "$PACKAGE_PRODUCT" \
+            --production-publication "$PRODUCTION_PUBLICATION"
           VALIDATION_TAG=$(jq -r .tagName artifacts/desktop-release-output/release.json)
           node .github/scripts/validate-desktop-release.mjs \
             --release artifacts/desktop-release-output/release.json \
@@ -711,6 +720,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
+          if [ "$PRODUCTION_PUBLICATION" = true ]; then
+            git fetch --no-tags origin "refs/tags/$RELEASE_TAG"
+            TAG_COMMIT=$(git rev-parse 'FETCH_HEAD^{commit}')
+            test "$TAG_COMMIT" = "$SOURCE_SHA" || { echo "::error::Production tag moved away from the built source"; exit 1; }
+          fi
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             echo "::error::Release $RELEASE_TAG already exists; inspect its private draft before retrying"
             exit 1
@@ -719,7 +733,7 @@ jobs:
           if [ "$RELEASE_CHANNEL" = latest ]; then KIND=(--prerelease); fi
           gh release create "$RELEASE_TAG" \
             --target "$SOURCE_SHA" \
-            --title "JSTorrent Preview Desktop v$RELEASE_VERSION" \
+            --title "$PACKAGE_DISPLAY_NAME Desktop v$RELEASE_VERSION" \
             --notes-file artifacts/desktop-release-output/notes.md \
             --draft "${KIND[@]}"
 
@@ -749,7 +763,7 @@ jobs:
           gh release upload "$RELEASE_TAG" "$RELEASE_DIR/SHA256SUMS" --clobber
 
       - name: Remove redundant detached signatures
-        if: needs.release-input.outputs.publish == 'true' && needs.source-checks.result == 'success' && needs.build-desktop.result == 'success'
+        if: needs.release-input.outputs.publish == 'true' && needs.release-input.outputs.production != 'true' && needs.source-checks.result == 'success' && needs.build-desktop.result == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -787,11 +801,33 @@ jobs:
           } > "$RUNNER_TEMP/release-notes.md"
           gh release edit "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
 
+      - name: Verify complete production draft before publication
+        if: needs.release-input.outputs.production_publication == 'true' && needs.source-checks.result == 'success' && needs.build-desktop.result == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_DIR=artifacts/desktop-release-output
+          gh release view "$RELEASE_TAG" --json tagName,isDraft,isPrerelease,assets > "$RELEASE_DIR/final-production-draft.json"
+          node .github/scripts/desktop-release-artifacts.mjs verify-production-draft \
+            --local "$RELEASE_DIR/release.json" \
+            --remote "$RELEASE_DIR/final-production-draft.json" \
+            --checksums "$RELEASE_DIR/SHA256SUMS"
+          node .github/scripts/validate-desktop-release.mjs \
+            --release "$RELEASE_DIR/final-production-draft.json" \
+            --latest "$RELEASE_DIR/assets/latest.json" \
+            --tag "$RELEASE_TAG" \
+            --repository "$GITHUB_REPOSITORY"
+
       - name: Publish validated release
         if: needs.release-input.outputs.publish == 'true' && needs.source-checks.result == 'success' && needs.build-desktop.result == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          if [ "$PRODUCTION_PUBLICATION" = true ]; then
+            git fetch --no-tags origin "refs/tags/$RELEASE_TAG"
+            TAG_COMMIT=$(git rev-parse 'FETCH_HEAD^{commit}')
+            test "$TAG_COMMIT" = "$SOURCE_SHA" || { echo "::error::Production tag moved away from the validated draft"; exit 1; }
+          fi
           if [ "$RELEASE_CHANNEL" = latest ]; then
             gh release edit "$RELEASE_TAG" --draft=false --prerelease --latest=false
           else
