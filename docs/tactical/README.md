@@ -60,8 +60,8 @@ Latest release qualification work:
   complete locally; native GNOME recordings and restored migration evidence
   retain the ARM visual gap, with exact-owned cleanup and no graphics override.
 - [`275-linux-arm-signed-deb-visual-comparison.md`](275-linux-arm-signed-deb-visual-comparison.md):
-  active; compare the original-signed extracted Debian native payload against
-  the same real migration fixtures, without package-manager installation.
+  complete locally; original-signed extracted Debian payload passes migration
+  and native pixels; AppImage/final-source/installed-package gaps remain.
 
 ## Work Selection And Concurrency
 

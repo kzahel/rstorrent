@@ -43,11 +43,18 @@ or establishing its cause. Final cleanup removes eight exact owned recording
 URIs after delayed recent-file flush, verifies all recording roots absent and
 serializes verified off/claim release.
 
-Tactical [275](../tactical/275-linux-arm-signed-deb-visual-comparison.md) prepares
-a bounded comparison of the same historical source's original-signed ARM Debian
-native payload using installed guest libraries and real old-writer fixtures.
-Architecture/updater refusal tests pass and all ten historical signatures verify
-against the retained key. Native migrated/restarted pixels remain pending.
+Tactical [275](../tactical/275-linux-arm-signed-deb-visual-comparison.md) completes
+the same historical source's original-signed ARM Debian native-payload comparison
+using installed guest libraries and real old-writer fixtures. All eight migration
+assertions and six refusal routes pass; actual native recordings and PNGs render
+the populated/restarted JSTorrent library and both refusal dialogs. Four rows,
+verified good/corrupt outcomes, missing-folder warning and acknowledged disclosure
+persist. Source/payload preservation and full guest restoration pass. Exact owned
+recording roots and six delayed recent entries are removed; VM off/claim release
+are verified. This narrows the AppImage capture gap without establishing a cause
+or qualifying package-manager installation, final source or installed updating.
+The readable registration refusal exposes a raw filesystem error without a
+recovery step, retained as a design follow-up.
 
 Tactical [258](../tactical/258-cross-surface-branding-and-design-audit.md)
 completes the broader branded surface audit with an

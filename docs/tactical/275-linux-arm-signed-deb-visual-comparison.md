@@ -1,6 +1,6 @@
 # Tactical 275: Linux ARM Signed Debian Visual Comparison
 
-Status: Active, 2026-10-08. Bounded qualification follow-up to 259/274.
+Status: Complete locally, 2026-10-08. Bounded comparison; release gaps retained.
 
 Topics: `desktop-jstorrent-replacement`, `web-ui-design`.
 
@@ -48,3 +48,41 @@ Add focused refusal tests for wrong platform, architecture and updater mode;
 do not infer signature validity from a filename or source label. Record actual
 Debian package/binary hashes, normal native Quit, source/payload preservation
 and independent native frames. Existing product build baselines remain valid.
+
+## Actual comparison result
+
+Historical source `a35934d2`, run37657795184/attempt2, ARM Debian package
+SHA256 `440ae7f1ab2b33e906ead1a0004e0cc2330d854932c06a181f846625dabcf21c`
+and its original-root signature are independently verified before boot.
+Loaded helper digest is
+`7c37529359d53a60639470f17f1abbf5ff08bd74a439dd54dfc75948049cdd0a`.
+Actual package Architecture is arm64. Extracted desktop/sidecar hashes are
+`9f1454452239ec0a0764e0332bc878a60337a2ca0439dbfa080aea6d4278f498` /
+`7be617620f587f867b7fdb75ec7712c902b2fd220ad4579389059f2884e1b2d0`.
+
+The actual normal-scope run passes all eight migration assertions and six
+registered refusal routes, with four imported records, stable restart identities,
+source/payload preservation and complete scope restoration. Native Quit is used
+at legacy/migrated/restarted stages. Both actual refusal dialogs are readable.
+Actual native recordings and PNGs show styled JSTorrent populated/restarted UI:
+Paused3/Needs attention1, good100%, corrupt0%, unavailable folder. Native checkbox
+is observed unchecked before Save and continue; restart's215 nodes retain the
+four rows and no disclosure. All six actual video frames and native menu PNGs
+are visually inspected; the old legacy window remains blank as before.
+
+All exact-owned recording roots and exported guest PNGs are removed. Delayed
+recent-file metadata contains six task URIs; only those are removed, with an
+independent XML check finding none remaining. Owned rehearsal root is removed
+only after verified restoration. Serialized shutdown, authoritative off and
+claim release all succeed. The controller exits0 and is joined.
+
+This meets the bounded stopping condition. AppImage visual acceptance and cause
+remain open; changing the package/loaded-library route does not establish which
+component caused its near-black captures. Final source, package-manager
+installation and auto/GUI update remain separate unrun gates. The readable
+registration dialog's raw filesystem error lacks a recovery step and is retained
+as a design note. Historical native fallback names precede the already verified
+T261 source repair and require its final signed rebuild.
+
+Ignored259 evidence retains exact source/signature provenance, complete run,
+visual adjudication, six videos/frames, native UI/action receipts and cleanup.

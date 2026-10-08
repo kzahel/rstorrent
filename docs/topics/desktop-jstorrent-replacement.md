@@ -612,3 +612,14 @@ evidence only.
   the desktop update and temporarily defer Chromebook Android control.
 - What support baseline and rollback promise begins with the first migrated
   production user?
+
+## Historical ARM Debian Comparison, 2026-10-08
+
+Tactical [275](../tactical/275-linux-arm-signed-deb-visual-comparison.md) qualifies
+the same historical original-signed ARM Debian extracted native payload against
+real old writers: eight assertions, six refusal routes, stable four-row restart,
+source/payload preservation and full restoration pass. Native recordings and
+PNGs show styled populated/restarted JSTorrent and readable refusal dialogs.
+Exact recording metadata/root cleanup, VM off and released claim pass. This
+bounds the AppImage capture gap without proving its cause or qualifying final
+source, package-manager installation or automatic/GUI updating.

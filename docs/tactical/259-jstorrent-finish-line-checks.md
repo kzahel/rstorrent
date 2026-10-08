@@ -901,3 +901,13 @@ dispatch, upload, certification, promotion, account edit or deployment occurs;
 existing concrete action reviews and machine inputs remain pending. Current
 B's fresh whole native-wake run passes three cold repetitions and is actively
 advancing through the detached hour, without a final whole receipt yet.
+
+Tactical275 completes a bounded original-signed historical ARM Debian extracted-
+native comparison. All eight old-writer migration assertions/six refusal routes,
+stable four-row restart and source/payload preservation pass. Actual native
+recordings and PNGs now render populated/restarted JSTorrent and both refusal
+dialogs. A raw registration-error recovery-copy gap is recorded. This narrows
+the AppImage capture finding without proving a cause or qualifying final source,
+package-manager installation or automatic/GUI updating. Exact owned roots/PNGs
+and six delayed recording recent entries are removed; restored scopes, serialized
+VM off and released claim are verified. Full receipts/media remain ignored.
