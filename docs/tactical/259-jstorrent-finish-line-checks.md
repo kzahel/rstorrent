@@ -655,3 +655,21 @@ for the nonpublishing five-target build. It supersedes the old31 request and
 explicitly includes the preview-site deployment side effect of the source push.
 Git identity is the maintainer identity; no push/dispatch/tag/release occurs
 without explicit instruction. Report/images remain ignored.
+
+### Bounded control observation and ongoing hour
+
+The cohortB third native-ready retry fails earlier during Warning-control
+observation: the actual screenshot shows Logs/Warning while UiAutomator produces
+no fresh root. No upload occurs and owned cleanup succeeds. Preserve this
+separate failed receipt. Tactical270 applies typed capture-unavailability
+observation inside the existing30-second control/filter/summary waits; no
+deadline expansion or ordinary transport/XML retry. All48 portable cases pass;
+cohortB fourth targeted retry runs before its full hour. CohortA passes all
+three current-source cold/download/source-offline repetitions and begins its
+detached controlled hour. The final branding guard passes2037 display values
+and40 original JSTorrent assets.
+
+A fresh claimed Linux ARM signed-package visual probe is prepared through
+Machine Control's common doctor/claim/ensure-ready and platform guide. Only
+that VM is booted for executable work, with shutdown and claim release owned
+by finally cleanup; no idle VM is retained for future builds or approvals.

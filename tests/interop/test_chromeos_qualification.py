@@ -10,10 +10,36 @@ import xml.etree.ElementTree as ET
 
 import android_reactive_surface as product
 from chromeos_android_qualification import diagnostic_rows_match_filter, wait_unique_observed_control, observation_result, PACKAGE, RemoteAdb, confirm_intake, finish_first_use, native_maximize_arguments, reset_owned_profile, create_owned_fixture, observation_payload_size, reopened_library_action, owned_torrent_id, parse_incoming_observation, observe_owned_incoming, wait_owned_seed_readiness, IncomingObservationTimeout
-from chromeos_android_qualification import FreshUiCaptureUnavailable, wait_reopened_library
+from chromeos_android_qualification import FreshUiCaptureUnavailable, wait_reopened_library, wait_diagnostic_filter_rows
 
 
 class QualificationSafety(unittest.TestCase):
+    def test_control_capture_unavailability_requires_fresh_enabled_bounds(self):
+        actual = ET.fromstring('<h><n text="Minimum: warning" enabled="true" bounds="[1,2][31,42]"/></h>')
+        with patch.object(product, 'dump_ui', side_effect=[FreshUiCaptureUnavailable('no fresh XML'),actual]), patch('chromeos_android_qualification.time.sleep'):
+            self.assertEqual(wait_unique_observed_control(Mock(),'text','Minimum: warning').get('bounds'),'[1,2][31,42]')
+        with patch.object(product, 'dump_ui', side_effect=RuntimeError('transport refused')) as capture:
+            with self.assertRaisesRegex(RuntimeError, 'transport refused'):
+                wait_unique_observed_control(Mock(),'text','Minimum: warning')
+            self.assertEqual(capture.call_count, 1)
+
+    def test_unavailable_control_capture_cannot_extend_its_stage_deadline(self):
+        clock=[0.0]
+        def sleep(seconds):clock[0]+=seconds
+        with patch('chromeos_android_qualification.time.monotonic',side_effect=lambda:clock[0]), patch('chromeos_android_qualification.time.sleep',side_effect=sleep), patch.object(product,'dump_ui',side_effect=FreshUiCaptureUnavailable('no fresh XML')):
+            with self.assertRaisesRegex(RuntimeError,'not observed within'):
+                wait_unique_observed_control(Mock(),'text','Minimum: warning',timeout=1)
+        self.assertEqual(clock[0], 1)
+
+    def test_filtered_rows_retry_unavailable_capture_but_not_malformed_xml(self):
+        wrong = ET.fromstring('<h><n text="Minimum: warning"/><n text="info · peer.connection"/></h>')
+        actual = ET.fromstring('<h><n text="warning · discovery.reachability"/></h>')
+        with patch.object(product,'dump_ui',side_effect=[FreshUiCaptureUnavailable('no fresh XML'),wrong,actual]), patch('chromeos_android_qualification.time.sleep'):
+            self.assertEqual(len(wait_diagnostic_filter_rows(Mock(),'warning')),2)
+        with patch.object(product,'dump_ui',side_effect=ET.ParseError('bad XML')) as capture:
+            with self.assertRaises(ET.ParseError):wait_diagnostic_filter_rows(Mock(),'warning')
+            self.assertEqual(capture.call_count, 1)
+
     def test_reopen_unavailable_capture_requires_actual_owned_live_rows(self):
         clock = [0.0]
         def sleep(seconds):clock[0] += seconds
@@ -218,7 +244,7 @@ class QualificationSafety(unittest.TestCase):
                     wait_unique_observed_control(Mock(), 'text', 'info')
 
     def test_absent_control_has_a_bounded_wait(self):
-        with patch.object(product, 'dump_ui', return_value=ET.fromstring('<h/>')), patch('chromeos_android_qualification.time.monotonic', side_effect=[0, 1, 31]), patch('chromeos_android_qualification.time.sleep'):
+        with patch.object(product, 'dump_ui', return_value=ET.fromstring('<h/>')), patch('chromeos_android_qualification.time.monotonic', side_effect=[0, 1, 2, 31]), patch('chromeos_android_qualification.time.sleep'):
             with self.assertRaisesRegex(RuntimeError, 'not observed within'):
                 wait_unique_observed_control(Mock(), 'text', 'info')
 

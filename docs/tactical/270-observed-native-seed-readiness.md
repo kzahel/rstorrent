@@ -112,3 +112,25 @@ Required cases: unavailable then actual owned Live, permanent unavailable
 deadline, nonretryable transport/XML, no navigation beyond two steps and
 remaining-time transport bounds. CohortA's full default run proceeds unchanged
 while cohortB's bounded retry exercises the new observation.
+
+### Fresh diagnostic-control observation follow-up
+
+CohortB's third retry passes independent download/hash but fails earlier while
+observing its diagnostic warning control: the actual capture shows the selected
+Warning view, while UiAutomator provides no fresh root. No upload runs in this
+receipt; cleanup succeeds. Apply the same typed unavailable-capture observation
+to existing30-second control/filter waits, with each transport bounded by the
+remaining wait. A selected label or old XML still cannot establish rows/control
+bounds. Ordinary transport, malformed XML and ambiguous/disabled controls refuse
+immediately. Preserve this separate failure rather than relabeling it as the
+later joined-restart failure. Portable control/filter retry/refusal/deadline
+cases and another bounded cohortB retry are required.
+
+Portable control-observation validation passes48 cases. The added cases require
+fresh enabled bounds and actual filtered rows after an unavailable capture;
+permanent unavailability reaches the original stage deadline. Transport and
+malformed XML refuse without replay. The shared deadline adapter bounds nested
+transport and navigation while preserving all prior native ownership/refusal
+cases. The current cohortB fourth bounded retry follows; cohortA's default
+run passes all three cold/download/source-offline repetitions and now transfers
+under the detached hour observation. Neither is adjudicated as a full hour yet.

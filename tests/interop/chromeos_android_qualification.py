@@ -67,6 +67,18 @@ class FreshUiCaptureUnavailable(RuntimeError):
     """Explicit idle or missing-fresh-XML failure, never a transport refusal."""
 
 
+class DeadlineAdb:
+    def __init__(self, adb, deadline, expired_message):
+        self.adb, self.deadline, self.expired_message = adb, deadline, expired_message
+
+    def shell(self, *arguments, **options):
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError(self.expired_message)
+        options["timeout"] = min(options.get("timeout", 30), remaining)
+        return self.adb.shell(*arguments, **options)
+
+
 class RemoteAdb:
     def __init__(self, command: list[str]):
         self.command = command
@@ -154,8 +166,15 @@ def unique_observed_control(adb, field, value):
 
 def wait_unique_observed_control(adb, field, value, *, timeout=30):
     deadline = time.monotonic() + timeout
+    bounded = DeadlineAdb(adb, deadline, f"owned control was not observed within {timeout}s: {value}")
     while time.monotonic() < deadline:
-        nodes = [node for node in product.dump_ui(adb).iter() if node.get(field) == value]
+        try:
+            nodes = [node for node in product.dump_ui(bounded).iter() if node.get(field) == value]
+        except FreshUiCaptureUnavailable:
+            print(json.dumps({"stage": "owned_control", "status": "fresh_capture_unavailable",
+                              "field": field, "value": value}), flush=True)
+            time.sleep(min(.5, max(0, deadline - time.monotonic())))
+            continue
         if len(nodes) > 1:
             raise RuntimeError(f"owned control is ambiguous: {value}")
         if nodes:
@@ -164,7 +183,7 @@ def wait_unique_observed_control(adb, field, value, *, timeout=30):
             if node.get("enabled") != "true" or len(coordinates) != 4 or coordinates[2] <= coordinates[0] or coordinates[3] <= coordinates[1]:
                 raise RuntimeError(f"owned control is disabled or clipped: {value}")
             return node
-        time.sleep(.5)
+        time.sleep(min(.5, max(0, deadline - time.monotonic())))
     raise RuntimeError(f"owned control was not observed within {timeout}s: {value}")
 
 
@@ -356,11 +375,17 @@ def diagnostic_rows_match_filter(nodes, minimum, category="", profile="normal"):
 
 def wait_diagnostic_filter_rows(adb, minimum, category=""):
     deadline = time.monotonic() + 30
+    bounded = DeadlineAdb(adb, deadline, "actual visible diagnostic rows did not settle to the selected filter")
     while time.monotonic() < deadline:
-        nodes = list(product.dump_ui(adb).iter())
+        try:
+            nodes = list(product.dump_ui(bounded).iter())
+        except FreshUiCaptureUnavailable:
+            print(json.dumps({"stage": "diagnostic_rows", "status": "fresh_capture_unavailable"}), flush=True)
+            time.sleep(min(.5, max(0, deadline - time.monotonic())))
+            continue
         if diagnostic_rows_match_filter(nodes, minimum, category):
             return nodes
-        time.sleep(.5)
+        time.sleep(min(.5, max(0, deadline - time.monotonic())))
     raise RuntimeError("actual visible diagnostic rows did not settle to the selected filter")
 
 
@@ -384,16 +409,22 @@ def verify_retained_diagnostic_view(adb, capture, expected_name):
         product.tap_bounds(adb, wait_unique_observed_control(adb, field, value).get("bounds"))
     wait_diagnostic_filter_rows(adb, "info")
     deadline = time.monotonic() + 30
+    bounded = DeadlineAdb(adb, deadline, "owned full retained diagnostic view was not observed")
     summary = None
     while time.monotonic() < deadline:
-        labels = {node.get("text", "") for node in product.dump_ui(adb).iter()}
+        try:
+            labels = {node.get("text", "") for node in product.dump_ui(bounded).iter()}
+        except FreshUiCaptureUnavailable:
+            print(json.dumps({"stage": "diagnostic_summary", "status": "fresh_capture_unavailable"}), flush=True)
+            time.sleep(min(.5, max(0, deadline - time.monotonic())))
+            continue
         summaries = [text for text in labels if re.fullmatch(r"source evicted \d+ · local evicted \d+ · subscription resets \d+", text)]
         if "Logs" in labels and "Minimum: info" in labels and len(summaries) == 1:
             match = re.search(r"local evicted (\d+)", summaries[0])
             if int(match[1]) > 0:
                 summary = summaries[0]
                 break
-        time.sleep(.5)
+        time.sleep(min(.5, max(0, deadline - time.monotonic())))
     if summary is None:
         raise RuntimeError("owned full retained diagnostic view was not observed")
     recent = [line for line in adb.run(*log_args).stdout.splitlines() if line not in baseline]
@@ -444,15 +475,7 @@ def wait_reopened_library(adb, expected_name, *, timeout=120):
     beginning = time.monotonic()
     deadline = beginning + timeout
 
-    class DeadlineAdb:
-        def shell(self, *arguments, **options):
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise RuntimeError("joined restart did not restore the live owned library")
-            options["timeout"] = min(options.get("timeout", 30), remaining)
-            return adb.shell(*arguments, **options)
-
-    bounded = DeadlineAdb()
+    bounded = DeadlineAdb(adb, deadline, "joined restart did not restore the live owned library")
     back_steps = unavailable_captures = 0
     while time.monotonic() < deadline:
         try:
