@@ -1,5 +1,14 @@
 # Application View API
 
+Tactical [277](../tactical/277-android-observer-listener-readiness.md) repairs
+qualification of269's asynchronous listener startup. Source8c CI and a focused
+local reproduction fail the immediate optional snapshot. The unchanged
+maintenance owner applies settings asynchronously; the test now observes actual
+readiness within five seconds. All15 Android Rust boundary cases, focused
+all-target clippy and workspace formatting pass. Protocol, generated boundary
+and shipping behavior are unchanged; the original hosted failure remains open
+until revised-source CI is authorized and run.
+
 Topic: `application-view-api`
 
 Tactical [269](../tactical/269-android-incoming-peer-diagnostic-evidence.md)

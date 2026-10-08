@@ -2495,11 +2495,23 @@ mod tests {
             })
             .await
             .expect("enable only the owned loopback listener");
-        let initial = client
-            .incoming_peer_snapshot()
-            .await
-            .expect("observe incoming")
-            .expect("listener active");
+        // Settings dispatch persists the request; the maintenance owner applies
+        // the listener asynchronously. Observe readiness rather than assuming
+        // dispatch completion also means the listener has converged.
+        let initial = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if let Some(snapshot) = client
+                    .incoming_peer_snapshot()
+                    .await
+                    .expect("observe incoming")
+                {
+                    break snapshot;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("listener becomes active within the readiness deadline");
         assert_ne!(initial.listen_port, 0);
         assert_eq!(initial.registrations, 0);
         assert_eq!(initial.pending, 0);
