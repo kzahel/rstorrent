@@ -16,6 +16,9 @@ import org.rstorrent.session.uniffi.TorrentEtaView
 import org.rstorrent.session.uniffi.TorrentOperationalState
 import org.rstorrent.session.uniffi.TorrentView
 
+internal fun productFailureDetail(error: Throwable, fallback: String): String =
+    error.message?.takeIf { it.isNotBlank() } ?: fallback
+
 internal fun formatBytes(decimal: String?): String {
     val bytes = decimal?.toDoubleOrNull() ?: return "—"
     val units = arrayOf("B", "KiB", "MiB", "GiB", "TiB")

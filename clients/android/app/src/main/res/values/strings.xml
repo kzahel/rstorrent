@@ -284,6 +284,7 @@
     <string name="error_background_notification_required">Visible background notifications are required.</string>
     <string name="error_background_downloads_required">Enable background downloads first.</string>
     <string name="error_background_setting_save_failed">Background setting could not be saved.</string>
+    <string name="error_operation_failed">The operation could not be completed.</string>
     <string name="error_technical">JSTorrent encountered an error: %1$s</string>
     <string name="network_truth_unrestricted">Unrestricted</string>
     <string name="network_truth_unmetered">Unmetered network</string>

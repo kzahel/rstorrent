@@ -23,6 +23,7 @@ import android.os.SystemClock
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.util.Log
+import org.rstorrent.bootstrap.ui.productFailureDetail
 import java.io.File
 import java.io.FileNotFoundException
 import java.util.UUID
@@ -336,7 +337,7 @@ class ProductEngineService : Service() {
                                             it.network.copy(
                                                 runtimeError =
                                                     ProductError.Technical(
-                                                        error.message ?: error.toString(),
+                                                        productFailureDetail(error, getString(R.string.error_operation_failed)),
                                                     ),
                                             ),
                                     )
@@ -403,7 +404,7 @@ class ProductEngineService : Service() {
                     it.copy(
                         ready = false,
                         storageRootChecking = false,
-                        error = ProductError.Technical(error.message ?: error.toString()),
+                        error = ProductError.Technical(productFailureDetail(error, getString(R.string.error_operation_failed))),
                     )
                 }
                 notificationCoordinator.updateOngoingNotification(
@@ -535,7 +536,7 @@ class ProductEngineService : Service() {
                                     it.network.copy(
                                         runtimeError =
                                             ProductError.Technical(
-                                                error.message ?: error.toString(),
+                                                productFailureDetail(error, getString(R.string.error_operation_failed)),
                                             ),
                                     ),
                             )
@@ -3221,7 +3222,7 @@ class ProductEngineService : Service() {
             val failure =
                 ProductDataResetFailure(
                     code = dataResetFailureCode(error),
-                    detail = boundedDataResetDetail(error.message ?: error.toString()),
+                    detail = boundedDataResetDetail(productFailureDetail(error, getString(R.string.error_operation_failed))),
                     torrentId =
                         current.torrentIds.getOrNull(current.nextTorrentIndex)
                             ?.takeIf {
@@ -3339,7 +3340,7 @@ class ProductEngineService : Service() {
                                 client.failSafRemoval(
                                     torrentId,
                                     plan.operationId,
-                                    boundedDataResetDetail(error.message ?: error.toString()),
+                                    boundedDataResetDetail(productFailureDetail(error, getString(R.string.error_operation_failed))),
                                 )
                             }.onFailure(error::addSuppressed)
                             throw error
@@ -3683,7 +3684,7 @@ class ProductEngineService : Service() {
                         clientSettingsDraft =
                             it.clientSettingsDraft.failed(
                                 outbound.resourceKey,
-                                error.message ?: error.toString(),
+                                productFailureDetail(error, getString(R.string.error_operation_failed)),
                             ),
                     )
                 }
@@ -3737,7 +3738,7 @@ class ProductEngineService : Service() {
                         torrentSettingsDraft =
                             it.torrentSettingsDraft.failed(
                                 outbound.resourceKey,
-                                error.message ?: error.toString(),
+                                productFailureDetail(error, getString(R.string.error_operation_failed)),
                             ),
                     )
                 }
@@ -4236,7 +4237,7 @@ class ProductEngineService : Service() {
                             client.failSafRemoval(
                                 torrent.torrentId,
                                 plan.operationId,
-                                error.message ?: error.toString(),
+                                productFailureDetail(error, getString(R.string.error_operation_failed)),
                             )
                         } catch (markError: Throwable) {
                             error.addSuppressed(markError)
@@ -4321,7 +4322,7 @@ class ProductEngineService : Service() {
                 client.failSafStorageRequest(
                     request.requestId,
                     SafStorageFailureKind.PROVIDER_REFUSED,
-                    error.message ?: error.toString(),
+                    productFailureDetail(error, getString(R.string.error_operation_failed)),
                 )
             } finally {
                 cancellation.cancel()
@@ -4806,7 +4807,7 @@ class ProductEngineService : Service() {
                     if (error is ProductDataResetInProgressException) {
                         ProductError.Code.DATA_RESET_IN_PROGRESS
                     } else {
-                        ProductError.Technical(error.message ?: error.toString())
+                        ProductError.Technical(productFailureDetail(error, getString(R.string.error_operation_failed)))
                     },
             )
         }

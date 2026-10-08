@@ -2,6 +2,13 @@
 
 Topic: `client-surfaces`
 
+Tactical [268](../tactical/268-android-visible-error-fallback.md) replaces
+message-less/blank Android exception class-name fallbacks with catalog-owned
+product copy. Meaningful messages and complete technical logs remain. Portable
+formatting regression, 122 debug JVM cases, lint and all localization catalogs
+pass; normal signed packaging and latest-source physical evidence are pending.
+This is a source-level leak prevention, not a reproduced runtime exception.
+
 Tactical [266](../tactical/266-android-diagnostic-history-resynchronization.md)
 repairs Android's diagnostic-only queue after a real 581,079-byte history cannot
 resynchronize through 256 KiB. Source `2adf2eb1` requests the existing 4-MiB
