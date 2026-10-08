@@ -70,16 +70,38 @@ class RemoteAdb:
     def run(self, *arguments: str, timeout: float = 30, check: bool = True):
         if arguments[:2] == ("logcat", "-c"):
             raise RuntimeError("device-wide log clearing is prohibited")
-        if arguments[:3] == ("shell", "uiautomator", "dump"):
-            # UIAutomator can fail to become idle without replacing its XML.
-            # An old owned file must never establish fresh observed state.
-            self.shell("rm", "-f", "/sdcard/rstorrent-window.xml")
+        capture = arguments[:3] == ("shell", "uiautomator", "dump")
+        deadline = time.monotonic() + timeout
         arguments = tuple("/data/local/tmp/rstorrent253-ui.xml" if value == "/sdcard/rstorrent-window.xml" else value for value in arguments)
         if arguments[0] == "shell":
             arguments = ("shell", "-n", shlex.join(arguments[1:]))
         remote = "export PATH=/bin:/usr/bin:/usr/local/bin:/usr/sbin:/sbin:$PATH\n" + shlex.join(["adb", "-s", "127.0.0.1:5555", *arguments]) + " </dev/null\n"
-        result = subprocess.run([*self.command, "testbed", "--", "shell"], input=remote, capture_output=True, text=True, timeout=timeout)
-        result.stdout = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", result.stdout).replace("\r", "")
+        for attempt in range(3 if capture else 1):
+            if capture:
+                # Every retry must produce a fresh XML; never reuse a failed
+                # dump's predecessor, even when UIAutomator reports exit zero.
+                self.shell("rm", "-f", "/sdcard/rstorrent-window.xml",
+                           timeout=max(.1, deadline - time.monotonic()))
+            result = subprocess.run([*self.command, "testbed", "--", "shell"], input=remote,
+                                    capture_output=True, text=True,
+                                    timeout=max(.1, deadline - time.monotonic()))
+            result.stdout = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", result.stdout).replace("\r", "")
+            idle_failure = capture and "could not get idle state" in (result.stdout + result.stderr).lower()
+            missing_capture = False
+            if capture and not idle_failure and result.returncode == 0:
+                fresh = self.shell("test", "-s", "/sdcard/rstorrent-window.xml", check=False,
+                                   timeout=max(.1, deadline - time.monotonic()))
+                missing_capture = fresh.returncode == 1
+                if missing_capture:
+                    result.stderr += "\nUIAutomator produced no fresh owned XML"
+                elif fresh.returncode != 0:
+                    result = fresh
+            if not idle_failure and not missing_capture:
+                break
+            result.returncode = result.returncode or 1
+            if attempt == 2 or time.monotonic() >= deadline:
+                break
+            time.sleep(min(.3, max(0, deadline - time.monotonic())))
         if check and result.returncode:
             raise RuntimeError(
                 f"owned Android command failed ({result.returncode}): "
@@ -219,7 +241,86 @@ def verify_completed_upload(adb, fixture, registry, target, listener_port):
     return bootstrap.verify_product_upload(ForwardedAdb(), upload_fixture, device_port=listener_port, leech_timeout_seconds=120)
 
 
-def diagnostic_rows_match_filter(nodes, minimum, category=""):
+def owned_torrent_id(log, info_hash):
+    if not re.fullmatch(r"[0-9a-f]{40}", info_hash):
+        raise RuntimeError("owned fixture hash is malformed")
+    identities = set(re.findall(r"\btorrent=(\S+) v1=" + info_hash + r"\b", log))
+    if len(identities) != 1 or not re.fullmatch(r"t1-[0-9a-f]{32}", next(iter(identities), "")):
+        raise RuntimeError("exactly one owned fixture torrent ID must be observed")
+    return identities.pop()
+
+
+def parse_incoming_observation(line, torrent_id):
+    match = re.search(r"\bincoming_peer_snapshot torrent=" + re.escape(torrent_id) +
+                      r" available=true port=(\d+) registrations=(\d+) pending=(\d+) "
+                      r"established=(\d+) payload=(\d+) rejections=([^ ]*) recent=([^ ]*) "
+                      r"counts_truncated=(true|false) recent_truncated=(true|false)$", line)
+    if match is None:
+        raise RuntimeError("fresh owned incoming observation is unavailable or malformed")
+    port, registrations, pending, established, payload = map(int, match.groups()[:5])
+    if not 0 < port < 65536 or any(value > 2**64 - 1 for value in (registrations, pending, established, payload)):
+        raise RuntimeError("owned incoming observation exceeds field bounds")
+    return {"port": port, "registrations": registrations, "pending": pending,
+            "established": established, "payload_bytes_sent": payload,
+            "rejection_counts": match[6], "recent_rejections": match[7]}
+
+
+def observe_owned_incoming(adb, uid, torrent_id, deadline):
+    def remaining():
+        budget = deadline - time.monotonic()
+        if budget <= 0:
+            raise RuntimeError("owned incoming observation deadline expired")
+        return min(15, budget)
+    def logs():
+        return adb.run("logcat", "-d", "-v", "threadtime", f"--uid={uid}", "-t", "10000",
+                       "RSTorrentProduct:I", "*:S", timeout=remaining()).stdout.splitlines()
+    marker = f"incoming_peer_snapshot torrent={torrent_id} "
+    before = {line for line in logs() if marker in line}
+    result = adb.shell("am", "broadcast", "-a", "org.rstorrent.bootstrap.PRODUCT_TEST",
+                       "-n", f"{PACKAGE}/org.rstorrent.bootstrap.ProductTestReceiver",
+                       "--es", "torrent_id", torrent_id, "--es", "torrent_action", "observe_incoming",
+                       timeout=remaining())
+    if "result=0" not in result.stdout:
+        raise RuntimeError("owned incoming observer broadcast was not accepted")
+    while True:
+        fresh = [line for line in logs() if marker in line and line not in before]
+        if fresh:
+            return parse_incoming_observation(fresh[-1], torrent_id)
+        time.sleep(min(.5, remaining()))
+
+
+def wait_owned_seed_readiness(adb, info_hash, receipt, *, timeout=180):
+    if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or not 0 < timeout <= 180:
+        raise RuntimeError("owned seed readiness budget must be within 0..180 seconds")
+    beginning = time.monotonic()
+    deadline = beginning + timeout
+    uid = re.search(r"\buserId=(\d+)\b", adb.shell("dumpsys", "package", PACKAGE,
+                                                  timeout=min(15, timeout)).stdout)
+    if uid is None:
+        raise RuntimeError("owned incoming observer package UID is unavailable")
+    log = adb.run("logcat", "-d", "-v", "threadtime", f"--uid={uid[1]}", "-t", "10000",
+                  "RSTorrentProduct:I", "*:S", timeout=min(15, timeout)).stdout
+    torrent_id = owned_torrent_id(log, info_hash)
+    receipt.update(status="pending", torrent_id=torrent_id, info_hash=info_hash, samples=[])
+    while time.monotonic() < deadline:
+        observation = observe_owned_incoming(adb, uid[1], torrent_id, min(deadline, time.monotonic() + 25))
+        observation["elapsed_seconds"] = round(time.monotonic() - beginning, 2)
+        receipt["samples"].append(observation)
+        if len(receipt["samples"]) > 32:
+            del receipt["samples"][1]
+        receipt["elapsed_seconds"] = observation["elapsed_seconds"]
+        if observation["registrations"] > 1:
+            receipt["status"] = "refused"
+            raise RuntimeError("isolated single-fixture seed registry is ambiguous")
+        if observation["registrations"] == 1:
+            receipt["status"] = "ready"
+            return observation["port"]
+        time.sleep(max(0, min(2, deadline - time.monotonic())))
+    receipt["status"] = "timeout"
+    raise RuntimeError("owned completed seed did not become registered within its readiness budget")
+
+
+def diagnostic_rows_match_filter(nodes, minimum, category="", profile="normal"):
     labels = {node.get("text", "") for node in nodes}
     rows = [match.groups() for label in labels
             if (match := re.fullmatch(r"(trace|debug|info|warning|error) · ([a-z][a-z0-9_.]*)", label))]
@@ -227,7 +328,8 @@ def diagnostic_rows_match_filter(nodes, minimum, category=""):
     if not rows:
         return "No diagnostic records match the current filter" in labels
     return all(levels[level] >= levels[minimum] and
-               (not category or value == category or value.startswith(category + "."))
+               (not category or value == category or value.startswith(category + ".")
+                or profile == "normal" and levels[level] >= levels["warning"])
                for level, value in rows)
 
 
@@ -654,6 +756,8 @@ def main():
                 if args.completed_upload:
                     report["retained_diagnostic_view"] = verify_retained_diagnostic_view(adb, capture, fixture.payload_path.parent.name)
                     handle.pause()
+                    report["incoming_seed_readiness"] = {}
+                    listener_port = wait_owned_seed_readiness(adb, fixture.info_hash, report["incoming_seed_readiness"])
                     uploaded = verify_completed_upload(adb, fixture, args.registry, args.target, listener_port)
                     report["completed_background_upload"] = {"payload_bytes": uploaded, "sha1": fixture.payload_hash,
                                                              "actual_listener_port": listener_port}
@@ -663,6 +767,9 @@ def main():
                         adb, destination, fixture.payload_hash)
                     diagnostic("joined-restart")
                     capture("08-joined-completion-restart")
+                    report["result"] = ("pass_targeted_upload" if args.targeted_upload else
+                                        "pass_end_to_end_background_hour" if args.observe_seconds == 3600 else
+                                        "pass_bounded_repetitions_and_upload")
     except BaseException:
         report["result"] = "fail"
         if report.get("observation", {}).get("status") == "running":

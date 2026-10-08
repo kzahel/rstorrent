@@ -9,15 +9,126 @@ from unittest.mock import Mock, patch
 import xml.etree.ElementTree as ET
 
 import android_reactive_surface as product
-from chromeos_android_qualification import diagnostic_rows_match_filter, wait_unique_observed_control, observation_result, PACKAGE, RemoteAdb, confirm_intake, finish_first_use, native_maximize_arguments, reset_owned_profile, create_owned_fixture, observation_payload_size, reopened_library_action
+from chromeos_android_qualification import diagnostic_rows_match_filter, wait_unique_observed_control, observation_result, PACKAGE, RemoteAdb, confirm_intake, finish_first_use, native_maximize_arguments, reset_owned_profile, create_owned_fixture, observation_payload_size, reopened_library_action, owned_torrent_id, parse_incoming_observation, observe_owned_incoming, wait_owned_seed_readiness
 
 
 class QualificationSafety(unittest.TestCase):
     def test_selected_filter_label_cannot_establish_filtered_rows(self):
         nodes = list(ET.fromstring('<h><n text="Minimum: warning"/><n text="info · integrity.hash"/></h>').iter())
         self.assertFalse(diagnostic_rows_match_filter(nodes, 'warning'))
-        nodes = list(ET.fromstring('<h><n text="Category: peer"/><n text="info · peer.connection"/><n text="warning · discovery.reachability"/></h>').iter())
+        nodes = list(ET.fromstring('<h><n text="Category: peer"/><n text="info · peer.connection"/><n text="info · discovery.reachability"/></h>').iter())
         self.assertFalse(diagnostic_rows_match_filter(nodes, 'info', 'peer'))
+
+    def test_normal_profile_retains_cross_category_warnings_and_errors(self):
+        nodes = list(ET.fromstring('<h><n text="info · peer.connection"/><n text="warning · discovery.reachability"/><n text="error · storage.io"/></h>').iter())
+        self.assertTrue(diagnostic_rows_match_filter(nodes, 'info', 'peer'))
+        self.assertFalse(diagnostic_rows_match_filter(nodes, 'info', 'peer', profile='detailed'))
+        self.assertFalse(diagnostic_rows_match_filter(nodes, 'error', 'peer'))
+
+    def test_seed_identity_refuses_foreign_ambiguous_or_malformed_records(self):
+        info_hash = 'a' * 40
+        torrent_id = 't1-' + 'b' * 32
+        log = 'torrent=' + torrent_id + ' v1=' + info_hash + ' v2=none'
+        self.assertEqual(owned_torrent_id(log, info_hash), torrent_id)
+        for invalid in ['', log.replace(info_hash, 'c' * 40), log + '\ntorrent=t1-' + 'd' * 32 + ' v1=' + info_hash, log.replace(torrent_id, 'none')]:
+            with self.assertRaises(RuntimeError):owned_torrent_id(invalid, info_hash)
+        with self.assertRaises(RuntimeError):owned_torrent_id(log, 'x' * 40)
+
+    def test_native_snapshot_rejects_wrong_identity_unavailable_or_invalid_port(self):
+        torrent_id = 't1-' + 'b' * 32
+        line = f'incoming_peer_snapshot torrent={torrent_id} available=true port=6881 registrations=1 pending=0 established=0 payload=0 rejections= recent= counts_truncated=false recent_truncated=false'
+        self.assertEqual(parse_incoming_observation(line, torrent_id)['port'], 6881)
+        for invalid in [line.replace(torrent_id, 'foreign'), line.replace('available=true', 'available=false'), line.replace('port=6881', 'port=0'), line.replace('port=6881', 'port=65536'), line.replace('payload=0', 'payload=' + str(2**64))]:
+            with self.assertRaises(RuntimeError):parse_incoming_observation(invalid, torrent_id)
+
+    def test_native_snapshot_waits_for_fresh_evidence_instead_of_old_ready_row(self):
+        torrent_id = 't1-' + 'b' * 32
+        suffix = f'incoming_peer_snapshot torrent={torrent_id} available=true port=6881 registrations=1 pending=0 established=0 payload=0 rejections= recent= counts_truncated=false recent_truncated=false'
+        old = '10-08 03:00:01.100 I TAG: ' + suffix
+        fresh = '10-08 03:00:02.100 I TAG: ' + suffix.replace('registrations=1', 'registrations=0')
+        adb = Mock();adb.run.side_effect=[Mock(stdout=old), Mock(stdout=old), Mock(stdout=old+'\n'+fresh)];adb.shell.return_value.stdout='Broadcast completed: result=0'
+        with patch('chromeos_android_qualification.time.sleep'):
+            self.assertEqual(observe_owned_incoming(adb, '10001', torrent_id, __import__('time').monotonic()+5)['registrations'], 0)
+        self.assertIn('--uid=10001', adb.run.call_args.args)
+        self.assertNotIn('logcat -c', str(adb.mock_calls))
+
+    def test_completed_bytes_do_not_start_upload_before_actual_seed_registration(self):
+        torrent_id = 't1-' + 'b' * 32; info_hash = 'a' * 40
+        adb = Mock();adb.shell.return_value.stdout='userId=10001';adb.run.return_value.stdout=f'torrent={torrent_id} v1={info_hash}'
+        receipt = {}
+        with patch('chromeos_android_qualification.observe_owned_incoming', side_effect=[{'port':6881,'registrations':0},{'port':6900,'registrations':1}]), patch('chromeos_android_qualification.time.sleep'):
+            self.assertEqual(wait_owned_seed_readiness(adb, info_hash, receipt), 6900)
+        self.assertEqual([r['registrations'] for r in receipt['samples']], [0,1])
+        self.assertEqual(receipt['status'], 'ready')
+
+    def test_seed_readiness_refuses_ambiguous_registry_and_invalid_budget(self):
+        torrent_id = 't1-' + 'b' * 32;info_hash = 'a' * 40
+        adb = Mock();adb.shell.return_value.stdout='userId=10001';adb.run.return_value.stdout=f'torrent={torrent_id} v1={info_hash}'
+        with patch('chromeos_android_qualification.observe_owned_incoming', return_value={'port':6881,'registrations':2}):
+            with self.assertRaisesRegex(RuntimeError,'ambiguous'):wait_owned_seed_readiness(adb,info_hash,{})
+        for timeout in [0,181,True]:
+            untouched=Mock()
+            with self.assertRaisesRegex(RuntimeError,'budget'):wait_owned_seed_readiness(untouched,info_hash,{},timeout=timeout)
+            self.assertEqual(untouched.mock_calls,[])
+
+    def test_seed_readiness_timeout_preserves_unready_evidence(self):
+        torrent_id = 't1-' + 'b' * 32;info_hash = 'a' * 40
+        adb = Mock();adb.shell.return_value.stdout='userId=10001';adb.run.return_value.stdout=f'torrent={torrent_id} v1={info_hash}'
+        receipt = {}
+        with patch('chromeos_android_qualification.observe_owned_incoming', return_value={'port':6881,'registrations':0}):
+            with self.assertRaisesRegex(RuntimeError,'readiness budget'):wait_owned_seed_readiness(adb,info_hash,receipt,timeout=.02)
+        self.assertEqual(receipt['status'],'timeout')
+        self.assertEqual(receipt['samples'][-1]['registrations'],0)
+
+    def test_seed_readiness_retains_first_and_bounded_latest_samples(self):
+        torrent_id = 't1-' + 'b' * 32;info_hash = 'a' * 40
+        adb = Mock();adb.shell.return_value.stdout='userId=10001';adb.run.return_value.stdout=f'torrent={torrent_id} v1={info_hash}'
+        samples = [{'port':6881,'registrations':0,'sample':i} for i in range(35)]+[{'port':6881,'registrations':1,'sample':35}]
+        receipt = {}
+        with patch('chromeos_android_qualification.observe_owned_incoming',side_effect=samples),patch('chromeos_android_qualification.time.sleep'):
+            wait_owned_seed_readiness(adb,info_hash,receipt)
+        self.assertEqual(len(receipt['samples']),32)
+        self.assertEqual(receipt['samples'][0]['sample'],0)
+        self.assertEqual(receipt['samples'][-1]['sample'],35)
+
+    def test_idle_failure_with_exit_zero_requires_another_fresh_capture(self):
+        calls=[];dumps=0
+        def run(command,**options):
+            nonlocal dumps
+            calls.append(options['input'])
+            if 'uiautomator' in options['input']:
+                dumps+=1
+                return subprocess.CompletedProcess(command,0,'ERROR: could not get idle state.' if dumps==1 else 'UI hierarchy dumped', '')
+            return subprocess.CompletedProcess(command,0,'','')
+        with patch('chromeos_android_qualification.subprocess.run',side_effect=run),patch('chromeos_android_qualification.time.sleep'):
+            result=RemoteAdb(['machine-control']).shell('uiautomator','dump','/sdcard/rstorrent-window.xml')
+        self.assertEqual(result.stdout,'UI hierarchy dumped')
+        self.assertEqual(dumps,2)
+        self.assertEqual(len(calls),5)
+        self.assertTrue(all('rm -f /data/local/tmp/rstorrent253-ui.xml' in calls[i] for i in [0,2]))
+        self.assertIn('test -s /data/local/tmp/rstorrent253-ui.xml', calls[-1])
+
+    def test_missing_fresh_xml_refuses_after_three_bounded_capture_attempts(self):
+        calls=[]
+        def run(command,**options):
+            calls.append(options['input'])
+            return subprocess.CompletedProcess(command,1 if 'test -s' in options['input'] else 0,'','')
+        with patch('chromeos_android_qualification.subprocess.run',side_effect=run),patch('chromeos_android_qualification.time.sleep'):
+            with self.assertRaisesRegex(RuntimeError,'no fresh owned XML'):
+                RemoteAdb(['machine-control']).shell('uiautomator','dump','/sdcard/rstorrent-window.xml')
+        self.assertEqual(len(calls),9)
+        self.assertTrue(all('rm -f /data/local/tmp/rstorrent253-ui.xml' in calls[i] for i in [0,3,6]))
+
+    def test_three_idle_failures_refuse_instead_of_reusing_old_xml(self):
+        calls=[]
+        def run(command,**options):
+            calls.append(options['input'])
+            return subprocess.CompletedProcess(command,0,'ERROR: could not get idle state.' if 'uiautomator' in options['input'] else '','')
+        with patch('chromeos_android_qualification.subprocess.run',side_effect=run),patch('chromeos_android_qualification.time.sleep'):
+            with self.assertRaisesRegex(RuntimeError,'could not get idle state'):
+                RemoteAdb(['machine-control']).shell('uiautomator','dump','/sdcard/rstorrent-window.xml')
+        self.assertEqual(len(calls),6)
+        self.assertTrue(all('cat ' not in source for source in calls))
 
     def test_filtered_visible_rows_and_explicit_empty_state_are_accepted(self):
         nodes = list(ET.fromstring('<h><n text="warning · peer.connection.retry"/><n text="error · peer.connection"/></h>').iter())
@@ -161,10 +272,10 @@ class QualificationSafety(unittest.TestCase):
         def run(_command, **options):
             calls.append(options["input"])
             if "uiautomator" in options["input"]:
-                return subprocess.CompletedProcess([], 1, "", "ERROR: could not get idle state")
+                    return subprocess.CompletedProcess([], 1, "", "ERROR: transport refused")
             return subprocess.CompletedProcess([], 0, "", "")
         with patch("chromeos_android_qualification.subprocess.run", side_effect=run):
-            with self.assertRaisesRegex(RuntimeError, "could not get idle state"):
+            with self.assertRaisesRegex(RuntimeError, "transport refused"):
                 RemoteAdb(["machine-control"]).shell("uiautomator", "dump", "/sdcard/rstorrent-window.xml")
         self.assertEqual(len(calls), 2)
         self.assertIn("rm -f /data/local/tmp/rstorrent253-ui.xml", calls[0])
