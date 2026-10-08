@@ -712,3 +712,18 @@ lists separate static-library terms; dependency builds pin and patch libfuse
 corresponding-source/relink availability or per-package redistribution
 acceptance. R-05 retains those requirements. No upstream source or fixture is
 imported into the public repository by this inspection.
+
+Tactical282 independently matches both final8c `AppRun.wrapped` hashes with
+[Tauri's apprun-old mirror](https://github.com/tauri-apps/binary-releases/releases/tag/apprun-old)
+and the original [AppImageKit release](https://github.com/AppImage/AppImageKit/releases/tag/continuous).
+The upstream-declared source revision is
+`5735cc5bed206497cddfbd2a75e1982c2606c35d`;
+[`src/AppRun.c`](https://github.com/AppImage/AppImageKit/blob/5735cc5bed206497cddfbd2a75e1982c2606c35d/src/AppRun.c)
+and `src/CMakeLists.txt` are inspected for the original MIT notice and target.
+`distribution/licenses/apprun-source.json` binds the exact original1271-byte
+initial copyright/license comment, source/archive hashes and origin. Only that
+notice is imported, under its MIT terms, to preserve Simon Peter/RazZziel
+attribution. No implementation source is copied. The legacy upstream release
+is marked obsolete; archived build metadata returns404. Exact asset equality
+and source provenance do not establish a reproducible build, security support
+or complete native redistribution/source/relink acceptance; R-05 remains open.

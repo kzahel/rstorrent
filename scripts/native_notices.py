@@ -12,10 +12,19 @@ NOTICE_ROOT = str(PurePosixPath(MANIFEST).parent)
 DESKTOP_BINARIES = {'usr/bin/jstorrent-client', 'usr/bin/rstorrent-desktop'}
 FIRST_PARTY = DESKTOP_BINARIES | {'usr/bin/rstorrent-native-host'}
 HELPERS = {'usr/bin/xdg-mime', 'usr/bin/xdg-open'}
-# Exact Tauri apprun-old mirror assets; source/runtime obligations remain open.
+# Exact Tauri mirror assets independently match upstream AppImageKit assets.
 APPRUN = {
     'f30140a43a0a59e46db21bdefdf749b9e9f2c6946e92afabbacf98b8ae73fb4f': 'x86_64',
     '072f17c0895a85c490282fe5395c5007e5fc75da727e553b3b8fb680feb11578': 'aarch64',
+}
+APPRUN_LICENSE = Path(__file__).resolve().parents[1] / 'distribution/licenses/apprun-5735cc5-MIT.txt'
+APPRUN_LICENSE_SHA256 = '8140ac4cb0d9abbe27044503b1554666f8a11b60ea03b4d350cf05c677338d47'
+APPRUN_NOTICE = {
+    'copyright': NOTICE_ROOT + '/apprun/COPYRIGHT',
+    'license': 'MIT',
+    'source_revision': '5735cc5bed206497cddfbd2a75e1982c2606c35d',
+    'source_locator': 'https://github.com/AppImage/AppImageKit/blob/5735cc5bed206497cddfbd2a75e1982c2606c35d/src/AppRun.c',
+    'origin': 'https://github.com/tauri-apps/binary-releases/releases/tag/apprun-old',
 }
 MAX_FILE = 16 * 1024**2
 MAX_TOTAL = 64 * 1024**2
@@ -244,8 +253,10 @@ def collect(root, provenance=None):
         if name in FIRST_PARTY:
             entry['kind'] = 'first-party'
         elif name in {'AppRun', 'AppRun.wrapped'} and digest in APPRUN:
-            entry.update(kind='apprun', architecture=APPRUN[digest],
-                         origin='https://github.com/tauri-apps/binary-releases/releases/tag/apprun-old')
+            if sha(APPRUN_LICENSE) != APPRUN_LICENSE_SHA256:
+                raise ValueError('AppRun license source drift')
+            copy_notice(APPRUN_LICENSE, APPRUN_NOTICE['copyright'])
+            entry.update(kind='apprun', architecture=APPRUN[digest], **APPRUN_NOTICE)
         else:
             metadata = provenance.identify(root / name, digest)
             package = metadata['package']
@@ -308,6 +319,11 @@ def verify(root):
         elif item['kind'] == 'apprun':
             if name not in {'AppRun', 'AppRun.wrapped'} or item['sha256'] not in APPRUN:
                 raise ValueError('unreviewed AppRun exemption')
+            notice = notices.get(APPRUN_NOTICE['copyright'])
+            if (item.get('architecture') != APPRUN[item['sha256']]
+                    or any(item.get(key) != value for key, value in APPRUN_NOTICE.items())
+                    or notice is None or notice['sha256'] != APPRUN_LICENSE_SHA256):
+                raise ValueError('AppRun license attribution differs or is missing')
         elif item['kind'] == 'distro':
             p = packages[item['package']]
             if p['copyright'] not in notices or any(item[k] != p[k] for k in ('version', 'source_package', 'source_version')):

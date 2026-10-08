@@ -1,5 +1,16 @@
 # Tactical 259: JSTorrent Finish-Line Checks
 
+Tactical [282](../tactical/282-apprun-license-attribution.md) locally fixes
+missing AppRun MIT copyright attribution in the exact signed8c AppImage notice
+inspection. Both reviewed mirror launchers independently match upstream bytes;
+the collector packages the original Simon Peter/RazZziel notice with exact
+hash/source revision/origin/architecture checks. All26 distribution cases and
+both actual launcher controlled-notice round trips pass. No implementation code
+is imported. Fresh signed inputs change again after03e; earlier pending build
+proposals are superseded. The upstream legacy release is marked obsolete and
+archived build metadata is unavailable; reproducible build, all native source/
+relink/security obligations and maintained WebKit/accepted ABI remain open.
+
 The locally qualified candidate source is03e63443. The full default bundled
 Chromium suite now passes62 cases with14 existing live/opt-in skips; focused
 managed-package captures pass separately. Current branding2037 display values/

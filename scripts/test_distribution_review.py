@@ -188,6 +188,65 @@ class NativeNoticeTests(unittest.TestCase):
                          [('usr/bin/rstorrent-desktop', 'first-party')])
         self.assertEqual(self.native.verify(self.root)['distro_packages'], 2)
 
+    def add_reviewed_apprun_fixture(self, architecture):
+        from unittest.mock import patch
+        binary = self.root / 'AppRun.wrapped'
+        binary.write_bytes(b'\x7fELFcontrolled-apprun-' + architecture.encode())
+        review = patch.dict(self.native.APPRUN, {self.native.sha(binary): architecture})
+        review.start()
+        self.addCleanup(review.stop)
+
+    def test_apprun_both_architectures_preserve_original_notice(self):
+        for architecture in ['x86_64', 'aarch64']:
+            with self.subTest(architecture=architecture):
+                self.add_reviewed_apprun_fixture(architecture)
+                result = self.native.collect(self.root, self.provenance)
+                entry = next(c for c in result['components'] if c['kind'] == 'apprun')
+                self.assertEqual(entry['architecture'], architecture)
+                self.assertEqual(entry['license'], 'MIT')
+                notice = self.root / entry['copyright']
+                self.assertEqual(notice.read_bytes(), self.native.APPRUN_LICENSE.read_bytes())
+                self.assertIn(b'Simon Peter', notice.read_bytes())
+                self.assertIn(b'RazZziel', notice.read_bytes())
+                self.assertEqual(self.native.verify(self.root)['notice_files'], 4)
+
+    def test_apprun_missing_or_forged_attribution_is_refused(self):
+        import hashlib
+        self.add_reviewed_apprun_fixture('x86_64')
+        original = self.native.collect(self.root, self.provenance)
+        for key in ['architecture', *self.native.APPRUN_NOTICE]:
+            with self.subTest(field=key):
+                modified = copy.deepcopy(original)
+                entry = next(c for c in modified['components'] if c['kind'] == 'apprun')
+                entry[key] = 'unreviewed'
+                (self.root / self.native.MANIFEST).write_text(json.dumps(modified))
+                with self.assertRaisesRegex(ValueError, 'AppRun license attribution'):
+                    self.native.verify(self.root)
+        modified = copy.deepcopy(original)
+        name = self.native.APPRUN_NOTICE['copyright']
+        modified['notices'] = [n for n in modified['notices'] if n['path'] != name]
+        (self.root / self.native.MANIFEST).write_text(json.dumps(modified))
+        with self.assertRaisesRegex(ValueError, 'AppRun license attribution'):
+            self.native.verify(self.root)
+        modified = copy.deepcopy(original)
+        notice = next(n for n in modified['notices'] if n['path'] == name)
+        payload = b'Forged terms'
+        (self.root / name).write_bytes(payload)
+        notice.update(bytes=len(payload), sha256=hashlib.sha256(payload).hexdigest())
+        (self.root / self.native.MANIFEST).write_text(json.dumps(modified))
+        with self.assertRaisesRegex(ValueError, 'AppRun license attribution'):
+            self.native.verify(self.root)
+
+    def test_apprun_source_notice_drift_is_refused_before_manifest(self):
+        from unittest.mock import patch
+        self.add_reviewed_apprun_fixture('x86_64')
+        changed = self.root.parent / 'changed-AppRun-license'
+        changed.write_bytes(b'Altered terms')
+        with patch.object(self.native, 'APPRUN_LICENSE', changed):
+            with self.assertRaisesRegex(ValueError, 'AppRun license source drift'):
+                self.native.collect(self.root, self.provenance)
+        self.assertFalse((self.root / self.native.MANIFEST).exists())
+
     def test_missing_or_duplicate_desktop_is_refused(self):
         binary = self.root / 'usr/bin/jstorrent-client'
         old = self.root / 'usr/bin/rstorrent-desktop'

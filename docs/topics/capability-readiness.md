@@ -1,5 +1,16 @@
 # Capability Readiness
 
+Tactical [282](../tactical/282-apprun-license-attribution.md) locally fixes
+missing AppRun MIT copyright attribution in the exact signed8c AppImage notice
+inspection. Both reviewed mirror launchers independently match upstream bytes;
+the collector packages the original Simon Peter/RazZziel notice with exact
+hash/source revision/origin/architecture checks. All26 distribution cases and
+both actual launcher controlled-notice round trips pass. No implementation code
+is imported. Fresh signed inputs change again after03e; earlier pending build
+proposals are superseded. The upstream legacy release is marked obsolete and
+archived build metadata is unavailable; reproducible build, all native source/
+relink/security obligations and maintained WebKit/accepted ABI remain open.
+
 Tactical [280](../tactical/280-desktop-executable-display-brand.md) completes locally
 for the actual Windows advanced-firewall executable-label leak observed under
 259. Rename only the desktop output to distinct `jstorrent-client`; retained
