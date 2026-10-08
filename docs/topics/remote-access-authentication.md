@@ -2,6 +2,13 @@
 
 Topic: `remote-access-authentication`
 
+Tactical [276](../tactical/276-preview-host-verification.md) corrects the
+private preview verifier after the approved source8c deployment encounters
+HTTP403 before activation. Direct private hops must name the configured public
+Host. Actual approved-source gateway checks preserve wrong-Host403 and missing-
+credential401 while static/health/WebSocket verification passes. The gateway
+security policy is unchanged; preview activation and exact-source private-listener/HTTPS verification pass.
+
 Tactical [258](../tactical/258-cross-surface-branding-and-design-audit.md)
 changes only remote presentation: the sign-in gate follows shared JSTorrent
 appearance/palette, applies existing saved preferences before connection, and

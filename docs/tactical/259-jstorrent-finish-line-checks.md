@@ -142,6 +142,34 @@ they do not close those rows' remaining delivery, platform or recovery cases.
 - [x] Owned VMs stopped, idle claims released and artifact-transfer listener
   stopped; macOS fixture state restored and its owned scratch removed.
 
+## Approved Delivery Checkpoint, 2026-10-08
+
+The maintainer subsequently approves ONLY frozen source8c push/nonpublishing
+build and exact sourceaeaa code26 existing internal-track/tester delivery.
+Those actions execute: desktop run37735081504 records exact8c/publish=false;
+Play reports internal26 available and production23 unchanged. The original-key
+AAB independently rehashes to19f9c358 before upload. Existing testers and
+supported devices are unchanged from internal25. English notes are condensed
+to447 characters for the store limit. Its sole missing-deobfuscation warning
+is recorded; exact release minification is disabled. Store availability does
+not qualify managed installations, original-signed desktop collection, public
+release/feed, production website or Web Store publication.
+
+Fresh strict dependency review passes for the unchanged three source8c
+lockfiles: zero vulnerabilities, seven existing reviewed Cargo warnings and
+source-verified GLib backport. The review expiry stays2026-10-12.
+Native Web Store inspection resumes after the unrelated Save modal clears,
+without agent cancellation/submission: published/draft1.1.1 and obsolete
+permission/privacy explanations remain. No Web Store upload/edit occurs.
+
+The approved preview deploy fails its direct-hop checker HTTP403 before
+activation. Tactical276 qualifies only the checker Host correction against
+the actual source8c gateway: wrong Host403, missing credentials401, correct
+static/health/WebSocket pass. The corrected preview activation succeeds; the private listener and HTTPS
+route both pass exact-source static/health/WebSocket checks. Final signed
+candidate packaging is in progress. Physical managed baselines are collected
+before any update; no production sideload, uninstall or data clear is used.
+
 ## Execution checkpoint
 
 2026-10-07: production candidate source is `a35934d2`. Every in-scope job in

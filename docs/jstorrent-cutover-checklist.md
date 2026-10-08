@@ -54,15 +54,22 @@ a checked local task does not close a delivery row.
   cleanup. The first whole-run reopen failure remains recorded unchanged.
 - [x] Linux, Windows and macOS VMs are off; idle claims released. Task evidence
   stays ignored and hash-bound exported guest screenshot copies are removed.
-- [ ] Explicitly approved exact-source push/nonpublishing desktop CI build, then
-  complete original-signed five-target collection and artifact verification.
+- [x] Approved exact source8c push to existing main and nonpublishing desktop
+  dispatch37735081504 record the same SHA and publish=false. Fresh strict
+  three-lockfile review passes; the existing expiry remains unchanged.
+- [ ] Complete original-signed five-target collection and artifact verification
+  from that exact final-source run; hosted checks are in progress.
 - [ ] Final signed installed desktop updates and recovery matrix; native Windows
   credential repair and Intel Mac availability are external machine inputs.
-- [ ] Explicitly approved exact code-26 internal Play upload and preserved managed
-  ordinary/companion upgrades; production promotion is a separate decision.
+- [x] Approved exact sourceaeaa original-key AAB uploads and publishes code26
+  to the existing internal track/testers. Play reports Available to internal
+  testers; production23 and supported devices are unchanged from internal25.
+- [ ] Preserved managed ordinary/companion upgrades to code26; store availability
+  alone is not installed acceptance. Production promotion is a separate decision.
 - [ ] Approved same-item Web Store upload/submission/certifications and actual
-  preserved-profile update/mixed-version acceptance. Existing unrelated Chrome
-  Save dialog blocks native store inspection and is left intact.
+  preserved-profile update/mixed-version acceptance. Native inspection resumes
+  after the unrelated Save modal clears; published/draft1.1.1 and obsolete
+  permission/privacy explanations are recorded without modifying the item.
 - [ ] Remaining real physical provider/reboot/network/sleep and Linux integration
   outcomes using supported Machine Control routes; no injected-state substitute.
   Reboot qualification needs a canonical profile-unlock credential/handoff;
@@ -75,6 +82,34 @@ a checked local task does not close a delivery row.
 - [x] Final physical cleanup: both owned staging/markers and payload/UI XML
   are absent. Production versions/install/update timestamps match their original
   baselines; B is checked before and after staging mutation. Reports stay ignored.
+
+## Approved Delivery Checkpoint, 2026-10-08
+
+The maintainer subsequently approves ONLY frozen source8c push/nonpublishing
+build and exact sourceaeaa code26 existing internal-track/tester delivery.
+Those actions execute: desktop run37735081504 records exact8c/publish=false;
+Play reports internal26 available and production23 unchanged. The original-key
+AAB independently rehashes to19f9c358 before upload. Existing testers and
+supported devices are unchanged from internal25. English notes are condensed
+to447 characters for the store limit. Its sole missing-deobfuscation warning
+is recorded; exact release minification is disabled. Store availability does
+not qualify managed installations, original-signed desktop collection, public
+release/feed, production website or Web Store publication.
+
+Fresh strict dependency review passes for the unchanged three source8c
+lockfiles: zero vulnerabilities, seven existing reviewed Cargo warnings and
+source-verified GLib backport. The review expiry stays2026-10-12.
+Native Web Store inspection resumes after the unrelated Save modal clears,
+without agent cancellation/submission: published/draft1.1.1 and obsolete
+permission/privacy explanations remain. No Web Store upload/edit occurs.
+
+The approved preview deploy fails its direct-hop checker HTTP403 before
+activation. Tactical276 qualifies only the checker Host correction against
+the actual source8c gateway: wrong Host403, missing credentials401, correct
+static/health/WebSocket pass. The corrected preview activation succeeds; the private listener and HTTPS
+route both pass exact-source static/health/WebSocket checks. Final signed
+candidate packaging is in progress. Physical managed baselines are collected
+before any update; no production sideload, uninstall or data clear is used.
 
 ## Local Production Publisher Checkpoint, 2026-10-08
 
@@ -106,7 +141,8 @@ Both current-APK default three-repetition/hour runs now pass, including full
 40-MiB download/upload hashes, retained filters, joined actual Live/owned-row
 reopen, SAF continuity and cleanup. B uses the bounded native display wake;
 its first whole-run failure remains unchanged. All seven current-APK recovery
-cases pass both devices. No code26 upload or managed Play acceptance is claimed.
+cases pass both devices. Code26 subsequently reaches the approved internal
+track; managed installed acceptance remains separate and open.
 
 Both source0aa physical small-fixture runs independently receive/hash all
 524289 bytes in foreground, background and reopened foreground. Both joined

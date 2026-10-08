@@ -2,6 +2,15 @@
 
 Topic: `android-jstorrent-replacement`
 
+The maintainer explicitly approves exact sourceaeaa original-key code26
+internal-track delivery. Play now reports1.0.26 Available to internal testers
+on the existing track; production23 and existing testers remain unchanged.
+Supported-device counts do not change from internal25. The original AAB
+rehashes to19f9c358 before upload. Managed ordinary/companion installation
+acceptance remains open; availability alone does not qualify an upgrade.
+Native Web Store inspection resumes without changing its published/draft1.1.1
+item or disclosures. Tactical259 owns receipts and continuing qualification.
+
 Current application sourceaeaa72f9 passes normal original-key packaging, 122
 JVM cases/lint, all independent package checks and both exact isolated
 physical installs. Tactical269/270 completes locally with actual fresh
