@@ -114,7 +114,23 @@ absent, restores inherited directory modes and icon/application cache bytes,
 restores product/profile scopes and removes exact owned recent-file metadata.
 VM-off and claim-release checks pass. Native launcher/association activation and
 automatic updating retain their separate requirements. AppImage compositor
-qualification is the next bounded session.
+qualification remains separate, as recorded below.
+
+The exact final signed ARM AppImage also passes eight real old-writer migration
+assertions and six registered refusal routes through its supported no-FUSE
+extract-and-run path. Fresh native accessibility actions disable statistics in
+the owned fixture and acknowledge first use; independent read-only persistence
+confirms version 1/statistics false. Source/payload, stable restart identities,
+normal inherited scopes, exact owned artifact/recent-file removal, VM-off and
+claim release all pass. Three completed repeats retain their scoped receipts.
+Actual AppImage foreground pixels remain unverified: both native compositor
+recordings and resident PNGs fail to expose them, including fresh native tray
+Show, overview and maximize. Debian pixels render on the same guest; a product
+rendering cause is not established. The configured testbed policy absolutely
+prohibits outer UTM capture/input even with a disruptive claim; it is preserved.
+AppImage FUSE mounting, associations and automatic updating remain separate.
+Next executable local check: final signed Linux native launch/ownership and
+controlled file/magnet delivery in an owned isolated scope.
 
 ## Ordered finish-line checklist
 

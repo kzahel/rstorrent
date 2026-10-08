@@ -74,6 +74,11 @@ a checked local task does not close a delivery row.
   retained source/payload and owned disclosure choice. Owned package/files are
   purged, inherited directory/cache bytes restored, recent metadata removed and
   VM off/claim released. Launcher associations and automatic updating stay open.
+- [x] Final ARM AppImage extract-and-run functional migration: eight assertions,
+  six refusal routes, native owned disclosure acknowledgement, preserved bytes
+  and normal scopes, exact owned cleanup, VM off and claim released. Actual
+  foreground pixels remain unavailable through native captures/view changes;
+  outer UI is prohibited by the testbed. FUSE/associations/updater stay open.
 - [x] Source8c hosted CI exposes an Android listener-test readiness race;277
   fixes the test only. Revised local source passes fmt/clippy and1,575 Rust
   cases with18 existing ignores. Revised-source hosted CI remains unperformed.
