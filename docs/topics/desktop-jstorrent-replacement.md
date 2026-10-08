@@ -29,6 +29,17 @@ package-manager installation, AppImage visual acceptance or the remaining native
 Windows/Intel Mac/x64 cohorts. Windows login repair and Intel Mac availability
 remain external testbed inputs. No public tag, release or feed changes.
 
+The final signed ARM Debian package also passes actual `dpkg --install` and
+installed `/usr/bin/rstorrent-desktop` execution: eight migration assertions,
+six refusal routes, native settled/restarted JSTorrent pixels and independently
+preserved source/payload. Preflight refuses inherited package/file collisions.
+Joined cleanup purges only the owned `js-torrent` 0.3.0 package, proves its files
+absent, restores inherited directory modes and icon/application cache bytes,
+restores product/profile scopes and removes exact owned recent-file metadata.
+VM-off and claim-release checks pass. Native launcher/association activation and
+automatic updating retain their separate requirements. AppImage compositor
+qualification is the next bounded session.
+
 Tactical [261](../tactical/261-linux-native-brand-name.md) repairs GNOME's
 tray/accessibility fallback to the internal desktop executable name. The pinned
 GTK/GLib binding initializes the human-readable JSTorrent name before desktop

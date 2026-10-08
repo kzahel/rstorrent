@@ -97,6 +97,17 @@ legacy explanations/privacy URL and three small historical screenshots remain.
 No upload, edited disclosure, certification or submission occurs. Production
 Play remains23; no desktop public tag/release/feed or sibling site deploy occurs.
 
+The final signed ARM Debian package also passes actual `dpkg --install` and
+installed `/usr/bin/rstorrent-desktop` execution: eight migration assertions,
+six refusal routes, native settled/restarted JSTorrent pixels and independently
+preserved source/payload. Preflight refuses inherited package/file collisions.
+Joined cleanup purges only the owned `js-torrent` 0.3.0 package, proves its files
+absent, restores inherited directory modes and icon/application cache bytes,
+restores product/profile scopes and removes exact owned recent-file metadata.
+VM-off and claim-release checks pass. Native launcher/association activation and
+automatic updating retain their separate requirements. AppImage compositor
+qualification is the next bounded session.
+
 ## Ordered finish-line checklist
 
 Checkboxes mean the complete stated check passes. Partial evidence is recorded

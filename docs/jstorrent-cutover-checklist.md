@@ -69,6 +69,11 @@ a checked local task does not close a delivery row.
   preservation, independent inherited-tree restoration and exact owned cleanup;
   transfer server reaped, VM off and claim released. Automatic updating and DMG
   drag/drop qualification remain separate.
+- [x] Final ARM Debian actual package-manager installation and installed binary:
+  eight migration assertions/six refusal routes, readable settled/restart pixels,
+  retained source/payload and owned disclosure choice. Owned package/files are
+  purged, inherited directory/cache bytes restored, recent metadata removed and
+  VM off/claim released. Launcher associations and automatic updating stay open.
 - [x] Source8c hosted CI exposes an Android listener-test readiness race;277
   fixes the test only. Revised local source passes fmt/clippy and1,575 Rust
   cases with18 existing ignores. Revised-source hosted CI remains unperformed.
