@@ -727,3 +727,22 @@ idle/lid policy remains the documented baseline, with no pending OS update.
 These facts do not substitute for physical reboot/network/sleep/provider tests,
 and no unsupported transport route or policy reset is invented. The unrelated
 Chrome Save dialog remains intact; privileged Web Store inspection is blocked.
+
+## Shipment review and physical reboot preflight, 2026-10-08
+
+The ignored shipment review capsule re-reads and independently hashes the exact
+three source-aeaa Android artifacts, production extension 1.1.2 ZIP and all 23
+historical source-a359 desktop assets. It binds component source/versions,
+original upload and managed signing roots, exact targeted physical receipts,
+disabled website state and remaining delivery dependencies. The first inventory
+attempt refuses the misplaced latest.json lookup; the corrected assembled
+inventory passes. This is review preparation, not final signed/store acceptance.
+
+The public ChromeOS guide provides a supported post-update reboot verification
+path and secret-safe profile PIN input. Read-only canonical inventory preflight
+finds no profile credential locator on either physical target. Do not reboot
+into an inaccessible profile, invent a credential or replace the always-awake
+appliance baseline with a sleep test. A configured unlock handoff and explicit
+sleep-policy disposition remain external inputs. Both default full runs have
+passed all three cold-start/download/source-offline restart repetitions; their
+hour stages remain active, with every earlier failed receipt preserved.

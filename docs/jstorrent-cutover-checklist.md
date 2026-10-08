@@ -16,41 +16,50 @@ of the public evidence. No row authorizes publication by itself.
 
 ## Current Executable Finish-Line Progress
 
-These local tasks and delivery dependencies are a quick execution view. The25
+These local tasks and delivery dependencies are a quick execution view. The 25
 full acceptance rows below retain their exact signed/store/cohort requirements;
 a checked local task does not close a delivery row.
 
-- [x] Source branding guard:2037 display values and40 original JSTorrent assets;
-  actual native and responsive website before/after evidence retained locally.
+- [x] Branding guard: 2,037 display values and 40 original JSTorrent assets pass;
+  actual native and responsive website before/after evidence is retained locally.
 - [x] Compatible dependency/security corrections, web typecheck/470 tests,
-  affected46 E2E/54 extension cases and workspace1575 tests/fmt/clippy pass.
-- [x] Final Android sourceaeaa original-key code26 APK/AAB,122 JVM/lint and
-  independent package/labels/API/ABI/alignment/notices validation pass.
-- [x] Bounded native incoming observer269 diagnoses actual pre-admission probe
+  affected 46 E2E/54 extension cases and workspace 1,575 tests/fmt/clippy pass.
+- [x] Final Android source `aeaa72f9`, original-key code-26 APK/AAB, 122 JVM tests,
+  lint and independent package/labels/API/ABI/alignment/notices checks pass.
+- [x] Bounded native incoming observer 269 diagnoses actual pre-admission probe
   ordering without changing engine, listener, background or retry policy.
-- [x] Manual-only production publisher271 passes58 focused cases/workflow lint
-  and historical actual23-asset/15-selection/10-signature local rehearsal.
+- [x] Both original large physical fixtures independently upload/hash all 28 MiB,
+  retain diagnostic filters, join/reopen the actual Live library and preserve SAF
+  registry/payload bytes. Owned cleanup passes; targeted runs do not prove an hour.
+- [x] Manual-only production publisher 271 passes 58 focused cases/workflow lint
+  and the historical actual 23-asset/15-selection/10-signature local rehearsal.
 - [x] Native Linux toolkit name correction is verified on x64; fresh signed ARM
   first-use pixels render. Earlier migrated black captures remain scoped.
+- [x] Concrete shipment review independently rehashes the three Android artifacts,
+  exact production extension ZIP and 23 historical desktop assets. Final signed
+  source, installed cohorts, store delivery and owner approval remain open.
 - [ ] Finish both current-source default three-repetition/detached-hour, full
   independent hash/upload and joined actual Live-reopen physical receipts.
 - [ ] Explicitly approved exact-source push/nonpublishing desktop CI build, then
   complete original-signed five-target collection and artifact verification.
 - [ ] Final signed installed desktop updates and recovery matrix; native Windows
   credential repair and Intel Mac availability are external machine inputs.
-- [ ] Explicitly approved exact code26 internal Play upload and preserved managed
+- [ ] Explicitly approved exact code-26 internal Play upload and preserved managed
   ordinary/companion upgrades; production promotion is a separate decision.
 - [ ] Approved same-item Web Store upload/submission/certifications and actual
   preserved-profile update/mixed-version acceptance. Existing unrelated Chrome
   Save dialog blocks native store inspection and is left intact.
 - [ ] Remaining real physical provider/reboot/network/sleep and Linux integration
   outcomes using supported Machine Control routes; no injected-state substitute.
-- [ ] Reviewed final shipment capsule, independent rollout/halt/rollback owners
-  and explicit delivery instructions; tags/releases/feeds remain unmodified.
+  Reboot qualification needs a canonical profile-unlock credential/handoff;
+  neither physical target currently has one configured. Preserve the appliance's
+  always-awake baseline unless a sleep-policy change is explicitly requested.
+- [ ] Owner-reviewed final shipment capsule, independent rollout/halt/rollback
+  policy and explicit delivery instructions; tags/releases/feeds remain intact.
 - [ ] Actual qualified public inventory, enabled website descriptor and explicitly
   approved production website deployment/public verification.
-- [ ] Final physical cleanup; all VMs are already off between uses with idle
-  claims released. Keep the evidence/report directories ignored.
+- [ ] Final physical cleanup; shut each VM down between uses and release idle
+  claims. Keep the evidence/report directories ignored.
 
 ## Local Production Publisher Checkpoint, 2026-10-08
 
