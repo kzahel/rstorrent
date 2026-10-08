@@ -15,7 +15,11 @@ CI attempt. All packaging legs pass; the collector is canceled while installing
 minisign. Signed macOS ARM, Linux ARM and Linux x64 manual replacement each pass eight
 assertions. Linux verifies six legacy refusal routes and restored guest state.
 Current native Linux x64 product and GTK-alert pixels render correctly; the old
-0.2.1 x64 app remains blank. ARM black captures retain their separate visual gap. Automatic updating and the broader installed
+0.2.1 x64 app remains blank. Earlier ARM migration captures remain black. A fresh native ARM probe of the
+same original-signeda359 package in an isolated HOME now renders the styled
+React Library, JSTorrent header/logo and first-use disclosure in three captures.
+No GPU override or product change is used. This bounds the old black finding
+to its actual run; populated migration/final signed visuals still need evidence. Automatic updating and the broader installed
 matrix retain their separate source/artifact limits. Owned VMs are stopped and
 claims released after each session; no publication occurs.
 

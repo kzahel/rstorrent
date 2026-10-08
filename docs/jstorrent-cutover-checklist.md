@@ -82,7 +82,10 @@ The current signed macOS arm64 package passes independent signing/notarization
 checks and eight manual installed migration checks. Automatic updating and the
 broader installed matrix remain open. Signed Linux ARM and x64 manual migration pass eight assertions and six
 refusal routes, with restored guest state. Current Linux x64 product pixels
-render; ARM black captures and the old x64 blank window retain visual gaps.
+render. Fresh isolated ARM first-use captures now render the same signed
+package, while earlier black migrated captures and the old x64 blank window
+retain their exact-run visual gaps; populated/final signed ARM acceptance is
+still open.
 Current ordinary and companion writer upgrades pass API 28/35 with disposable
 signatures; actual old writers, two SAF roots, partial verification, restart and
 both mixed-version companion pairs pass. Ordinary mode also passes emulator

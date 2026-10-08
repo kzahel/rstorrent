@@ -673,3 +673,22 @@ A fresh claimed Linux ARM signed-package visual probe is prepared through
 Machine Control's common doctor/claim/ensure-ready and platform guide. Only
 that VM is booted for executable work, with shutdown and claim release owned
 by finally cleanup; no idle VM is retained for future builds or approvals.
+
+### Fresh native Linux ARM pixels and terminal VM cleanup
+
+The retained original-signeda359 ARM AppImage renders its styled React Library,
+JSTorrent header/logo and first-use disclosure in a fresh isolated HOME on
+actualaarch64 GNOME Wayland. Three common native full-display captures and the
+exact package hash are retained; images0/1 are identical, image2 has the same
+rendered state with a later clock. No GPU override or product change is used.
+This is bounded first-use rendering, not populated migration, final signed
+T261 acceptance or an automatic updater pass. Earlier black captures remain
+actual failed visual evidence rather than being erased/relabelled.
+
+Finally stops the exact owned systemd unit, verifies inactivity, removes only
+its generated temporary HOME/package directory and observes VM off. Initial
+claim release wrongly included a selected global claim and refuses; the
+correct common management command without global--claim releases it. The
+separate raw/adjudication/release receipts preserve that correction. All VMs
+are off again and idle claims released; the only active tests are the two
+physical Android cohorts. Reports/screenshots remain fully ignored.
