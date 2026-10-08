@@ -799,3 +799,23 @@ fail-closed without recreation and relocated-root repair with stable root ID/
 advanced generation/source-offline recovery. Controlled source interruption
 leaves device networking unchanged; real provider/removable/reboot/network/sleep
 and managed Play acceptance remain separate.
+
+## Bounded ARM cache diagnostic and verified final cleanup, 2026-10-08
+
+Fresh XDG_CACHE_HOME leaves the inherited cache intact and reaches the actual
+four-record migrated library with normal HOME/config/data discovery. Native
+captures remain unusable after ordinary unmaximize; the active-window PNG has
+zero RGBA throughout. This establishes a capture gap, not the actual display's
+pixels or a causal cache/graphics defect. No GPU flags or product policy change.
+
+The controller expires before normal migrated Quit; restart is not reached.
+Keep the raw run failed/incomplete and attribute that incomplete execution to
+the controller, without inventing a product failure. Its signal-aware helper
+restores all inherited state before removing the owned root. Six refusal routes
+pass; the normal-cache run's separate eight migration assertions remain valid.
+
+Remove only 16 guest native PNGs bound to exported local hashes. That cleanup
+call overlaps the first shutdown, and follow-up doctor finds running. A new
+exclusive claim serializes the final shutdown, doctor explicitly confirms off,
+and claim release succeeds. All local exports remain ignored. No owned VM
+needs to remain running for physical tests or external delivery decisions.
