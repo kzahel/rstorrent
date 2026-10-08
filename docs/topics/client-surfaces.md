@@ -23,7 +23,13 @@ Tactical272 keeps the measured28-MiB upload's120-second allowance and scales
 the40-MiB hourly fixture to172 seconds, below the existing300-second helper
 bound. Native admission still has180 seconds; independent file hashes and
 joined cleanup remain mandatory. All51 qualification/five transport cases pass.
-Default current-source full runs are active; no hour or managed pass is inferred.
+Cohort A now passes the whole default source-aeaa run: three cold repetitions,
+3,600-second detached observation, independent full 40-MiB download/upload,
+retained filters, joined actual Live reopen, SAF continuity and cleanup. Its
+loaded driver matches source09342f73 and retains the fixed120-second allowance;
+newer harness changes are not attributed to it. All seven current-APK SAF/source
+recovery cases also pass with independent hashes and cleanup. Cohort B remains
+active with the proportional driver; managed delivery remains unqualified.
 
 Both source0aa physical cohorts independently hash the installed APK and pass
 small foreground/background/reopened upload plus joined Live-library restart,

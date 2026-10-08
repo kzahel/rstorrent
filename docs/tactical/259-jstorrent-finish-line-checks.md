@@ -771,3 +771,31 @@ and missing canberra module; neither observation is accepted as the black-pixel
 cause. No GPU flags, graphics policy, product dependency or trust root changed.
 Final signed T261 source, usable populated ARM pixels and actual updater delivery
 remain unqualified.
+
+## First complete current-source physical receipt, 2026-10-08
+
+Cohort A passes the complete default source-aeaa isolated run, including three
+cold-start/download/source-offline restart repetitions, the 3,600-second
+background observation, independent full 40-MiB download/upload hashes,
+retained diagnostic filters, normal joined shutdown, actual Live/owned-row
+reopen, unchanged SAF registry and cleanup. Loaded qualification bytes resolve
+to Git source09342f73; its original 120-second allowance passes. No newer driver
+change or managed Play claim is inferred. Cohort B's full run remains active.
+The seven actual storage/recovery cases now repeat against this exact current
+APK on A; their original source376 receipts remain unchanged.
+
+A bounded ARM cache comparison is prepared before boot: retain the same signed
+package and real old-writer rehearsal with normal HOME/config/data discovery,
+but put only XDG_CACHE_HOME in a fresh owned directory. Keep the inherited cache
+intact, do not change GPU flags or graphics policy, and restore standard app
+scopes/shut down/release in finally. A different cache/state outcome is diagnosis,
+not final normal signed visual qualification or proof of a causal cache fix.
+
+All seven source-aeaa recovery cases now pass on A with the exact installed APK,
+independent SHA-1 6788172e1ce40d42ebb058a29376a0cd9ba22006 and cleanup ok:
+partial source-offline process restart, restored source/completion, actual SAF
+grant revoke, picker cancel preservation, explicit picker retry, renamed-root
+fail-closed without recreation and relocated-root repair with stable root ID/
+advanced generation/source-offline recovery. Controlled source interruption
+leaves device networking unchanged; real provider/removable/reboot/network/sleep
+and managed Play acceptance remain separate.

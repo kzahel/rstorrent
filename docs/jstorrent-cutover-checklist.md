@@ -38,8 +38,12 @@ a checked local task does not close a delivery row.
 - [x] Concrete shipment review independently rehashes the three Android artifacts,
   exact production extension ZIP and 23 historical desktop assets. Final signed
   source, installed cohorts, store delivery and owner approval remain open.
-- [ ] Finish both current-source default three-repetition/detached-hour, full
-  independent hash/upload and joined actual Live-reopen physical receipts.
+- [x] First physical cohort: current-source three cold repetitions, detached hour,
+  full 40-MiB independent download/upload hashes, retained diagnostic filters,
+  joined actual Live reopen, unchanged SAF state and cleanup all pass. All seven
+  current-APK storage/recovery cases also pass with independent hashes/cleanup.
+- [ ] Second physical cohort: finish the corresponding whole current-source
+  default receipt; its three cold repetitions pass and detached hour is active.
 - [ ] Explicitly approved exact-source push/nonpublishing desktop CI build, then
   complete original-signed five-target collection and artifact verification.
 - [ ] Final signed installed desktop updates and recovery matrix; native Windows

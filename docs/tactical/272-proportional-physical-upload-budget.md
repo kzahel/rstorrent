@@ -61,3 +61,12 @@ is corrected, with the failed log retained. Source upload logic did not change.
 CohortB's default full run is now active with the new bound; cohortA's earlier
 loaded120-second driver remains active and distinctly hashed. Full receipts
 and cleanup remain pending.
+
+Cohort A now passes its complete default run: all three cold repetitions,
+3,600-second detached observation, full 40-MiB download/upload hashes, retained
+filters, joined actual Live reopen, unchanged SAF registry and cleanup. Its
+loaded driver digest matches Git source09342f73 and keeps the historical fixed
+120-second upload allowance. Do not attribute newer proportional/control/reopen
+changes or their timing fields to that real pass. Cohort B remains active with
+the current proportional driver. Whole managed/reboot/provider acceptance stays
+separate; the current-source seven-case recovery repeat has started on A.
