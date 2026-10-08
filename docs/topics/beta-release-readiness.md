@@ -70,6 +70,25 @@ Bounded before/after apport metadata checks find no report tied to either exact
 owned root; unrelated reports/markers/journals/dialogs remain intact. This does
 not qualify normal launcher/associations or automatic updating.
 
+Final signed Linux x64 controlled native launch also passes all twelve driver
+cases in a fresh owned catalog with DHT/PEX off, loopback networking and queried
+owned XDG associations. Twelve post-Quit IPC requests return Retry; busy-owner
+retry and an 8.093-second bounded refusal pass. Native/background/magnet/file
+replacement, both OS association paths with spaces/Unicode, twelve simultaneous
+contenders with one owner, warm activation and 35-second no-resurrection pass.
+The collected cgroup unit reports not loaded at stop; production singleton and
+owned guest/controller roots are absent, VM off and claim release verify. This
+qualifies controlled activation/ownership, not inherited pins, content intake or
+browser/store updating. No product or graphics source change occurs.
+
+Independent Git object/mode comparison finds 736 selected desktop/common Rust,
+web, extension, website, distribution, packaging-script and release-workflow
+inputs unchanged from signed source8c to the proposed CI/Android source681.
+The sole Android Rust change is inside its test module; its runtime prefix is
+identical. Android27's task-lifecycle/version changes remain separately scoped.
+This does not prove new binary reproducibility, replace the signed8c identity,
+or turn the failed8c/unperformed681 hosted CI results green.
+
 Final signed desktop identity/signature gates D-01/D-02 now qualify. Native
 Windows ARM verifies the exact installer hashes, accepted publisher and valid
 Microsoft-timestamped Authenticode without login/install; both Mac archives

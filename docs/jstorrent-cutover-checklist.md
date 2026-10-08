@@ -99,6 +99,14 @@ a checked local task does not close a delivery row.
   owned OS associations, spaces/Unicode, twelve-way one-owner concurrency,
   warm activation and 35-second no-resurrection. Exact owned cleanup/off/release
   pass; inherited pins/browser/store/content-intake scope stays separate.
+- [x] Final signed Linux x64 controlled native launch: twelve scoped driver
+  cases, post-Quit Retry, bounded busy-owner retry/refusal, four launch intents,
+  queried owned OS associations with spaces/Unicode, twelve-way one-owner/warm
+  activation and 35-second no-resurrection; exact owned cleanup/off/release.
+  Inherited pins/content/browser/store requirements remain separate.
+- [x] 736 selected production input Git objects/modes match source8c-to681;
+  Android Rust runtime prefix is identical and its readiness fix is test-only.
+  Signed8c and local Android27 identities remain distinct; hosted CI unchanged.
 - [x] Final signed package identity/signing/notice integrity qualifies D-01/D-02;
   Windows native accepted publisher/timestamps and both Mac Gatekeeper policy
   assessments pass. Fresh exact-lock strict dependency audit passes unchanged.

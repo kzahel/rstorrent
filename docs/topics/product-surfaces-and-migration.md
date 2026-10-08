@@ -32,6 +32,11 @@ Final signed x64 Debian actual installation also passes eight migration/six
 refusal checks, readable native restart and exact owned package/cache/profile
 restoration, with VM off/claim released. Normal launcher/updater gates remain.
 
+Final signed x64 controlled native launch also passes twelve scoped cases,
+including all launch intents, owned OS associations/Unicode, one-owner races
+and stopped-after-Quit behavior, with exact cleanup/off/release. Inherited
+pins, content intake and browser/store updating remain separately open.
+
 Final signed desktop identity/signature gates D-01/D-02 now qualify. Native
 Windows ARM verifies the exact installer hashes, accepted publisher and valid
 Microsoft-timestamped Authenticode without login/install; both Mac archives
