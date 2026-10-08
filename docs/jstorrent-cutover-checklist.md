@@ -79,6 +79,14 @@ a checked local task does not close a delivery row.
   and normal scopes, exact owned cleanup, VM off and claim released. Actual
   foreground pixels remain unavailable through native captures/view changes;
   outer UI is prohibited by the testbed. FUSE/associations/updater stay open.
+- [x] Final signed Linux ARM controlled native launch: twelve post-Quit Retry
+  responses, busy-owner retry/timeout, native/background/magnet/file and both
+  owned OS associations, spaces/Unicode, twelve-way one-owner concurrency,
+  warm activation and 35-second no-resurrection. Exact owned cleanup/off/release
+  pass; inherited pins/browser/store/content-intake scope stays separate.
+- [x] Final signed package identity/signing/notice integrity qualifies D-01/D-02;
+  Windows native accepted publisher/timestamps and both Mac Gatekeeper policy
+  assessments pass. Fresh exact-lock strict dependency audit passes unchanged.
 - [x] Source8c hosted CI exposes an Android listener-test readiness race;277
   fixes the test only. Revised local source passes fmt/clippy and1,575 Rust
   cases with18 existing ignores. Revised-source hosted CI remains unperformed.
@@ -375,10 +383,16 @@ the candidate source and needs a fresh signed build.
   2,037 display values/40 original assets, retained ID/key/route and selected
   legacy0.2.1 ordering qualify. Native/updater/launcher/pixel cohorts remain
   separate installed gates.
-- [ ] **D-02 Desktop signatures:** retained updater key verifies final signatures;
+- [x] **D-02 Desktop signatures:** retained updater key verifies final signatures;
   wrong key fails. macOS Developer ID/team, notarization/stapling/Gatekeeper and
   Windows publisher/signature match the accepted production delivery lane.
-  Reconcile Linux hashes/signatures and exact packaged native host/notices.
+  Exact final source8c qualifies ten retained-root signatures/ten wrong-root
+  refusals, both Mac signatures/notary/staples and local ARM-host Gatekeeper
+  assessments. Native Windows ARM verifies NSIS/MSI hashes, valid accepted-
+  publisher Authenticode and Microsoft timestamps without install/login. Nine
+  independently extracted signed formats reconcile binaries and notice integrity;
+  AppImage source/redistribution review and installed/native acceptance retain
+  separate R-05/P requirements.
 - [ ] **D-03 Android identity:** `com.jstorrent.app`; versionCode exceeds all Play
   tracks, including closed/internal/testing, and selected GitHub APKs. Record
   upload certificate separately from the existing Play app-signing certificate.

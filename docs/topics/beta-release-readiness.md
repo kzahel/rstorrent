@@ -19,6 +19,20 @@ and exact owned package/cache/profile restoration with VM off/claim released.
 Updater and broader installed qualification remain separate. Approved private preview8c
 is deployed and actually verified.
 
+Final signed desktop identity/signature gates D-01/D-02 now qualify. Native
+Windows ARM verifies the exact installer hashes, accepted publisher and valid
+Microsoft-timestamped Authenticode without login/install; both Mac archives
+pass local ARM-host Gatekeeper policy (no Intel execution). Nine exact signed
+formats pass independent binary/notice integrity/provenance inspection. Existing
+native redistribution/source obligations stay under R-05. Final ARM AppImage
+passes migration/refusal/owned acknowledgement/restoration, but native foreground
+pixels stay unavailable and outer UI is prohibited. Final signed ARM native
+controlled launch/OS associations, spaces/Unicode, 12-way one-owner concurrency
+and stopped-after-Quit checks pass; inherited pins/browser/store and other
+architectures remain open. Every completed session cleans up/off/releases.
+Fresh exact-lock strict dependency review passes on 2026-10-08 with the existing
+seven-warning policy, verified GLib backport and unchanged 2026-10-12 expiry.
+
 Internal Play26 is delivered and both preserved managed packages update25-to26
 through Play. The populated cohort retains complete/partial bytes and rows,
 settings and durable SAF grant across engine restart. The other cohort retains

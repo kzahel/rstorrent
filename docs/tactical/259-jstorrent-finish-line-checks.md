@@ -132,6 +132,35 @@ AppImage FUSE mounting, associations and automatic updating remain separate.
 Next executable local check: final signed Linux native launch/ownership and
 controlled file/magnet delivery in an owned isolated scope.
 
+D-02 now qualifies for the final signed source8c packages. Native Windows ARM
+administration verifies the exact NSIS and MSI hashes, valid Authenticode,
+accepted production publisher and Microsoft timestamps without login/install.
+Both exact Mac archives pass local ARM-host Gatekeeper policy assessment as
+Notarized Developer ID; this is not Intel execution. Existing strict/deep
+signatures, both Accepted notarization receipts/staples, ten original-root
+signatures and ten wrong-root refusals retain their immutable proof. Independent
+extraction of nine signed formats reconciles packaged binaries and Rust/npm
+notice hashes/provenance; both AppImages reconcile 179 native components,
+114 distro packages and 131 notice files. Existing native source/redistribution
+review obligations remain separate under R-05. Owned extracts/server/staging
+are removed and Windows returns off with its claim released.
+
+Final signed Linux ARM native launch qualification also passes in a fresh owned
+empty catalog with DHT/PEX disabled and loopback networking. Twelve post-Quit
+IPC requests refuse with Retry; controlled busy-owner retry and eight-second
+timeout pass. Native/background/magnet/file replacement, both queried owned
+XDG associations, spaces/Unicode paths, twelve simultaneous launches with one
+owner, warm native activation and 35 seconds without passive resurrection pass.
+The transient cgroup unit is already collected at cleanup; singleton/root
+absence, VM-off and claim release verify. The earlier driver SIGSEGV and missing
+imported-display failures stay failed and restored/off/released. This proves
+controlled launch/window ownership, not inherited pins, browser/store updating
+or complete content intake/P-06. No product source or graphics change is made.
+
+Fresh exact-lock Cargo/web/website strict release review on 2026-10-08 reports
+zero vulnerabilities, the unchanged seven reviewed warnings and verified GLib
+backport provenance. The review expires 2026-10-12 without extension.
+
 ## Ordered finish-line checklist
 
 Checkboxes mean the complete stated check passes. Partial evidence is recorded
