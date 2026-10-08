@@ -82,6 +82,12 @@ a checked local task does not close a delivery row.
   and normal scopes, exact owned cleanup, VM off and claim released. Actual
   foreground pixels remain unavailable through native captures/view changes;
   outer UI is prohibited by the testbed. FUSE/associations/updater stay open.
+- [x] Final signed Linux x64 AppImage native migration: eight assertions/six
+  refusal routes, readable settled/restarted JSTorrent, independently persisted
+  owned disclosure choice and preserved source/payload. Six exported guest
+  captures and exact guest/controller roots removed; VM off and claim released.
+  Old-app blank pixels, raw recovery copy and unowned system crash dialog remain
+  recorded; FUSE/normal association/updater acceptance stays separate.
 - [x] Final signed Linux ARM controlled native launch: twelve post-Quit Retry
   responses, busy-owner retry/timeout, native/background/magnet/file and both
   owned OS associations, spaces/Unicode, twelve-way one-owner concurrency,

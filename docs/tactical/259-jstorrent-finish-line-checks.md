@@ -91,6 +91,21 @@ bounded provisioning task; canonical private credential-file/registry handoff,
 real cold-boot stored-password login and native readiness are required before
 resuming product qualification. This does not qualify Windows execution yet.
 
+The final original-signed Linux x64 AppImage also passes its native
+extract-and-run migration: eight assertions, six refusal routes, stable four-row
+restart and exact source/payload preservation. Candidate SHA-256 is
+`21d73341845fc1d93f45ae47ed393279a9f250407bfcfe0c22f5a63d75adcce7`.
+All six native captures are visually inspected; settled/restarted JSTorrent
+renders with its original icon/title/header and the owned disclosure choice
+independently persists. The old 0.2.1 window remains blank. A system crash-report
+dialog behind the refusal alert has unestablished ownership and is preserved;
+raw registration recovery copy remains a design gap. The transient cgroup unit
+is already collected at cleanup (stop reports not loaded). Guest/controller
+roots and six hash-bound guest captures are absent; VM off and claim release
+verify. FUSE, normal association delivery and automatic/GUI updating remain
+separate. This is final source8c evidence, superseding historical manual x64
+candidate scope without rewriting those receipts.
+
 D-01 now qualifies for the exact signed desktop source8c candidate and selected
 legacy0.2.1 sources. Independent Mac archive metadata and embedded original
 icons match JSTorrent/com.jstorrent.desktop/0.3.0; the other three signed lane

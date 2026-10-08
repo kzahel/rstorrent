@@ -19,6 +19,15 @@ and exact owned package/cache/profile restoration with VM off/claim released.
 Updater and broader installed qualification remain separate. Approved private preview8c
 is deployed and actually verified.
 
+Final ARM Mac DMG read-only mount/signature/normal bundle installation also
+passes the eight/nine native migration/restart/restoration checks. Final signed
+Linux x64 AppImage passes eight assertions/six refusal routes with readable
+settled/restart branding, preserved bytes and exact owned cleanup/off/release.
+Automatic/GUI updates and broader native installed cohorts remain open.
+The rejected-login Windows x64 appliance rebuild is explicitly authorized and
+delegated; actual cold login and canonical private credential handoff are
+required before native product qualification resumes.
+
 Final signed desktop identity/signature gates D-01/D-02 now qualify. Native
 Windows ARM verifies the exact installer hashes, accepted publisher and valid
 Microsoft-timestamped Authenticode without login/install; both Mac archives

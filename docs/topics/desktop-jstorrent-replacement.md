@@ -79,6 +79,21 @@ AppImage FUSE mounting, associations and automatic updating remain separate.
 The final signed controlled Linux native launch check is recorded below.
 Next executable native cohort: Windows x64 after verified appliance rebuild.
 
+The final original-signed Linux x64 AppImage also passes its native
+extract-and-run migration: eight assertions, six refusal routes, stable four-row
+restart and exact source/payload preservation. Candidate SHA-256 is
+`21d73341845fc1d93f45ae47ed393279a9f250407bfcfe0c22f5a63d75adcce7`.
+All six native captures are visually inspected; settled/restarted JSTorrent
+renders with its original icon/title/header and the owned disclosure choice
+independently persists. The old 0.2.1 window remains blank. A system crash-report
+dialog behind the refusal alert has unestablished ownership and is preserved;
+raw registration recovery copy remains a design gap. The transient cgroup unit
+is already collected at cleanup (stop reports not loaded). Guest/controller
+roots and six hash-bound guest captures are absent; VM off and claim release
+verify. FUSE, normal association delivery and automatic/GUI updating remain
+separate. This is final source8c evidence, superseding historical manual x64
+candidate scope without rewriting those receipts.
+
 D-02 now qualifies for the final signed source8c packages. Native Windows ARM
 administration verifies the exact NSIS and MSI hashes, valid Authenticode,
 accepted production publisher and Microsoft timestamps without login/install.
