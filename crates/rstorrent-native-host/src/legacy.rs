@@ -224,6 +224,11 @@ mod tests {
         assert!(legacy_process_name("jstorrent-io-da"));
         assert!(legacy_process_name("jstorrent-host.exe"));
         assert!(!legacy_process_name("rstorrent-desktop"));
+        assert!(!legacy_process_name("jstorrent-client"));
+        assert!(!legacy_process_name("jstorrent-clien"));
+        assert!(!legacy_process_name("jstorrent-client.exe"));
+        assert!(legacy_process_name("jstorrent-desktop"));
+        assert!(legacy_process_name("jstorrent-deskt"));
         assert!(!legacy_process_name("jstorrent-legacy-refusal-v1"));
     }
 

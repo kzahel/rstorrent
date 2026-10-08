@@ -137,7 +137,8 @@ class NativeNoticeTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve() / 'AppDir'
         self.root.mkdir()
-        for name in native_notices.FIRST_PARTY | {'usr/lib/libexample.so.1', 'usr/lib/libssl.so.3', 'usr/bin/xdg-mime'}:
+        for name in {'usr/bin/jstorrent-client', 'usr/bin/rstorrent-native-host',
+                     'usr/lib/libexample.so.1', 'usr/lib/libssl.so.3', 'usr/bin/xdg-mime'}:
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b'#!/bin/sh\n' if name.endswith('xdg-mime') else b'\x7fELFexample')
@@ -177,6 +178,26 @@ class NativeNoticeTests(unittest.TestCase):
         self.assertEqual(self.native.verify(self.root)['distro_packages'], 2)
         self.assertNotIn(str(self.root.parent), json.dumps(result))
         self.assertTrue(result['remaining_review'])
+
+    def test_historical_desktop_remains_independently_reviewable(self):
+        (self.root / 'usr/bin/jstorrent-client').rename(self.root / 'usr/bin/rstorrent-desktop')
+        result = self.native.collect(self.root, self.provenance)
+        desktops = [item for item in result['components']
+                    if item['path'] in self.native.DESKTOP_BINARIES]
+        self.assertEqual([(item['path'], item['kind']) for item in desktops],
+                         [('usr/bin/rstorrent-desktop', 'first-party')])
+        self.assertEqual(self.native.verify(self.root)['distro_packages'], 2)
+
+    def test_missing_or_duplicate_desktop_is_refused(self):
+        binary = self.root / 'usr/bin/jstorrent-client'
+        old = self.root / 'usr/bin/rstorrent-desktop'
+        old.write_bytes(binary.read_bytes())
+        with self.assertRaisesRegex(ValueError, 'expected first-party binaries'):
+            self.native.collect(self.root, self.provenance)
+        old.unlink()
+        binary.unlink()
+        with self.assertRaisesRegex(ValueError, 'expected first-party binaries'):
+            self.native.collect(self.root, self.provenance)
 
     def test_reviewed_openssl_floors_and_future_security_revisions(self):
         for version in ('3.0.2-0ubuntu1.30', '3.0.2-0ubuntu1.100',

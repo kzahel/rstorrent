@@ -51,6 +51,15 @@ export function validateDesktopReleaseConfiguration({
   if (new Set(Object.values(versions)).size !== 1) {
     fail(`desktop version drift: ${JSON.stringify(versions)}`);
   }
+  if (!/^default-run\s*=\s*"jstorrent-client"$/m.test(cargo) ||
+      !/\[\[bin\]\]\s*name\s*=\s*"jstorrent-client"\s*path\s*=\s*"src\/main\.rs"/u.test(cargo)) {
+    fail("desktop output must be jstorrent-client without changing the Rust package");
+  }
+  for (const config of [tauri, developmentTauri, packageTauri, releaseTauri]) {
+    if (config.mainBinaryName !== undefined) {
+      fail("desktop overlays must not override the branded Cargo executable");
+    }
+  }
   const version = tauri.version;
   if (!/^\d+\.\d+\.\d+$/.test(version)) {
     fail(`desktop version is not stable semver: ${version}`);

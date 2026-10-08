@@ -1,5 +1,13 @@
 # Capability Readiness
 
+Tactical [280](../tactical/280-desktop-executable-display-brand.md) completes locally
+for the actual Windows advanced-firewall executable-label leak observed under
+259. Rename only the desktop output to distinct `jstorrent-client`; retained
+identities, native host, old-writer fence and signing/update routes stay intact.
+All41 Node/23 distribution/85 Rust cases, clippy/fmt and actual unsigned Mac
+bundle output/inventory pass. A fresh specifically approved signed build and
+installed Windows OS-label/migration/updater qualification remain under259.
+
 Tactical [279](../tactical/279-appimage-openssl-security-floor.md) records a
 new native security shipment blocker: the exact signed source8c ARM AppImage
 bundles OpenSSL `3.0.2-0ubuntu1.29`, below Ubuntu USN-8847-1's Jammy fixed

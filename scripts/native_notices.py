@@ -9,7 +9,8 @@ from urllib.parse import quote
 
 MANIFEST = 'usr/share/rstorrent/native-notices/manifest.json'
 NOTICE_ROOT = str(PurePosixPath(MANIFEST).parent)
-FIRST_PARTY = {'usr/bin/rstorrent-desktop', 'usr/bin/rstorrent-native-host'}
+DESKTOP_BINARIES = {'usr/bin/jstorrent-client', 'usr/bin/rstorrent-desktop'}
+FIRST_PARTY = DESKTOP_BINARIES | {'usr/bin/rstorrent-native-host'}
 HELPERS = {'usr/bin/xdg-mime', 'usr/bin/xdg-open'}
 # Exact Tauri apprun-old mirror assets; source/runtime obligations remain open.
 APPRUN = {
@@ -212,7 +213,8 @@ def collect(root, provenance=None):
     root = root.resolve(strict=True)
     provenance = provenance or DpkgProvenance()
     selected = selected_files(root)
-    if not FIRST_PARTY.issubset(selected):
+    if ('usr/bin/rstorrent-native-host' not in selected
+            or len(DESKTOP_BINARIES.intersection(selected)) != 1):
         raise ValueError('AppDir lacks expected first-party binaries')
     components, packages, notices = [], {}, {}
     total = 0
@@ -313,7 +315,8 @@ def verify(root):
             observed.add(item['package'])
         else:
             raise ValueError('unknown native component kind')
-    if observed != set(packages) or not FIRST_PARTY.issubset(declared):
+    if (observed != set(packages) or 'usr/bin/rstorrent-native-host' not in declared
+            or len(DESKTOP_BINARIES.intersection(declared)) != 1):
         raise ValueError('native package provenance is incomplete')
     security = verify_security_floor(data['packages'])
     return {'components': len(actual), 'distro_packages': len(packages), 'notice_files': len(notices),

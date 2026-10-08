@@ -105,7 +105,7 @@ class Registry:
         keys += ["Software\\Classes\\" + name for name in (
             "magnet", "jstorrent", ".torrent", "torrent", "torrentfile", "JSTorrent.torrent", "RSTorrent.torrent",
             "com.jstorrent.desktop.torrent", "com.jstorrent.rstorrent.torrent", r"Applications\JSTorrent.exe", r"Applications\jstorrent-desktop.exe",
-            r"Applications\rstorrent-desktop.exe")]
+            r"Applications\rstorrent-desktop.exe", r"Applications\jstorrent-client.exe")]
         for browser in WIN_BROWSERS:
             keys += [rf"Software\{browser}\NativeMessagingHosts\{name}" for name in
                      ("com.jstorrent.native", "com.jstorrent.rstorrent.native")]
@@ -201,6 +201,9 @@ def main():
     parser.add_argument("--legacy", type=Path, required=True)
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--candidate-sha256", required=True)
+    parser.add_argument("--candidate-executable", choices=("jstorrent-client", "rstorrent-desktop"),
+                        default="jstorrent-client",
+                        help="select rstorrent-desktop only for historical pre-280 packages")
     parser.add_argument("--linux-candidate-format", choices=("appimage", "deb"),
                         default="appimage",
                         help="deb is an extracted native-payload comparison, not an installed update")
@@ -224,7 +227,7 @@ def main():
     if args.linux_candidate_format == "deb":
         candidate_architecture = inspect_debian_candidate(
             platform, architecture, bool(args.trial_installation_id), args.candidate)
-    assert not old_running() and not {"rstorrent-desktop", "rstorrent-deskt"}.intersection(process_names())
+    assert not old_running() and not {"rstorrent-desktop", "rstorrent-deskt", "jstorrent-client", "jstorrent-clien"}.intersection(process_names())
     args.root.mkdir(parents=True)
     sys.stdout = sys.stderr = (args.root / "driver.log").open("w", encoding="utf-8", buffering=1)
     root, home = args.root, Path.home()
@@ -286,7 +289,7 @@ def main():
             destination = root / "debian-candidate"
             subprocess.run(["dpkg-deb", "--extract", str(package), str(destination)],
                            check=True, timeout=60)
-            for name in ("rstorrent-desktop", "rstorrent-native-host"):
+            for name in (args.candidate_executable, "rstorrent-native-host"):
                 binary = destination / "usr/bin" / name
                 assert binary.is_file() and not binary.is_symlink()
                 results.setdefault("debianBinaries", {})[name] = digest(binary)
@@ -305,10 +308,10 @@ def main():
         log = (root / (name + ".log")).open("wb")
         logs.append(log)
         if platform == "windows":
-            binary = app / ("jstorrent-desktop.exe" if name == "legacy" else "rstorrent-desktop.exe")
+            binary = app / ("jstorrent-desktop.exe" if name == "legacy" else args.candidate_executable + ".exe")
             command = [str(binary), *arguments]
         elif candidate_architecture and name != "legacy":
-            command = [str(root / "debian-candidate/usr/bin/rstorrent-desktop"), *arguments]
+            command = [str(root / "debian-candidate/usr/bin" / args.candidate_executable), *arguments]
         else:
             command = [str(app), "--appimage-extract-and-run", *arguments]
         environment = dict(os.environ)
@@ -498,13 +501,13 @@ def main():
         failure.unlink()
         results["checks"].append("registration-failure-blocks-before-catalog")
         if args.trial_installation_id:
-            wanted_binary = digest(app / "rstorrent-desktop.exe") if platform == "windows" else None
+            wanted_binary = digest(app / (args.candidate_executable + ".exe")) if platform == "windows" else None
             install(args.legacy)
             def installed():
                 if platform == "linux":
                     return (app.exists() and app.stat().st_size == args.candidate.stat().st_size
                             and digest(app) == args.candidate_sha256)
-                binary = app / "rstorrent-desktop.exe"
+                binary = app / (args.candidate_executable + ".exe")
                 return (binary.exists() and digest(binary) == wanted_binary
                         and not (app / "jstorrent-desktop.exe").exists())
             args.rehearsal_profile = profiles[0]

@@ -1,5 +1,14 @@
 # Product Surfaces And JSTorrent Migration
 
+Tactical [280](../tactical/280-desktop-executable-display-brand.md) locally
+corrects the desktop output to `jstorrent-client`, preventing the observed
+advanced-firewall filename from retaining the old display brand. The distinct
+name preserves released old-writer process detection. All41 Node/23 native
+distribution/85 Rust cases, clippy/fmt/workflow lint and the actual unsigned
+Mac bundle/inventory pass. Identifiers, host, profiles, networking and updater
+trust/routes remain intact. Fresh signed Windows system-label, migration and
+updater evidence remains required under259; source8c receipts are unchanged.
+
 Topic: `product-surfaces-and-migration`
 
 

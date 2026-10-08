@@ -29,6 +29,9 @@ export function validateMacInfo(info, product = "RSTorrent") {
   if (info.CFBundleIdentifier !== IDENTIFIER) {
     fail(`unexpected macOS bundle identifier ${info.CFBundleIdentifier}`);
   }
+  if (info.CFBundleExecutable !== "jstorrent-client") {
+    fail(`unexpected macOS executable ${info.CFBundleExecutable}`);
+  }
   const urlType = info.CFBundleURLTypes?.find((candidate) =>
     candidate.CFBundleURLSchemes?.includes("magnet"),
   );
@@ -120,6 +123,9 @@ export function validateLinuxDesktop(contents, product = "RSTorrent") {
   if (!exec.endsWith(" %U") || JSON.stringify(fieldCodes) !== JSON.stringify(["%U"])) {
     fail(`Linux handler must forward one URL/file list with %U: ${exec}`);
   }
+  if (exec !== "jstorrent-client %U") {
+    fail(`unexpected Linux installed executable ${exec}`);
+  }
 }
 
 export function validateWindowsAssociations(registry, product = "RSTorrent") {
@@ -127,7 +133,7 @@ export function validateWindowsAssociations(registry, product = "RSTorrent") {
   if (!path.win32.isAbsolute(registry.executable ?? "")) {
     fail("Windows installed executable must be absolute");
   }
-  if (path.win32.basename(registry.executable).toLowerCase() !== "rstorrent-desktop.exe") {
+  if (path.win32.basename(registry.executable).toLowerCase() !== "jstorrent-client.exe") {
     fail(`unexpected Windows installed executable ${registry.executable}`);
   }
   if (registry.torrentProgId !== TORRENT_FILE_CLASS) {

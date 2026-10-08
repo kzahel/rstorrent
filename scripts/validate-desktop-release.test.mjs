@@ -340,3 +340,13 @@ test("rejects a disabled native notice hook or shared tool cache", () => {
   release.releaseTauri.build.beforeBundleCommand = "true";
   assert.throws(() => validateDesktopReleaseConfiguration(release), /native notice hook/);
 });
+
+test("rejects old output target and bundle-only executable overrides", () => {
+  const target = repositoryFixture();
+  target.cargo = target.cargo.replace('default-run = "jstorrent-client"',
+    'default-run = "rstorrent-desktop"');
+  assert.throws(() => validateDesktopReleaseConfiguration(target), /desktop output must be/u);
+  const overlay = repositoryFixture();
+  overlay.releaseTauri.mainBinaryName = "rstorrent-desktop";
+  assert.throws(() => validateDesktopReleaseConfiguration(overlay), /must not override/u);
+});

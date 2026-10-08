@@ -413,7 +413,7 @@ jobs:
             throw "Expected one NSIS installer; found $($installer.Count)"
           }
           $installDirectory = Join-Path $env:LOCALAPPDATA 'JSTorrent Preview'
-          $executable = Join-Path $installDirectory 'rstorrent-desktop.exe'
+          $executable = Join-Path $installDirectory 'jstorrent-client.exe'
           $nativeHost = Join-Path $installDirectory 'rstorrent-native-host.exe'
           try {
             $install = Start-Process -FilePath $installer[0].FullName -ArgumentList '/S' -Wait -PassThru

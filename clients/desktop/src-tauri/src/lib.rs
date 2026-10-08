@@ -1379,7 +1379,7 @@ async fn deliver_desktop_notification(
         .appname("JSTorrent")
         .summary(notification.title)
         .body(&notification.body)
-        .icon("rstorrent-desktop")
+        .icon("jstorrent-client")
         .timeout(notify_rust::Timeout::Never)
         .action("default", desktop_localization::text("notification.open"));
     let handle = match native.show_async().await {

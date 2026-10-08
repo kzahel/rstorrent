@@ -101,6 +101,9 @@ def main():
     parser.add_argument("--legacy", type=Path, required=True)
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--candidate-sha256", required=True)
+    parser.add_argument("--candidate-executable", choices=("jstorrent-client", "rstorrent-desktop"),
+                        default="jstorrent-client",
+                        help="select rstorrent-desktop only for historical pre-280 packages")
     parser.add_argument("--trial-installation-id", type=Path,
                         help="Use the released HTTPS updater instead of manual replacement")
     parser.add_argument("--trial-gui", action="store_true")
@@ -143,7 +146,7 @@ def main():
     def launch(name, arguments=()):
         log = (root / (name + ".log")).open("wb")
         logs.append(log)
-        binary = "jstorrent-desktop" if name == "legacy" else "rstorrent-desktop"
+        binary = "jstorrent-desktop" if name == "legacy" else args.candidate_executable
         child = subprocess.Popen([str(app / "Contents/MacOS" / binary), *arguments],
                                  stdin=subprocess.DEVNULL, stdout=log, stderr=log)
         children.append(child)
@@ -210,13 +213,13 @@ def main():
         # Refuse interference with an inherited running torrent app/host.
         process_names = subprocess.check_output(["/bin/ps", "-U", str(os.getuid()), "-o", "comm="]).decode()
         assert not any(Path(line.strip()).name in LEGACY_BINARIES or
-                       Path(line.strip()).name == "rstorrent-desktop" for line in process_names.splitlines())
+                       Path(line.strip()).name in {"rstorrent-desktop", "jstorrent-client"} for line in process_names.splitlines())
         old_app = extract(args.legacy, root / "old")
         new_app = extract(args.candidate, root / "new")
         for name, sha in LEGACY_BINARIES.items():
             assert digest(old_app / "Contents/MacOS" / name) == sha
         results["legacyBinaries"] = LEGACY_BINARIES
-        results["candidateBinarySha256"] = digest(new_app / "Contents/MacOS/rstorrent-desktop")
+        results["candidateBinarySha256"] = digest(new_app / "Contents/MacOS" / args.candidate_executable)
         for path in (app, native, product, home / "Library/Preferences/com.jstorrent.desktop.plist",
                      home / "Library/Saved Application State/com.jstorrent.desktop.savedState",
                      home / "Library/Caches/com.jstorrent.desktop",
@@ -316,9 +319,9 @@ def main():
         if args.trial_installation_id:
             shutil.rmtree(app)
             shutil.copytree(old_app, app)
-            wanted_binary = digest(new_app / "Contents/MacOS/rstorrent-desktop")
+            wanted_binary = digest(new_app / "Contents/MacOS" / args.candidate_executable)
             def installed():
-                binary = app / "Contents/MacOS/rstorrent-desktop"
+                binary = app / "Contents/MacOS" / args.candidate_executable
                 return binary.exists() and digest(binary) == wanted_binary
             args.rehearsal_profile = profiles[0]
             phase("ready-for-signed-update")

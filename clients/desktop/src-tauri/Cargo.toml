@@ -5,6 +5,11 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
+default-run = "jstorrent-client"
+
+[[bin]]
+name = "jstorrent-client"
+path = "src/main.rs"
 
 [features]
 default = ["direct-file-webrtc"]

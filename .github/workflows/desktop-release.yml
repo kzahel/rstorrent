@@ -502,7 +502,7 @@ jobs:
             throw "Expected one NSIS installer; found $($installer.Count)"
           }
           $installDirectory = Join-Path $env:LOCALAPPDATA $env:PACKAGE_DISPLAY_NAME
-          $executable = Join-Path $installDirectory 'rstorrent-desktop.exe'
+          $executable = Join-Path $installDirectory 'jstorrent-client.exe'
           try {
             $install = Start-Process -FilePath $installer[0].FullName -ArgumentList '/S' -Wait -PassThru
             if ($install.ExitCode -ne 0) {
