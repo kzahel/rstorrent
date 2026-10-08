@@ -34,7 +34,7 @@ a checked local task does not close a delivery row.
 - [x] Manual-only production publisher 271 passes 58 focused cases/workflow lint
   and the historical actual 23-asset/15-selection/10-signature local rehearsal.
 - [x] Native Linux toolkit name correction is verified on x64; fresh signed ARM
-  first-use pixels render. Earlier migrated black captures remain scoped.
+  first-use pixels render. Migrated native frame captures are transparent; populated visual acceptance remains open.
 - [x] Concrete shipment review independently rehashes the three Android artifacts,
   exact production extension ZIP and 23 historical desktop assets. Final signed
   source, installed cohorts, store delivery and owner approval remain open.
@@ -42,8 +42,15 @@ a checked local task does not close a delivery row.
   full 40-MiB independent download/upload hashes, retained diagnostic filters,
   joined actual Live reopen, unchanged SAF state and cleanup all pass. All seven
   current-APK storage/recovery cases also pass with independent hashes/cleanup.
-- [ ] Second physical cohort: finish the corresponding whole current-source
-  default receipt; its three cold repetitions pass and detached hour is active.
+- [x] Both physical cohorts: all seven current-APK storage/recovery cases pass,
+  including actual grants/picker/relocation, independent hashes and cleanup.
+- [x] Proportional upload 272 passes boundary/refusal/forwarding tests and actual
+  B full 40-MiB independent upload within the 172-second bound.
+- [ ] Second physical cohort: its hour/download/upload/filter components pass;
+  whole receipt fails reopened-library observation while ARC is stopped/sleeping.
+  Native display-wake 273 passes 54 portable cases; targeted/full repeat pending.
+- [x] Linux, Windows and macOS VMs are off; idle claims released. Task evidence
+  stays ignored and hash-bound exported guest screenshot copies are removed.
 - [ ] Explicitly approved exact-source push/nonpublishing desktop CI build, then
   complete original-signed five-target collection and artifact verification.
 - [ ] Final signed installed desktop updates and recovery matrix; native Windows
@@ -62,8 +69,9 @@ a checked local task does not close a delivery row.
   policy and explicit delivery instructions; tags/releases/feeds remain intact.
 - [ ] Actual qualified public inventory, enabled website descriptor and explicitly
   approved production website deployment/public verification.
-- [ ] Final physical cleanup; shut each VM down between uses and release idle
-  claims. Keep the evidence/report directories ignored.
+- [ ] Final physical cleanup after active checks. A's owned staging/marker and
+  payload/UI XML are absent; production version/timestamps unchanged. B still
+  owns its prepared test session. Keep evidence/report directories ignored.
 
 ## Local Production Publisher Checkpoint, 2026-10-08
 
