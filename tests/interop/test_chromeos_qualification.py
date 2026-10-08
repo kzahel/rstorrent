@@ -9,10 +9,22 @@ from unittest.mock import Mock, patch
 import xml.etree.ElementTree as ET
 
 import android_reactive_surface as product
-from chromeos_android_qualification import wait_unique_observed_control, observation_result, PACKAGE, RemoteAdb, confirm_intake, finish_first_use, native_maximize_arguments, reset_owned_profile, create_owned_fixture, observation_payload_size, reopened_library_action
+from chromeos_android_qualification import diagnostic_rows_match_filter, wait_unique_observed_control, observation_result, PACKAGE, RemoteAdb, confirm_intake, finish_first_use, native_maximize_arguments, reset_owned_profile, create_owned_fixture, observation_payload_size, reopened_library_action
 
 
 class QualificationSafety(unittest.TestCase):
+    def test_selected_filter_label_cannot_establish_filtered_rows(self):
+        nodes = list(ET.fromstring('<h><n text="Minimum: warning"/><n text="info · integrity.hash"/></h>').iter())
+        self.assertFalse(diagnostic_rows_match_filter(nodes, 'warning'))
+        nodes = list(ET.fromstring('<h><n text="Category: peer"/><n text="info · peer.connection"/><n text="warning · discovery.reachability"/></h>').iter())
+        self.assertFalse(diagnostic_rows_match_filter(nodes, 'info', 'peer'))
+
+    def test_filtered_visible_rows_and_explicit_empty_state_are_accepted(self):
+        nodes = list(ET.fromstring('<h><n text="warning · peer.connection.retry"/><n text="error · peer.connection"/></h>').iter())
+        self.assertTrue(diagnostic_rows_match_filter(nodes, 'warning', 'peer'))
+        self.assertFalse(diagnostic_rows_match_filter(list(ET.fromstring('<h><n text="Minimum: warning"/></h>').iter()), 'warning'))
+        self.assertTrue(diagnostic_rows_match_filter(list(ET.fromstring('<h><n text="No diagnostic records match the current filter"/></h>').iter()), 'warning'))
+
     def test_delayed_filter_control_uses_fresh_observed_bounds(self):
         snapshots = [ET.fromstring('<h/>'), ET.fromstring('<h><n text="Minimum: info" enabled="true" bounds="[1,2][31,42]"/></h>')]
         with patch.object(product, 'dump_ui', side_effect=snapshots), patch('chromeos_android_qualification.time.sleep'):

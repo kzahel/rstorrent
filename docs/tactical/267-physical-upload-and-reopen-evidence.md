@@ -122,3 +122,22 @@ exactly68 handshake bytes with a unique peer identity and receives zero bytes,
 with clean joined tunnel stderr; no specific engine/lifetime cause is inferred.
 Latest-source trial3 captures actual Live/owned-row after diagnostic filter
 replacement on cohortB. Peer failure UI capture and cleanup are pending.
+
+### Two-device small transport and asynchronous-filter checkpoint
+
+Both source0aa physical small-fixture runs verify the installed APK hash and
+independently receive/hash all524289 bytes in foreground, background and
+reopened foreground. Both actual joined shutdown/Live-library return, retained
+SAF registry, unchanged payload and owned cleanup pass. This two-positive-file
+512-KiB component excludes the large fixture's120 empty files and cannot qualify
+its metadata, seeding refusal or hour. The first small controller attempt used
+an unconfigured helper folder selector and failed before transfer; its failed
+receipt/cleanup remain. Corrected target-specific helper selectors pass.
+
+Large trial3 on both devices restores retained history/actual Live library but
+upload still receives zero peers/bytes. Actual peer view shows completed-file
+registration accepted; EOF is not proof of missing registration. A newly selected
+category can precede its backend snapshot. Wait for actual visible rows matching
+selected severity/category, or its explicit empty state; a changed button alone
+cannot pass. Two regressions bring portable driver coverage to26. Source-level
+observer work proceeds under269 without changing engine/network policy.

@@ -1,6 +1,6 @@
 # Tactical 266: Android Diagnostic History Resynchronization
 
-Status: Active, 2026-10-08. Bounded finish-line follow-up to 259.
+Status: Complete locally, 2026-10-08. Bounded finish-line follow-up to 259.
 
 Topics: `client-surfaces`, `application-view-api`,
 `android-jstorrent-replacement`.
@@ -66,3 +66,14 @@ packaging checks. Actual Live-library return is now explicitly required by
 the next bounded trial; completed-file upload and joined reopen remain
 separate pending gates. The diagnostic queue fix is not asserted as their
 cause or remedy.
+
+## Bounded physical completion checkpoint
+
+Both source0aa physical trial3 receipts complete actual retained Logs controls,
+restored large history without a new snapshot queue error, and actual Live/owned
+library return. Local-eviction counters are2602 and2603; native PNGs are retained
+in ignored259 evidence. Both finally cleanups pass. Later independent upload
+fails, so the whole receipts remain failed. Control labels alone do not verify
+all asynchronous filter results;267 now separately waits for visible rows to
+match selected severity/category. Queue/resync and Live recovery are complete
+locally, not a whole hour/upload/store qualification.

@@ -2,6 +2,19 @@
 
 Topic: `application-view-api`
 
+Tactical [269](../tactical/269-android-incoming-peer-diagnostic-evidence.md)
+adds a bounded read-only native incoming observer for the unresolved physical
+large-fixture refusal. Fifteen Android Rust cases/clippy pass; generated builds
+and actual snapshots remain pending. No engine/network policy is changed.
+Both source0aa physical cohorts independently hash the installed APK and pass
+small foreground/background/reopened upload plus joined Live-library restart,
+retained SAF registry and cleanup. This closes Tactical260's bounded local
+shutdown evidence, not the failed large-metadata/hour or managed delivery gates.
+Tactical266's restored native retained history/Live-library component also passes
+both cohorts. Whole upload receipts remain failed; severity/category button
+changes alone cannot prove asynchronous filtering. Tactical267 now checks actual
+visible filtered rows, with26 passing portable driver cases.
+
 Tactical [266](../tactical/266-android-diagnostic-history-resynchronization.md)
 repairs Android's diagnostic-only queue after a real 581,079-byte history cannot
 resynchronize through 256 KiB. Source `2adf2eb1` requests the existing 4-MiB
@@ -10,7 +23,8 @@ retains 512 rows. The real retention regression rejects the old budget, delivers
 473,255 bytes and resynchronizes unchanged history. Normal original-signed and
 isolated dual-ABI builds, 121 release JVM cases, lint and independent package
 checks pass. Full session checks pass 387 cases with two existing ignores.
-Physical resubscription/upload/reopen remain active; no store upload occurs.
+Bounded physical retained-history/Live return passes; large-fixture upload
+and managed delivery remain open under259/267. No store upload occurs.
 
 Tactical [267](../tactical/267-physical-upload-and-reopen-evidence.md) strengthens
 actual upload transport/readiness/counter and observed retained-settings

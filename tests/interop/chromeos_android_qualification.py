@@ -219,6 +219,28 @@ def verify_completed_upload(adb, fixture, registry, target, listener_port):
     return bootstrap.verify_product_upload(ForwardedAdb(), upload_fixture, device_port=listener_port, leech_timeout_seconds=120)
 
 
+def diagnostic_rows_match_filter(nodes, minimum, category=""):
+    labels = {node.get("text", "") for node in nodes}
+    rows = [match.groups() for label in labels
+            if (match := re.fullmatch(r"(trace|debug|info|warning|error) · ([a-z][a-z0-9_.]*)", label))]
+    levels = {"trace": 0, "debug": 1, "info": 2, "warning": 3, "error": 4}
+    if not rows:
+        return "No diagnostic records match the current filter" in labels
+    return all(levels[level] >= levels[minimum] and
+               (not category or value == category or value.startswith(category + "."))
+               for level, value in rows)
+
+
+def wait_diagnostic_filter_rows(adb, minimum, category=""):
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        nodes = list(product.dump_ui(adb).iter())
+        if diagnostic_rows_match_filter(nodes, minimum, category):
+            return nodes
+        time.sleep(.5)
+    raise RuntimeError("actual visible diagnostic rows did not settle to the selected filter")
+
+
 def verify_retained_diagnostic_view(adb, capture, expected_name):
     # Real log filters replace the native subscription with a full retained
     # snapshot. Exercise this after a large verified transfer, not an empty
@@ -230,9 +252,14 @@ def verify_retained_diagnostic_view(adb, capture, expected_name):
     baseline = set(adb.run(*log_args).stdout.splitlines())
     adb.shell("am", "start", "-W", "-n", ACTIVITY)
     for field, value in [("content-desc", "More options"), ("text", "Logs"),
-                         ("text", "Minimum: info"), ("text", "warning"),
-                         ("text", "Minimum: warning"), ("text", "info")]:
+                         ("text", "Minimum: info"), ("text", "warning")]:
         product.tap_bounds(adb, wait_unique_observed_control(adb, field, value).get("bounds"))
+    wait_unique_observed_control(adb, "text", "Minimum: warning")
+    wait_diagnostic_filter_rows(adb, "warning")
+    capture("06-retained-diagnostic-warning-filter")
+    for field, value in [("text", "Minimum: warning"), ("text", "info")]:
+        product.tap_bounds(adb, wait_unique_observed_control(adb, field, value).get("bounds"))
+    wait_diagnostic_filter_rows(adb, "info")
     deadline = time.monotonic() + 30
     summary = None
     while time.monotonic() < deadline:
@@ -267,8 +294,8 @@ def capture_failed_upload_peer_view(adb, capture, destination):
                          ("text", "Category: all"), ("text", "peer")]:
         product.tap_bounds(adb, wait_unique_observed_control(adb, field, value).get("bounds"))
     wait_unique_observed_control(adb, "text", "Category: peer")
-    nodes = product.dump_ui(adb)
-    destination.write_text(ET.tostring(nodes, encoding="unicode"))
+    nodes = wait_diagnostic_filter_rows(adb, "info", "peer")
+    destination.write_text(ET.tostring(nodes[0], encoding="unicode"))
     capture("failure-peer-diagnostics")
 
 

@@ -2,6 +2,19 @@
 
 Topic: `incoming-reachability-and-seeding`
 
+Tactical [269](../tactical/269-android-incoming-peer-diagnostic-evidence.md)
+adds a bounded read-only native incoming observer for the unresolved physical
+large-fixture refusal. Fifteen Android Rust cases/clippy pass; generated builds
+and actual snapshots remain pending. No engine/network policy is changed.
+Both source0aa physical cohorts independently hash the installed APK and pass
+small foreground/background/reopened upload plus joined Live-library restart,
+retained SAF registry and cleanup. This closes Tactical260's bounded local
+shutdown evidence, not the failed large-metadata/hour or managed delivery gates.
+Tactical266's restored native retained history/Live-library component also passes
+both cohorts. Whole upload receipts remain failed; severity/category button
+changes alone cannot prove asynchronous filtering. Tactical267 now checks actual
+visible filtered rows, with26 passing portable driver cases.
+
 Tactical [267](../tactical/267-physical-upload-and-reopen-evidence.md) strengthens
 actual upload transport/readiness/counter and observed retained-settings
 navigation evidence. Both source-376 physical runs pass their full 3,600-second

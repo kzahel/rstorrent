@@ -163,6 +163,64 @@ pub struct AndroidDownloadResourceSnapshot {
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
+pub struct AndroidIncomingRejectionCount {
+    pub reason: String,
+    pub count: u64,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct AndroidIncomingRejection {
+    pub reason: String,
+    pub info_hash: Option<String>,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct AndroidIncomingPeerSnapshot {
+    pub listen_port: u16,
+    pub registrations: u64,
+    pub pending: u64,
+    pub established: u64,
+    pub payload_bytes_sent: u64,
+    pub rejection_counts: Vec<AndroidIncomingRejectionCount>,
+    pub rejection_counts_truncated: bool,
+    pub recent_rejections: Vec<AndroidIncomingRejection>,
+    pub recent_rejections_truncated: bool,
+}
+
+fn incoming_peer_snapshot_view(
+    snapshot: rstorrent_engine::IncomingPeerServiceSnapshot,
+) -> AndroidIncomingPeerSnapshot {
+    AndroidIncomingPeerSnapshot {
+        listen_port: snapshot.listen_address.port(),
+        registrations: snapshot.registrations as u64,
+        pending: snapshot.pending as u64,
+        established: snapshot.established as u64,
+        payload_bytes_sent: snapshot.payload_bytes_sent,
+        rejection_counts_truncated: snapshot.rejection_counts.len() > 32,
+        rejection_counts: snapshot
+            .rejection_counts
+            .into_iter()
+            .take(32)
+            .map(|(reason, count)| AndroidIncomingRejectionCount {
+                reason: format!("{reason:?}"),
+                count,
+            })
+            .collect(),
+        recent_rejections_truncated: snapshot.recent_rejections.len() > 4,
+        recent_rejections: snapshot
+            .recent_rejections
+            .into_iter()
+            .rev()
+            .take(4)
+            .map(|entry| AndroidIncomingRejection {
+                reason: format!("{:?}", entry.reason),
+                info_hash: entry.info_hash.map(|hash| hex(&hash)),
+            })
+            .collect(),
+    }
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
 pub struct AndroidCompanionPairingPending {
     pub request_id: String,
     pub extension_id: String,
@@ -487,6 +545,18 @@ impl AndroidApplicationClient {
             .subscribe(spec)
             .map_err(|error| AndroidClientError::message(error.to_string()))?;
         Ok(Arc::new(AndroidViewSubscription { subscription }))
+    }
+
+    pub async fn incoming_peer_snapshot(
+        &self,
+    ) -> Result<Option<AndroidIncomingPeerSnapshot>, AndroidClientError> {
+        self.ensure_running()?;
+        Ok(self
+            .service
+            .lock()
+            .await
+            .incoming_peer_snapshot()
+            .map(incoming_peer_snapshot_view))
     }
 
     pub async fn mse_dh_work_snapshot(
@@ -2356,6 +2426,13 @@ mod tests {
         .await
         .expect("open initially blocked product application");
 
+        assert!(
+            client
+                .incoming_peer_snapshot()
+                .await
+                .expect("observe offline application")
+                .is_none()
+        );
         let allowed = client
             .set_network_prerequisite(AndroidApplicationNetworkPrerequisite::Allowed)
             .await
@@ -2379,8 +2456,99 @@ mod tests {
             .shutdown()
             .await
             .expect("shutdown product application");
+        assert!(client.incoming_peer_snapshot().await.is_err());
         drop(client);
         fs::remove_dir_all(root).expect("remove product fixture");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn incoming_peer_observer_reports_real_rejections_with_bounded_history() {
+        let root = test_path("application-incoming-observer");
+        let content = root.join("content");
+        fs::create_dir_all(&content).expect("create content root");
+        let client = AndroidApplicationClient::open(AndroidApplicationConfig {
+            product_data_root: root.join("product").display().to_string(),
+            product_version: "0.1-test".to_owned(),
+            profile_root: root.join("profile").display().to_string(),
+            profile_id: "test".to_owned(),
+            storage_root: content.display().to_string(),
+            platform_storage: false,
+            platform_storage_roots: Vec::new(),
+            network_policy: AndroidNetworkPolicy::LoopbackOnly,
+            initial_network_prerequisite: AndroidApplicationNetworkPrerequisite::Allowed,
+            peer_connect_timeout_seconds: 15,
+            peer_io_timeout_seconds: 60,
+        })
+        .await
+        .expect("open loopback application");
+        client
+            .dispatch(RequestEnvelope {
+                version: rstorrent_session::CONTROL_VERSION,
+                request_id: "enable-owned-loopback-observer".to_owned(),
+                expected_revision: None,
+                command: rstorrent_session::Command::UpdateClientSettings {
+                    patch: rstorrent_session::ClientSettingsPatch {
+                        listener: Some(rstorrent_session::ListenerPolicy::AutomaticLoopback),
+                        ..Default::default()
+                    },
+                },
+            })
+            .await
+            .expect("enable only the owned loopback listener");
+        let initial = client
+            .incoming_peer_snapshot()
+            .await
+            .expect("observe incoming")
+            .expect("listener active");
+        assert_ne!(initial.listen_port, 0);
+        assert_eq!(initial.registrations, 0);
+        assert_eq!(initial.pending, 0);
+        assert_eq!(initial.established, 0);
+        assert_eq!(initial.payload_bytes_sent, 0);
+        for _ in 0..6 {
+            let mut stream = std::net::TcpStream::connect_timeout(
+                &std::net::SocketAddr::from(([127, 0, 0, 1], initial.listen_port)),
+                Duration::from_secs(2),
+            )
+            .expect("connect bounded unknown peer");
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .expect("bound peer read");
+            stream
+                .write_all(&rstorrent_protocol::peer_wire::encode_handshake(
+                    [0xab; 20], [7; 20],
+                ))
+                .expect("send unknown hash");
+            assert_eq!(
+                stream.read(&mut [0; 1]).expect("receive rejected peer EOF"),
+                0
+            );
+        }
+        let observed = client
+            .incoming_peer_snapshot()
+            .await
+            .expect("observe rejection")
+            .expect("listener remains active");
+        assert_eq!(observed.listen_port, initial.listen_port);
+        assert_eq!(observed.rejection_counts.len(), 1);
+        assert_eq!(observed.rejection_counts[0].reason, "UnknownTorrent");
+        assert_eq!(observed.rejection_counts[0].count, 6);
+        assert!(!observed.rejection_counts_truncated);
+        assert_eq!(observed.recent_rejections.len(), 4);
+        assert!(observed.recent_rejections_truncated);
+        assert!(
+            observed
+                .recent_rejections
+                .iter()
+                .all(|entry| entry.reason == "UnknownTorrent"
+                    && entry.info_hash.as_deref()
+                        == Some("abababababababababababababababababababab"))
+        );
+        assert!(!format!("{observed:?}").contains("127.0.0.1"));
+        client.shutdown().await.expect("join incoming application");
+        assert!(client.incoming_peer_snapshot().await.is_err());
+        drop(client);
+        fs::remove_dir_all(root).expect("remove incoming fixture");
     }
 
     #[tokio::test]

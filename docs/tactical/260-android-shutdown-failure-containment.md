@@ -1,6 +1,6 @@
 # Tactical 260: Android Shutdown Failure Containment
 
-Status: Active, 2026-10-07. Bounded follow-up to finish-line Tactical 259.
+Status: Complete locally, 2026-10-07. Bounded follow-up to finish-line Tactical 259.
 
 Topics: `client-surfaces`, `android-jstorrent-replacement`,
 `incoming-reachability-and-seeding`.
@@ -64,3 +64,18 @@ is independently checked; installation on cohort B passes. Physical checks
 are pending. The 259
 runner now records package-filtered activity/service state during observations
 and the separate crash buffer before failure cleanup.
+
+## Bounded physical completion checkpoint, 2026-10-08
+
+Both physical cohorts independently verify the installed source0aa isolated
+APK SHA256 de4aea6fcb6ca0ecd3dc228e3bc3ead01633832175f96566d27045bb1d772b22.
+Each serves all524289 bytes of an owned two-positive-file fixture in foreground,
+background and reopened foreground; every leeched file is independently hashed.
+Disable seeding through actual UI, detach, observe product_shutdown_complete
+with cleanup_failed=false and absent service, then reopen the actual Live/owned
+library. Retained SAF registry and payload SHA1
+ad2d0afead4a97989b13253076ba99e020acf3df remain unchanged. Both owned cleanups
+pass. This is bounded debug evidence, not managed Play delivery, a recreated
+uncertain-router failure or large-metadata/hour qualification. Five typed
+failure/cancellation release regressions and normal122-JVM/lint/original-signed
+packaging evidence remain. Larger seeding refusal stays separate under267/269.

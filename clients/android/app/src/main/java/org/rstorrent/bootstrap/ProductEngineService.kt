@@ -2620,6 +2620,21 @@ class ProductEngineService : Service() {
                                 "progress=${torrent.progress.reason}",
                         )
                     }
+                    action == "observe_incoming" -> {
+                        val snapshot = withTimeout(10_000) { client.incomingPeerSnapshot() }
+                        if (snapshot == null) {
+                            Log.i(TAG, "incoming_peer_snapshot torrent=$torrentId available=false")
+                        } else {
+                            val counts = snapshot.rejectionCounts.joinToString(",") { "${it.reason}:${it.count}" }
+                            val recent = snapshot.recentRejections.joinToString(",") { "${it.reason}:${it.infoHash ?: "none"}" }
+                            Log.i(TAG, "incoming_peer_snapshot torrent=$torrentId available=true " +
+                                "port=${snapshot.listenPort} registrations=${snapshot.registrations} " +
+                                "pending=${snapshot.pending} established=${snapshot.established} " +
+                                "payload=${snapshot.payloadBytesSent} rejections=$counts " +
+                                "recent=$recent counts_truncated=${snapshot.rejectionCountsTruncated} " +
+                                "recent_truncated=${snapshot.recentRejectionsTruncated}")
+                        }
+                    }
                     action == "force_recheck" -> forceRecheckAndAwaitForTest(torrentId)
                     action == "remove" ->
                         dispatchAwait(
