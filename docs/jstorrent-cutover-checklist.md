@@ -14,6 +14,44 @@ certificate/key fingerprints, platform/build, observation and recovery outcome
 for each installed cohort. Keep personal paths, credentials and private keys out
 of the public evidence. No row authorizes publication by itself.
 
+## Current Executable Finish-Line Progress
+
+These local tasks and delivery dependencies are a quick execution view. The25
+full acceptance rows below retain their exact signed/store/cohort requirements;
+a checked local task does not close a delivery row.
+
+- [x] Source branding guard:2037 display values and40 original JSTorrent assets;
+  actual native and responsive website before/after evidence retained locally.
+- [x] Compatible dependency/security corrections, web typecheck/470 tests,
+  affected46 E2E/54 extension cases and workspace1575 tests/fmt/clippy pass.
+- [x] Final Android sourceaeaa original-key code26 APK/AAB,122 JVM/lint and
+  independent package/labels/API/ABI/alignment/notices validation pass.
+- [x] Bounded native incoming observer269 diagnoses actual pre-admission probe
+  ordering without changing engine, listener, background or retry policy.
+- [x] Manual-only production publisher271 passes58 focused cases/workflow lint
+  and historical actual23-asset/15-selection/10-signature local rehearsal.
+- [x] Native Linux toolkit name correction is verified on x64; fresh signed ARM
+  first-use pixels render. Earlier migrated black captures remain scoped.
+- [ ] Finish both current-source default three-repetition/detached-hour, full
+  independent hash/upload and joined actual Live-reopen physical receipts.
+- [ ] Explicitly approved exact-source push/nonpublishing desktop CI build, then
+  complete original-signed five-target collection and artifact verification.
+- [ ] Final signed installed desktop updates and recovery matrix; native Windows
+  credential repair and Intel Mac availability are external machine inputs.
+- [ ] Explicitly approved exact code26 internal Play upload and preserved managed
+  ordinary/companion upgrades; production promotion is a separate decision.
+- [ ] Approved same-item Web Store upload/submission/certifications and actual
+  preserved-profile update/mixed-version acceptance. Existing unrelated Chrome
+  Save dialog blocks native store inspection and is left intact.
+- [ ] Remaining real physical provider/reboot/network/sleep and Linux integration
+  outcomes using supported Machine Control routes; no injected-state substitute.
+- [ ] Reviewed final shipment capsule, independent rollout/halt/rollback owners
+  and explicit delivery instructions; tags/releases/feeds remain unmodified.
+- [ ] Actual qualified public inventory, enabled website descriptor and explicitly
+  approved production website deployment/public verification.
+- [ ] Final physical cleanup; all VMs are already off between uses with idle
+  claims released. Keep the evidence/report directories ignored.
+
 ## Local Production Publisher Checkpoint, 2026-10-08
 
 Tactical271 prepares an explicitly manual Stable-tag production publication
