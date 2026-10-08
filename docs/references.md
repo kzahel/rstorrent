@@ -727,3 +727,29 @@ attribution. No implementation source is copied. The legacy upstream release
 is marked obsolete; archived build metadata returns404. Exact asset equality
 and source provenance do not establish a reproducible build, security support
 or complete native redistribution/source/relink acceptance; R-05 remains open.
+
+Tactical259 also inspects the original seven runtime/dependency source archives
+and ten root license/copyright files. Exact libfuse3.15.0/squashfuse0.5.2 archive
+hashes match the pinned dependency script. The official Alpine GitHub mirror
+recipes at the upstream build date bind musl1.2.5-r11
+(`8999cf56154b9bd09c995f293d8dfd3aa8001e3a`), zlib1.3.2-r0
+(`2b38f55109add14f4f99a974c2fdf421b6b9e9e9`), zstd1.5.6-r2
+(`5c2ddf18f193dafdd25ae7391d96c7e30766eecd`) and mimalloc2.1.7-r0
+(`5a1a5dc3216a69e3cd66a57ee07cb5ef01b8be39`). All original archive SHA-512s
+and16 auxiliary input hashes verify; twelve patches apply cleanly in temporary
+owned sources. The upstream runtime notice list omits mimalloc despite both
+logged static link commands. No implementation source is imported into Git.
+
+Alpine's subsequent zlib1.3.2-r1
+[backport](https://github.com/alpinelinux/aports/commit/c973d294927355eac1d2a6e97d86e41fbab8ffda)
+and the [upstream fix](https://github.com/madler/zlib/commit/df84af25dc1942490e1d1c899a07619152a46148)
+address CVE-2026-85091 in nonblocking gzip writes. The exact signed runtime
+prefixes' matching upstream debug assets verify official release SHA-256,
+GNU debuglink CRC and build-id bytes. No affected gzip-write symbols/object file
+appear among their2,056/1,881 defined functions; the selected109 C/header files
+also have no gzip-write calls. Treat this as a scoped absence inference, not
+full native vulnerability or source/build/reproducibility clearance. A separate
+owned x64 runtime build and object/archive relink prototype uses fixed1.3.2-r1,
+passes independently hashed exports/version/help and complete cleanup/off/claim
+release, but does not replace the original signed runtime or deliver a source
+or relink offer. R-05 and independent WebKit/OpenSSL/ABI holds remain open.

@@ -1,5 +1,35 @@
 # Tactical 259: JSTorrent Finish-Line Checks
 
+The frozen production-code build proposal is `13dde7a1`; shared web/extension
+validation below was executed at source `03e63443`. New AppRun notice inputs
+are locally qualified; revised hosted/signed qualification remains pending.
+
+Runtime redistribution review has advanced under259 without product changes.
+Seven source archives and ten original license files are inspected; pinned
+libfuse/squashfuse archive hashes and all four exact Alpine recipe/archive
+checksums plus16 auxiliary input hashes verify. Twelve source patches apply
+sequentially in owned temporary extractions, which are removed.
+
+A native x64 owned Alpine chroot builds runtime8f39b89 with patched libfuse3.15.0
+and squashfuse0.5.2, using verified fixed zlib1.3.2-r1 packages. A separate
+application-object/static-library relink runs version/help successfully.
+Independent19-entry export hashes, seven libraries, ELF architecture and pinned
+package/version facts verify. Both preliminary shell-path failures remain
+failed; all three attempts remove their owned files/mounts, verify VM off and
+release claims. No product profile, installed candidate or visible UI is used.
+This prototype is not the original signed runtime, ARM validation or a delivered
+source/relink offer. Complete native attribution/redistribution remains open;
+the upstream runtime notice list also omits its statically linked mimalloc.
+
+Original8c runtimes use Alpine zlib1.3.2-r0, while current1.3.2-r1 backports
+[CVE-2026-85091](https://github.com/madler/zlib/commit/df84af25dc1942490e1d1c899a07619152a46148)
+in nonblocking gzip writes. Both exact upstream debug assets verify release
+SHA-256, original signed runtime GNU debuglink CRC and build-id bytes. Their
+2,056/1,881 defined function tables contain no gzip-write functions or gzwrite.c;
+109 C/header files across runtime/libfuse/squashfuse also have no such calls.
+This supports a scoped absence inference, not complete security/exploitability
+clearance. Maintained WebKit/accepted ABI, OpenSSL rebuild and R-05 remain open.
+
 Tactical [282](../tactical/282-apprun-license-attribution.md) locally fixes
 missing AppRun MIT copyright attribution in the exact signed8c AppImage notice
 inspection. Both reviewed mirror launchers independently match upstream bytes;
@@ -11,7 +41,7 @@ proposals are superseded. The upstream legacy release is marked obsolete and
 archived build metadata is unavailable; reproducible build, all native source/
 relink/security obligations and maintained WebKit/accepted ABI remain open.
 
-The locally qualified candidate source is03e63443. The full default bundled
+The following shared-web/extension checks used source03e63443. The full default bundled
 Chromium suite now passes62 cases with14 existing live/opt-in skips; focused
 managed-package captures pass separately. Current branding2037 display values/
 40 original assets and all maintained localization catalogs pass. Fresh exact-
@@ -24,8 +54,8 @@ retains the existing item ID, and passes54 extension cases, exact19-entry ZIP/
 No device/store acceptance is inferred from injected cases. Authenticated
 read-only store refresh remains Web Store published/draft1.1.1 with three
 legacy screenshots/privacy text, and Play internal26/production23. No new
-upload/draft save/certification/submission occurs. Frozen03e push/nonpublishing
-signed-build review supersedes pending681/b0b/932 proposals; explicit action
+upload/draft save/certification/submission occurs. Frozen13dde push/nonpublishing
+signed-build review supersedes pending681/b0b/932/03e proposals; explicit action
 instruction remains pending. D-01/D-02 reopen for changed final package inputs;
 immutable source8c signature/identity evidence remains valid for its own bytes.
 
