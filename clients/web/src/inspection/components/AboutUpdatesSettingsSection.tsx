@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { message as localizedMessage } from "../../localization/runtime";
 import { progressPercent } from "../updater/controller";
+import { installPolicy } from "../updater/policy";
 import type {
   DesktopUpdater,
   DesktopUpdaterSnapshot,
@@ -21,6 +22,7 @@ export function AboutUpdatesSettingsSection({
   snapshot,
 }: AboutUpdatesSettingsSectionProps) {
   const { info, state } = snapshot;
+  const policy = installPolicy(info.bundleType);
   const [commandCopyStatus, setCommandCopyStatus] = useState<"copied" | "failed">();
   return (
     <div className={styles.aboutUpdates}>
@@ -106,15 +108,15 @@ export function AboutUpdatesSettingsSection({
           </div>
         ) : null}
         <div className={styles.updateActions}>
-          <button
+          {policy.canCheck ? <button
             type="button"
             disabled={snapshot.selectingChannel === true || state.phase === "checking" || isInstalling(state)}
             onClick={() => void updater.check("manual")}
           >
             {state.phase === "checking" ? localizedMessage("inspection.components.about.updates.settings.section.checking") : localizedMessage("inspection.components.about.updates.settings.section.check.for.updates")}
-          </button>
-          {(state.phase === "available" && state.manualApply === undefined) ||
-          (state.phase === "error" && state.operation === "install") ? (
+          </button> : null}
+          {policy.canInstallInApp && ((state.phase === "available" && state.manualApply === undefined) ||
+          (state.phase === "error" && state.operation === "install")) ? (
             <button
               type="button"
               className={styles.primaryAction}
@@ -126,14 +128,14 @@ export function AboutUpdatesSettingsSection({
             <a href={RELEASES_URL} rel="noreferrer" target="_blank">{localizedMessage("inspection.components.about.updates.settings.section.open.release.downloads")}</a>
           ) : null}
         </div>
-        <p className={styles.updatePrivacy}>{snapshot.channel === "latest"
+        {policy.canCheck ? <p className={styles.updatePrivacy}>{snapshot.channel === "latest"
           ? localizedMessage("inspection.components.about.updates.settings.section.checks.latest.schedule")
           : localizedMessage("inspection.components.about.updates.settings.section.rstorrent.checks.automatically.after.startup.and.about")} {info.checkPrivacy === "anonymous"
             ? localizedMessage("inspection.components.about.updates.settings.section.headless.checks.include.no.installation.identifier")
             : info.checkPrivacy === "preference-controlled"
               ? localizedMessage("inspection.components.about.updates.settings.section.checks.follow.the.usage.statistics.preference")
               : localizedMessage("inspection.components.about.updates.settings.section.checks.include.a.random.resettable.installation.identifier")}
-        </p>
+        </p> : null}
       </fieldset>
       <SupportDiagnostics snapshot={snapshot} />
     </div>

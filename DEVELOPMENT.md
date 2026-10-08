@@ -1022,13 +1022,28 @@ http://127.0.0.1:5173/?demo=large-swarm&at=0&autoplay=0
 
 The stable scenario IDs are `healthy-download`, `stalled-metadata`,
 `tracker-recovery`, `endgame`, `large-swarm`, `disk-error`, and
-`empty-library`. Omit `autoplay=0` for a running demo clock. Headless Chrome
-validates wide, compact, phone, accessibility, keyboard, and virtualized-scale
-behavior without touching the visible desktop:
+`empty-library`. Omit `autoplay=0` for a running demo clock. Bundled headless
+Playwright Chromium validates wide, compact, phone, accessibility, keyboard
+and virtualized-scale behavior without touching the primary installed browser:
 
 ```bash
 npm run test:e2e --prefix clients/web
 ```
+
+Install the separately identified test browser with `npx playwright install
+chromium` from `clients/web` if needed. The Playwright configuration uses that
+browser locally and in CI, reaping it and the managed Vite server after each
+run. Do not select the primary installed Chrome for temporary-profile captures.
+For managed-package update guidance and support diagnostics, use the focused
+renderer suite:
+
+```bash
+npm run test:e2e --prefix clients/web -- support-diagnostics.spec.ts
+```
+
+Its MSI/DEB/RPM/unknown fixtures use real initial controller state and label
+captures as renderer evidence. They do not substitute for installed native
+package and updater qualification.
 
 The opt-in production UI bandwidth baseline starts a clean gateway and
 production preview, preloads a 12-row Library, keeps one deterministic

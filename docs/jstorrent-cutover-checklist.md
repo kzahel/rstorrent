@@ -1,5 +1,15 @@
 # JSTorrent In-Place Cutover Checklist
 
+Tactical [281](tactical/281-managed-package-update-status.md) locally
+repairs the actual MSI About-screen automatic-update contradiction. MSI/DEB/RPM
+and unknown packages start and stay in existing manual package guidance, own
+no check timers, and show no in-app check/install or automatic-check privacy
+copy. Backend policy, trust/routes and preference behavior remain unchanged.
+Full web typecheck/478 tests (two existing skips),20 focused bundled-Chromium
+render/accessibility cases and16 inspected managed/theme/width captures pass.
+Fresh exact-source signed native MSI evidence remains open under259; renderer
+fixtures are labeled separately from unchanged source8c before-fix captures.
+
 The exact signed source8c Windows x64 MSI now passes quiet per-machine
 fresh installation, both installed native publisher/timestamp checks,
 five-entry distribution/notice inspection, native empty-library launch and
@@ -503,14 +513,15 @@ the candidate source and needs a fresh signed build.
 
 ## Candidate Identity And Delivery
 
-- [x] **D-01 Desktop identity:** JSTorrent name/icons, `com.jstorrent.desktop`,
+- [ ] **D-01 Desktop identity:** JSTorrent name/icons, `com.jstorrent.desktop`,
   existing Tauri updater trust root and `updates.jstorrent.com` route. Candidate
   version exceeds every selected installed source. Beta route/key remain separate.
   Exact source8c signed five-target0.3.0 metadata, both packaged Mac icons,
   2,037 display values/40 original assets, retained ID/key/route and selected
   legacy0.2.1 ordering qualify. Native/updater/launcher/pixel cohorts remain
-  separate installed gates.
-- [x] **D-02 Desktop signatures:** retained updater key verifies final signatures;
+  separate installed gates. This source8c pass remains historical;279/280/281
+  change final package inputs, so final-candidate identity must be repeated.
+- [ ] **D-02 Desktop signatures:** retained updater key verifies final signatures;
   wrong key fails. macOS Developer ID/team, notarization/stapling/Gatekeeper and
   Windows publisher/signature match the accepted production delivery lane.
   Exact final source8c qualifies ten retained-root signatures/ten wrong-root
@@ -519,7 +530,8 @@ the candidate source and needs a fresh signed build.
   publisher Authenticode and Microsoft timestamps without install/login. Nine
   independently extracted signed formats reconcile binaries and notice integrity;
   AppImage source/redistribution review and installed/native acceptance retain
-  separate R-05/P requirements.
+  separate R-05/P requirements. Fresh signatures for the279/280/281 candidate
+  are required; do not carry source8c whole-row closure onto changed bytes.
 - [ ] **D-03 Android identity:** `com.jstorrent.app`; versionCode exceeds all Play
   tracks, including closed/internal/testing, and selected GitHub APKs. Record
   upload certificate separately from the existing Play app-signing certificate.

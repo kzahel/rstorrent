@@ -1,5 +1,15 @@
 # Client Surfaces
 
+Tactical [281](../tactical/281-managed-package-update-status.md) locally
+repairs the actual MSI About-screen automatic-update contradiction. MSI/DEB/RPM
+and unknown packages start and stay in existing manual package guidance, own
+no check timers, and show no in-app check/install or automatic-check privacy
+copy. Backend policy, trust/routes and preference behavior remain unchanged.
+Full web typecheck/478 tests (two existing skips),20 focused bundled-Chromium
+render/accessibility cases and16 inspected managed/theme/width captures pass.
+Fresh exact-source signed native MSI evidence remains open under259; renderer
+fixtures are labeled separately from unchanged source8c before-fix captures.
+
 Tactical [280](../tactical/280-desktop-executable-display-brand.md) locally
 corrects the desktop output to `jstorrent-client`, preventing the observed
 advanced-firewall filename from retaining the old display brand. The distinct

@@ -59,3 +59,49 @@ for (const width of [320, 1440]) {
     });
   }
 }
+
+for (const bundleType of ["msi", "deb", "rpm", "unknown"]) {
+  for (const width of [320, 1440]) {
+    for (const theme of ["light", "dark"]) {
+      test(`managed ${bundleType} update guidance at ${width}px ${theme}`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 900 });
+        const external: string[] = [];
+        const errors: string[] = [];
+        page.on("pageerror", (error) => errors.push(error.message));
+        await page.route("**/*", async (route) => {
+          const url = new URL(route.request().url());
+          if (url.protocol.startsWith("http") && url.hostname !== "127.0.0.1") {
+            external.push(url.origin);
+            await route.abort();
+          } else await route.continue();
+        });
+        await page.goto(`/tests/fixtures/support-harness.html?package=${bundleType}&theme=${theme}`);
+        const updates = page.locator("fieldset").filter({ has: page.locator("legend", { hasText: /^Updates$/ }) });
+        await expect(updates.getByText("Manual update required", { exact: true })).toBeVisible();
+        await expect(updates.getByText(/stays with its package channel/)).toBeVisible();
+        const releases = updates.getByRole("link", { name: "Open release downloads" });
+        await expect(releases).toHaveAttribute("href", "https://github.com/kzahel/rstorrent/releases/latest");
+        await expect(updates.getByRole("button")).toHaveCount(0);
+        await expect(updates.getByRole("combobox")).toHaveCount(0);
+        await expect(updates).not.toContainText(/Automatic updates enabled|checks automatically|installation identifier|usage statistics/);
+        await page.getByRole("button", { name: "Prepare diagnostics" }).click();
+        const report = JSON.parse(await page.getByRole("textbox", { name: "Exact report to copy or download" }).inputValue());
+        expect(report.package).toBe(bundleType);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+        const bounds = await releases.boundingBox();
+        expect(bounds!.x).toBeGreaterThanOrEqual(0);
+        expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+        expect((await new AxeBuilder({ page }).analyze()).violations.filter(
+          (violation) => violation.impact === "serious" || violation.impact === "critical",
+        )).toEqual([]);
+        expect(external).toEqual([]);
+        expect(errors).toEqual([]);
+        if (process.env.RSTORRENT_SCREENSHOT_DIR) {
+          await fs.mkdir(process.env.RSTORRENT_SCREENSHOT_DIR, { recursive: true });
+          await page.screenshot({ path: path.join(process.env.RSTORRENT_SCREENSHOT_DIR,
+            `managed-updates-fixture-${bundleType}-${width}-${theme}.png`), fullPage: true });
+        }
+      });
+    }
+  }
+}

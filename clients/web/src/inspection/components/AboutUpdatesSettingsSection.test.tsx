@@ -11,6 +11,7 @@ import type {
   DesktopUpdaterSnapshot,
 } from "../updater/types";
 import { AboutUpdatesSettingsSection } from "./AboutUpdatesSettingsSection";
+import { DesktopUpdaterController } from "../updater/controller";
 
 describe("About and updates settings", () => {
   it("shows build identity and routes manual check and install", async () => {
@@ -52,6 +53,27 @@ describe("About and updates settings", () => {
     expect(
       screen.getByRole("link", { name: "Open release downloads" }),
     ).toHaveAttribute("href", "https://github.com/kzahel/rstorrent/releases/latest");
+  });
+
+  it.each(["msi", "deb", "rpm", "unknown"] as const)("%s renders its initial real controller state without automatic controls", (bundleType) => {
+    const backend = { check: vi.fn(async () => null), relaunch: vi.fn(async () => undefined) };
+    const controller = new DesktopUpdaterController(backend, {
+      ...snapshot({ phase: "idle" }).info, bundleType,
+    });
+    try {
+      const view = render(<AboutUpdatesSettingsSection updater={controller} snapshot={controller.getSnapshot()} />);
+      expect(within(view.container).getByText("Manual update required")).toBeVisible();
+      expect(within(view.container).getByRole("link", { name: "Open release downloads" })).toBeVisible();
+      expect(within(view.container).queryByRole("button", { name: "Check for updates" })).not.toBeInTheDocument();
+      expect(within(view.container).queryByRole("button", { name: "Install and restart" })).not.toBeInTheDocument();
+      const updates = within(view.container).getByText("Updates").closest("fieldset")!;
+      expect(within(updates).queryByText(/automatic updates enabled|checks automatically|installation identifier/i)).not.toBeInTheDocument();
+      expect(within(view.container).getByRole("button", { name: "Prepare diagnostics" })).toBeVisible();
+      expect(backend.check).not.toHaveBeenCalled();
+      view.unmount();
+    } finally {
+      controller.close();
+    }
   });
 
   it("lets desktop users select Latest and explains the Stable catch-up state", async () => {
