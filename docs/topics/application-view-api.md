@@ -16,8 +16,20 @@ history/actual filters, joined shutdown and actual reopened Live/owned row,
 unchanged SAF registry/payload and cleanup. Readiness takes107.99/166.16 seconds.
 All48 portable cases pass; earlier failed receipts remain scoped and intact.
 Normal diagnostic warnings intentionally remain across category filters. No
-engine/network/admission/retry policy changes. Default three-repetition/hour
-and managed delivery remain open under259; a short pass is not an hour.
+engine/network/admission/retry policy changes. Both full current-APK default
+runs subsequently pass under259/273; managed and broader physical acceptance
+remain separate.
+
+Both current-APK physical default runs now pass three cold repetitions, the
+3,600-second detached hour, full independent 40-MiB download/upload hashes,
+retained Warning/Info filters, joined actual Live/owned-row reopen, unchanged
+SAF registry/payload and cleanup. Both also pass all seven current-APK recovery
+cases. A retains its older fixed 120-second upload driver; B's fresh repeat loads
+source `840f421d`/driver `51883b67` with a 172-second upload and one native display wake
+inside the original 120-second reopen budget. B's first whole reopen failure
+remains recorded unchanged. No managed Play, physical reboot/provider/network/
+sleep or final signed desktop/store/public acceptance is inferred.
+
 
 Both source0aa physical cohorts independently hash the installed APK and pass
 small foreground/background/reopened upload plus joined Live-library restart,

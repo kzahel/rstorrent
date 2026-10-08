@@ -2,23 +2,26 @@
 
 Topic: `android-jstorrent-replacement`
 
-Current application sourceaeaa72f9 passes normal original-key packaging,
-122 JVM cases/lint, all independent package checks and both exact isolated
-physical installs. Tactical269/270 completes locally with actual fresh native
-registry readiness and independently verified28-MiB upload/Live/SAF/cleanup on
-both cohorts. A now passes the complete default detached hour, independent
-40-MiB download/upload, filters, joined actual Live reopen and cleanup. Both
-cohorts also repeat all seven recovery cases on the exact current APK, with
-independent hashes and cleanup. B's full hour/download/upload components pass
-but its whole receipt fails reopened-library observation while the ARC activity
-is stopped/sleeping. Tactical273 qualifies native display wake inside the same
-120-second budget; targeted/full repeat are pending. No managed code26 update
-or physical provider/reboot/network/sleep acceptance is inferred.
+Current application sourceaeaa72f9 passes normal original-key packaging, 122
+JVM cases/lint, all independent package checks and both exact isolated
+physical installs. Tactical269/270 completes locally with actual fresh
+native registry readiness and independently verified28-MiB
+upload/Live/SAF/cleanup on both cohorts. Both current-APK physical default
+runs now pass three cold repetitions, the 3,600-second detached hour, full
+independent 40-MiB download/upload hashes, retained Warning/Info filters,
+joined actual Live/owned-row reopen, unchanged SAF registry/payload and
+cleanup. Both also pass all seven current-APK recovery cases. A retains its
+older fixed 120-second upload driver; B's fresh repeat loads source
+`840f421d`/driver `51883b67` with a 172-second upload and one native display
+wake inside the original 120-second reopen budget. B's first whole reopen
+failure remains recorded unchanged. No managed Play, physical
+reboot/provider/network/ sleep or final signed desktop/store/public
+acceptance is inferred.
 
 Tactical [269](../tactical/269-android-incoming-peer-diagnostic-evidence.md)
 adds a bounded read-only native incoming observer for the unresolved physical
-large-fixture refusal. Fifteen Android Rust cases/clippy pass; generated builds
-and actual snapshots remain pending. No engine/network policy is changed.
+large-fixture refusal. Fifteen Android Rust cases/clippy, generated original-key/isolated builds
+and actual bounded native snapshots pass. No engine/network policy is changed.
 Both source0aa physical cohorts independently hash the installed APK and pass
 small foreground/background/reopened upload plus joined Live-library restart,
 retained SAF registry and cleanup. This closes Tactical260's bounded local

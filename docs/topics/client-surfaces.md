@@ -22,22 +22,26 @@ and managed delivery remain open under259; a short pass is not an hour.
 Tactical272 keeps the measured28-MiB upload's120-second allowance and scales
 the40-MiB hourly fixture to172 seconds, below the existing300-second helper
 bound. Native admission still has180 seconds; independent file hashes and
-joined cleanup remain mandatory. All51 qualification/five transport cases pass.
-Cohort A now passes the whole default source-aeaa run: three cold repetitions,
-3,600-second detached observation, independent full 40-MiB download/upload,
-retained filters, joined actual Live reopen, SAF continuity and cleanup. Its
-loaded driver matches source09342f73 and retains the fixed120-second allowance;
-newer harness changes are not attributed to it. All seven current-APK SAF/source
-recovery cases also pass with independent hashes and cleanup. Cohort B's proportional full run passes all three cold repetitions, the hour,
-independent40-MiB download/upload and retained filters. Its whole receipt fails
-at fresh reopened-library XML, with stopped/sleeping activity and cleanup ok.
-All seven current-APK SAF/source recovery cases subsequently pass B too.
-Tactical273 adds ordinary native display wake inside the existing120-second
-reopen budget, without changing product or power policy. All54 qualification
-and five transport cases pass. The targeted current-APK native wake, actual
-Live/owned row, full28-MiB hashes, SAF continuity and cleanup pass; a fresh
-full default B repeat is active under259. Tactical272's bounded proportional upload scope completes locally.
-Managed/provider/reboot/network/sleep delivery stays unqualified.
+joined cleanup remain mandatory. All51 qualification/five transport cases
+pass. Cohort A now passes the whole default source-aeaa run: three cold
+repetitions, 3,600-second detached observation, independent full 40-MiB
+download/upload, retained filters, joined actual Live reopen, SAF continuity
+and cleanup. Its loaded driver matches source09342f73 and retains the fixed
+120-second allowance; newer harness changes are not attributed to it. All
+seven current-APK SAF/source recovery cases also pass with independent
+hashes and cleanup. B's first proportional full run passes its
+hour/download/upload/filter components but fails fresh reopen while ARC is
+stopped/sleeping; failure/cleanup stay intact. Tactical 273 completes
+locally: all 54 portable/five transport cases and the 28-MiB targeted native
+wake pass. The fresh full B default repeat also passes all three cold
+repetitions, the hour, full 40-MiB hashes, filters, clean joined shutdown,
+native wake followed by fresh actual Live/owned row, unchanged SAF and
+cleanup. Native readiness is observed at 168.45 seconds; independent upload
+uses a 172-second allowance and its full verification call takes 159.35
+seconds. Zero XML captures are unavailable and two observed Back actions
+suffice. Exact staging/ marker cleanup passes with production metadata
+unchanged before/after. Tacticals 272/273 complete bounded scopes;
+managed/provider/reboot/network/sleep acceptance remains open.
 
 Both source0aa physical cohorts independently hash the installed APK and pass
 small foreground/background/reopened upload plus joined Live-library restart,

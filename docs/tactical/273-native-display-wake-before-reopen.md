@@ -1,6 +1,6 @@
 # Tactical 273: Native Display Wake Before Reopen
 
-Status: Active, 2026-10-08. Qualification-only follow-up to 259/272.
+Status: Complete locally, 2026-10-08. Whole B repeat and cleanup pass.
 
 Topic: `client-surfaces`.
 
@@ -77,7 +77,39 @@ registry and full payload hash remain unchanged; owned cleanup passes. The
 actual joined-library PNG is visually inspected: styled JSTorrent, Live and
 Seeding100%. This is native effect evidence, not merely accepted input.
 
-A fresh default cohort B attempt2 now runs three cold repetitions, the full
+A fresh default cohort B attempt2 ran three cold repetitions, the full
 3,600-second detached observation and independent40-MiB download/upload before
-the same joined-library check. Its outcome is pending. The failed first whole
+the same joined-library check. Its outcome is recorded below. The failed first whole
 receipt is preserved; this targeted pass cannot close the whole-run gate.
+
+## Full current B repeat and final cleanup
+
+The fresh default attempt2 passes end to end with the unchanged aeaa72f9 app
+and b0e8fc36 isolated APK. Its loaded driver is the exact51883b67 digest from
+source840f421d. Three cold repetitions take65.60/196.13/126.78 seconds; each
+independently verifies262,144 bytes and source-offline restart.
+
+The detached observation is3,600 seconds. Independent download, completed
+Android upload and post-join payload all verify41,943,040 bytes with SHA-1
+`4917087d91aba79ce079e8d890e05252372c5eab`. Native registry readiness is actually
+observed at168.45 seconds after zero-registration and two sample timeouts; its
+180-second bound is unchanged. Independent upload allowance is172 seconds;
+full verification-call time159.35 seconds includes setup/native observations.
+Actual retained Warning/Info/large-history/Live checks pass with zero queue
+failure/subscription resets. Joined idle shutdown records `cleanup_failed=false`; the service is absent.
+One modifier-only native wake precedes fresh actual Live and exact completed
+row, zero unavailable captures and two observed Back actions. SAF registry and
+full payload remain unchanged. The actual `08-joined-completion-restart.png` is visually inspected:
+styled JSTorrent, Live and Seeding 100%. Whole receipt and cleanup pass, and the
+controller exits0 and is joined. The first failed whole receipt is not relabeled.
+
+The initial separate staging-cleanup invocation lacks libtorrent and stops at
+import before any target read/mutation. The locked interop environment rerun
+checks production version/install/update metadata against the original baseline
+before mutation and again afterward. Both match. Only exact-hash task APK
+staging and its exact owner marker are removed; owned payload/UI XML are absent.
+Both physical sessions are released. All VMs remain off with claims available.
+
+This meets the stopping condition. Reports/evidence remain ignored. Production
+Play/code26, physical reboot/provider/network/sleep and final signed desktop/
+store/public delivery stay separate unqualified gates. No publication occurs.

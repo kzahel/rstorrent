@@ -921,3 +921,25 @@ layout lacks shared site navigation/logo, retained as a presentation follow-up.
 Report local-reference validation finds all1,224 asset/document links present;
 updated local six-view responsive review passes. Browser processes are joined.
 Fresh authoritative Linux/Windows/macOS doctors confirm all VMs off after275.
+
+### Current B complete default repeat and final cleanup, 2026-10-08
+
+Tactical273 completes locally. B fresh default attempt2 passes three cold
+repetitions,3,600-second detached observation, full independent40-MiB download/
+upload/reopen SHA-1, retained actual Warning/Info filters/large history, clean
+joined shutdown and native wake followed by fresh actual Live/exact completed
+row. SAF registry/bytes remain unchanged and cleanup passes. Readiness is
+actually observed at168.45 seconds; full independent verification-call takes
+159.35 seconds with172-second inner allowance. The actual joined native PNG is
+visually inspected. Exact loaded source840f421d/digest51883b67 and APKaeaa/b0e8
+are independently bound; the first failed whole receipt remains unchanged.
+
+Both cohorts now pass current-APK default hour and seven-case recovery. Final
+owned staging/markers/payload/UI XML are absent. B cleanup's first wrong Python
+environment stops at import without mutation; the locked-environment rerun
+matches original production version/install/update metadata before and after
+exact-owned removal. Both physical task sessions and every controller are
+joined/released; all VMs remain off with fresh claims available. Broader managed
+store, provider/reboot/network/sleep, final signed/native matrix and publication
+remain unqualified. Existing dependency review expires2026-10-12 and must pass
+its strict final audit without automatic extension.

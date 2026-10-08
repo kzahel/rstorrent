@@ -48,10 +48,10 @@ a checked local task does not close a delivery row.
   including actual grants/picker/relocation, independent hashes and cleanup.
 - [x] Proportional upload 272 passes boundary/refusal/forwarding tests and actual
   B full 40-MiB independent upload within the 172-second bound.
-- [ ] Second physical cohort: its hour/download/upload/filter components pass;
-  whole receipt fails reopened-library observation while ARC is stopped/sleeping.
-  Native display-wake 273 passes 54 portable cases and targeted actual Live
-  reopen with full 28-MiB independent hashes/cleanup; fresh full repeat active.
+- [x] Second physical cohort: fresh native-wake default repeat passes all three
+  cold repetitions, the detached hour, full 40-MiB independent download/upload,
+  retained filters, joined actual Live/owned-row reopen, SAF continuity and
+  cleanup. The first whole-run reopen failure remains recorded unchanged.
 - [x] Linux, Windows and macOS VMs are off; idle claims released. Task evidence
   stays ignored and hash-bound exported guest screenshot copies are removed.
 - [ ] Explicitly approved exact-source push/nonpublishing desktop CI build, then
@@ -72,9 +72,9 @@ a checked local task does not close a delivery row.
   policy and explicit delivery instructions; tags/releases/feeds remain intact.
 - [ ] Actual qualified public inventory, enabled website descriptor and explicitly
   approved production website deployment/public verification.
-- [ ] Final physical cleanup after active checks. A's owned staging/marker and
-  payload/UI XML are absent; production version/timestamps unchanged. B still
-  owns its prepared test session. Keep evidence/report directories ignored.
+- [x] Final physical cleanup: both owned staging/markers and payload/UI XML
+  are absent. Production versions/install/update timestamps match their original
+  baselines; B is checked before and after staging mutation. Reports stay ignored.
 
 ## Local Production Publisher Checkpoint, 2026-10-08
 
@@ -102,8 +102,11 @@ completes locally with actual current-port/rejection samples. Tactical270 also
 completes locally: both original large fixtures independently upload/hash all
 28 MiB after fresh native registry readiness and pass retained diagnostic
 filters, joined actual Live reopen, unchanged SAF registry/payload and cleanup.
-Default three-repetition/hour acceptance proceeds separately. No code26
-upload or managed Play acceptance is claimed.
+Both current-APK default three-repetition/hour runs now pass, including full
+40-MiB download/upload hashes, retained filters, joined actual Live/owned-row
+reopen, SAF continuity and cleanup. B uses the bounded native display wake;
+its first whole-run failure remains unchanged. All seven current-APK recovery
+cases pass both devices. No code26 upload or managed Play acceptance is claimed.
 
 Both source0aa physical small-fixture runs independently receive/hash all
 524289 bytes in foreground, background and reopened foreground. Both joined

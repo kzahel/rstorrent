@@ -53,8 +53,8 @@ Latest release qualification work:
   complete locally; measured proportional upload, independent full hashes and
   bounded refusals, preserving the separate whole-run reopen failure.
 - [`273-native-display-wake-before-reopen.md`](273-native-display-wake-before-reopen.md):
-  active; ordinary target-native display wake before fresh library observation,
-  inside the existing deadline and without a product/power-policy change.
+  complete locally; targeted and full default native wake/reopen pass inside
+  existing deadlines, with independent hashes and final owned cleanup.
 
 - [`274-linux-arm-native-compositor-capture.md`](274-linux-arm-native-compositor-capture.md):
   complete locally; native GNOME recordings and restored migration evidence
