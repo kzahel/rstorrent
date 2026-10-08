@@ -16,6 +16,48 @@ from chromeos_android_qualification import completed_upload_budget, verify_compl
 
 
 class QualificationSafety(unittest.TestCase):
+    def test_native_wake_delivery_does_not_establish_owned_library(self):
+        adb = Mock()
+        clock = [0.0]
+        def wake(**options):
+            self.assertEqual(options['timeout'], 1)
+            clock[0] = .8
+        def capture(bounded):
+            bounded.shell('cat', '/sdcard/rstorrent-window.xml')
+            return ET.fromstring('<h><n text="Live"/><n text="owned"/></h>')
+        adb.wake_display.side_effect = wake
+        with patch('chromeos_android_qualification.time.monotonic', side_effect=lambda:clock[0]), patch.object(product, 'dump_ui', side_effect=capture):
+            result = wait_reopened_library(adb, 'owned', timeout=1, wake_display=True)
+        self.assertEqual(result['native_display_wake'], 'modifier_only_input_delivered')
+        self.assertAlmostEqual(adb.shell.call_args.kwargs['timeout'], .2)
+        with patch.object(product, 'dump_ui') as capture:
+            adb.wake_display.side_effect = RuntimeError('native input refused')
+            with self.assertRaisesRegex(RuntimeError, 'native input refused'):
+                wait_reopened_library(adb, 'owned', wake_display=True)
+        capture.assert_not_called()
+
+    def test_native_wake_cannot_extend_original_reopen_deadline(self):
+        clock = [0.0]
+        adb = Mock()
+        def wake(**options):clock[0] = 1.0
+        adb.wake_display.side_effect = wake
+        with patch('chromeos_android_qualification.time.monotonic', side_effect=lambda:clock[0]), patch.object(product, 'dump_ui') as capture:
+            with self.assertRaisesRegex(RuntimeError, 'live owned library'):
+                wait_reopened_library(adb, 'owned', timeout=1, wake_display=True)
+        capture.assert_not_called()
+
+    def test_native_wake_transport_and_provider_refusals_propagate(self):
+        adb = RemoteAdb(['machine-control', '--target', 'owned'])
+        with patch('chromeos_android_qualification.subprocess.run', return_value=subprocess.CompletedProcess([], 0, '{"ok":true}', '')) as run:
+            adb.wake_display(timeout=.5)
+        self.assertEqual(run.call_args.args[0], ['machine-control', '--target', 'owned', 'testbed', '--', 'wake'])
+        self.assertEqual(run.call_args.kwargs['timeout'], .5)
+        for response in ['{"ok":false}', '{"ok":true,"error":"refused"}', '{}', 'not JSON']:
+            with patch('chromeos_android_qualification.subprocess.run', return_value=subprocess.CompletedProcess([], 0, response, '')):
+                with self.assertRaises((RuntimeError, ValueError)):adb.wake_display()
+        with patch('chromeos_android_qualification.subprocess.run', return_value=subprocess.CompletedProcess([], 1, '{"ok":true}', 'refused')):
+            with self.assertRaises(subprocess.CalledProcessError):adb.wake_display()
+
     def test_large_upload_budget_preserves_measured_short_baseline_and_bound(self):
         self.assertEqual(completed_upload_budget(1), 120)
         self.assertEqual(completed_upload_budget(28*1024*1024), 120)

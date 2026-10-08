@@ -2,6 +2,19 @@
 
 Topic: `android-jstorrent-replacement`
 
+Current application sourceaeaa72f9 passes normal original-key packaging,
+122 JVM cases/lint, all independent package checks and both exact isolated
+physical installs. Tactical269/270 completes locally with actual fresh native
+registry readiness and independently verified28-MiB upload/Live/SAF/cleanup on
+both cohorts. A now passes the complete default detached hour, independent
+40-MiB download/upload, filters, joined actual Live reopen and cleanup. Both
+cohorts also repeat all seven recovery cases on the exact current APK, with
+independent hashes and cleanup. B's full hour/download/upload components pass
+but its whole receipt fails reopened-library observation while the ARC activity
+is stopped/sleeping. Tactical273 qualifies native display wake inside the same
+120-second budget; targeted/full repeat are pending. No managed code26 update
+or physical provider/reboot/network/sleep acceptance is inferred.
+
 Tactical [269](../tactical/269-android-incoming-peer-diagnostic-evidence.md)
 adds a bounded read-only native incoming observer for the unresolved physical
 large-fixture refusal. Fifteen Android Rust cases/clippy pass; generated builds

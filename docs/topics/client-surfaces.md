@@ -14,7 +14,7 @@ readiness precedes independent upload. Both current-source original large
 fixtures verify/upload all28 MiB with120 empty files, retained diagnostic
 history/actual filters, joined shutdown and actual reopened Live/owned row,
 unchanged SAF registry/payload and cleanup. Readiness takes107.99/166.16 seconds.
-All48 portable cases pass; earlier failed receipts remain scoped and intact.
+The original48 portable cases pass; earlier failed receipts remain scoped and intact.
 Normal diagnostic warnings intentionally remain across category filters. No
 engine/network/admission/retry policy changes. Default three-repetition/hour
 and managed delivery remain open under259; a short pass is not an hour.
@@ -28,8 +28,15 @@ Cohort A now passes the whole default source-aeaa run: three cold repetitions,
 retained filters, joined actual Live reopen, SAF continuity and cleanup. Its
 loaded driver matches source09342f73 and retains the fixed120-second allowance;
 newer harness changes are not attributed to it. All seven current-APK SAF/source
-recovery cases also pass with independent hashes and cleanup. Cohort B remains
-active with the proportional driver; managed delivery remains unqualified.
+recovery cases also pass with independent hashes and cleanup. Cohort B's proportional full run passes all three cold repetitions, the hour,
+independent40-MiB download/upload and retained filters. Its whole receipt fails
+at fresh reopened-library XML, with stopped/sleeping activity and cleanup ok.
+All seven current-APK SAF/source recovery cases subsequently pass B too.
+Tactical273 adds ordinary native display wake inside the existing120-second
+reopen budget, without changing product or power policy. All54 qualification
+and five transport cases pass; current targeted then full repeat remain under
+259. Tactical272's bounded proportional upload scope completes locally.
+Managed/provider/reboot/network/sleep delivery stays unqualified.
 
 Both source0aa physical cohorts independently hash the installed APK and pass
 small foreground/background/reopened upload plus joined Live-library restart,

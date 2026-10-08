@@ -83,6 +83,15 @@ class RemoteAdb:
     def __init__(self, command: list[str]):
         self.command = command
 
+    def wake_display(self, *, timeout=30):
+        result = subprocess.run([*self.command, "testbed", "--", "wake"],
+                                capture_output=True, text=True, timeout=timeout)
+        result.check_returncode()
+        output = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", result.stdout)
+        response = json.loads(output)
+        if not isinstance(response, dict) or response.get("ok") is not True or response.get("error"):
+            raise RuntimeError("native display wake was not accepted")
+
     def run(self, *arguments: str, timeout: float = 30, check: bool = True):
         if arguments[:2] == ("logcat", "-c"):
             raise RuntimeError("device-wide log clearing is prohibited")
@@ -477,12 +486,17 @@ def reopened_library_action(nodes, expected_name):
     return "back", bounds
 
 
-def wait_reopened_library(adb, expected_name, *, timeout=120):
+def wait_reopened_library(adb, expected_name, *, timeout=120, wake_display=False):
     if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or not 0 < timeout <= 120:
         raise RuntimeError("invalid owned library-reopen budget")
     beginning = time.monotonic()
     deadline = beginning + timeout
 
+    if wake_display:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("joined restart did not restore the live owned library")
+        adb.wake_display(timeout=min(30, remaining))
     bounded = DeadlineAdb(adb, deadline, "joined restart did not restore the live owned library")
     back_steps = unavailable_captures = 0
     while time.monotonic() < deadline:
@@ -495,8 +509,11 @@ def wait_reopened_library(adb, expected_name, *, timeout=120):
                               "elapsed_seconds": round(time.monotonic() - beginning, 2)}), flush=True)
         else:
             if action == "live":
-                return {"observed_settings_back_steps": back_steps,
-                        "unavailable_reopen_captures": unavailable_captures}
+                result = {"observed_settings_back_steps": back_steps,
+                          "unavailable_reopen_captures": unavailable_captures}
+                if wake_display:
+                    result["native_display_wake"] = "modifier_only_input_delivered"
+                return result
             if action == "back":
                 if back_steps >= 2:
                     raise RuntimeError("owned retained-settings navigation exceeded its two-step budget")
@@ -548,7 +565,7 @@ def disable_seeding_and_verify_joined_restart(adb, destination, expected_hash):
     # A delivered launch and unchanged filesystem bytes do not prove that
     # the restarted client finished restoring its retained library.
     expected_name = Path(destination).parent.name
-    navigation = wait_reopened_library(adb, expected_name)
+    navigation = wait_reopened_library(adb, expected_name, wake_display=True)
     return {"shutdown": joined[-1], "service_absent_after_join": True,
             "reopen_sha1": actual, "retained_saf_registry": "unchanged",
             "reopen_live_library": True, **navigation}

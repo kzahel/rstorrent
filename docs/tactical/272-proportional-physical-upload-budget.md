@@ -1,6 +1,6 @@
 # Tactical 272: Proportional Physical Upload Budget
 
-Status: Active, 2026-10-08. Qualification-only follow-up to259/267/270.
+Status: Complete locally, 2026-10-08. Qualification-only follow-up to259/267/270.
 
 Topics: `client-surfaces`, `incoming-reachability-and-seeding`.
 
@@ -70,3 +70,24 @@ loaded driver digest matches Git source09342f73 and keeps the historical fixed
 changes or their timing fields to that real pass. Cohort B remains active with
 the current proportional driver. Whole managed/reboot/provider acceptance stays
 separate; the current-source seven-case recovery repeat has started on A.
+
+## Final proportional upload evidence
+
+Cohort B's full current-source run uses the exact proportional driver digest
+fa30d41a71f4ca189aa2da67289933b45c5a0bb9ee1d7573489fe241fc305136.
+Actual native registry readiness arrives at168.06 seconds inside180. All40 MiB
+independently upload/hash within the172-second inner leecher allowance; the
+complete verification call takes157.36 seconds including setup/observations.
+The detached hour/download hash and actual retained filters also pass.
+
+Whole B receipt remains failed: fresh reopened-library XML is unavailable
+inside its original120-second budget. Initial normal joined shutdown passes,
+but the reopened Android activity becomes stopped/sleeping/invisible. Cleanup
+is ok. This is not a proportional-upload failure and no whole pass is inferred.
+Tactical273 owns bounded native display wake and a fresh full repeat. Seven
+current-APK storage recovery cases subsequently pass B with hashes and cleanup;
+A's complete original120-second full pass and seven cases stay distinct.
+
+Boundary/refusal/forwarding tests, both full receipts, owned cleanup and local
+report reconciliation satisfy this tactical's bounded stopping condition.
+Final managed/provider/reboot/network/sleep and whole B reopen remain under259.

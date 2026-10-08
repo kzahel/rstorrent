@@ -46,6 +46,16 @@ Latest release qualification work:
   complete bounded Play 1.0.23-to-1.0.25 migration and current-source signed
   desktop five-target/Android candidates; full cutover remains open.
 
+- [`259-jstorrent-finish-line-checks.md`](259-jstorrent-finish-line-checks.md):
+  active; owns the maintained release checklist, exact installed evidence and
+  ignored report, with explicit external delivery dependencies.
+- [`272-proportional-physical-upload-budget.md`](272-proportional-physical-upload-budget.md):
+  complete locally; measured proportional upload, independent full hashes and
+  bounded refusals, preserving the separate whole-run reopen failure.
+- [`273-native-display-wake-before-reopen.md`](273-native-display-wake-before-reopen.md):
+  active; ordinary target-native display wake before fresh library observation,
+  inside the existing deadline and without a product/power-policy change.
+
 ## Work Selection And Concurrency
 
 Multiple independent tacticals may be **Active** concurrently. **Active**,

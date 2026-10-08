@@ -827,3 +827,29 @@ content; they do not prove black rendering on the actual guest display or a
 product design defect. Keep original captures/adjudication unchanged and append
 the hash-bound alpha follow-up. Populated visual acceptance remains unavailable,
 while the separate functional migration pass stays valid.
+
+## Cohort B full upload pass, reopen failure and current recovery
+
+The current proportional driver passes B's three cold repetitions, detached
+3,600-second hour, independent40-MiB download/upload hashes and actual retained
+Logs/filter/Live component. Native registry is ready at168.06 seconds; inner
+upload allowance172 seconds and full verification-call elapsed157.36 seconds.
+The latter includes setup/observations and is not pure transfer duration.
+
+Whole receipt stays failed with cleanup ok. Initial joined idle shutdown is
+clean, but after reopening the task becomes sleeping/stopped/invisible and
+fresh XML is unavailable within120 seconds. The later native failure capture
+shows the retained Power Management page. A contained native cleanup warning
+on the second idle shutdown is retained; the crash-buffer entry is historical
+and has a different PID, so it does not establish a current crash. Tactical273
+exercises supported modifier-only native display wake without changing power
+policy, timeout, product source or inferred success; a new full receipt follows
+its targeted check. Tactical272's independent proportional upload scope closes.
+
+All seven current-source native storage recovery cases now pass both physical
+cohorts, with payload SHA-1 6788172e1ce40d42ebb058a29376a0cd9ba22006 and cleanup
+ok. B's recovery retains its originally loaded driver digest. Real removable
+provider, physical profile-unlock/reboot, network/sleep and managed delivery
+remain unqualified. A's exact APK staging and marker are removed; an initially
+hard-coded endpoint verification fails and is retained. The supported adapter
+then proves owned paths absent and unchanged production version/timestamps.
