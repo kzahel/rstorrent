@@ -21,7 +21,7 @@ class UploadTransportSafety(unittest.TestCase):
             binding = command[command.index('-L') + 1]
             port = binding.split(':')[1]
             process = REAL_POPEN([sys.executable, '-c',
-                'import socket,time,sys;time.sleep(.35);s=socket.socket();s.bind(("127.0.0.1",int(sys.argv[1])));s.listen();time.sleep(30)', port], **options)
+                'import socket,time,sys;sys.stderr.write("owned tunnel diagnostic\\n");sys.stderr.flush();time.sleep(.35);s=socket.socket();s.bind(("127.0.0.1",int(sys.argv[1])));s.listen();time.sleep(30)', port], **options)
             children.append(process)
             return process
         transport = None
@@ -33,7 +33,8 @@ class UploadTransportSafety(unittest.TestCase):
                 self.assertIsNone(transport.process.poll())
             finally:
                 if transport is not None:
-                    transport.close()
+                    detail = transport.close()
+                    self.assertIn("owned tunnel diagnostic", detail)
                 for process in children:
                     if process.poll() is None:
                         process.kill(); process.wait()

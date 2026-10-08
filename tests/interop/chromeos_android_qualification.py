@@ -120,6 +120,22 @@ def unique_observed_control(adb, field, value):
     return nodes[0]
 
 
+def wait_unique_observed_control(adb, field, value, *, timeout=30):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        nodes = [node for node in product.dump_ui(adb).iter() if node.get(field) == value]
+        if len(nodes) > 1:
+            raise RuntimeError(f"owned control is ambiguous: {value}")
+        if nodes:
+            node = nodes[0]
+            coordinates = [int(part) for part in re.findall(r"-?\d+", node.get("bounds", ""))]
+            if node.get("enabled") != "true" or len(coordinates) != 4 or coordinates[2] <= coordinates[0] or coordinates[3] <= coordinates[1]:
+                raise RuntimeError(f"owned control is disabled or clipped: {value}")
+            return node
+        time.sleep(.5)
+    raise RuntimeError(f"owned control was not observed within {timeout}s: {value}")
+
+
 def configure_background_observation(adb, *, keep_seeding=False):
     """Use the real owned app's switches; do not change device power policy."""
     def selected(field, value):
@@ -198,7 +214,7 @@ def verify_completed_upload(adb, fixture, registry, target, listener_port):
     return bootstrap.verify_product_upload(ForwardedAdb(), upload_fixture, device_port=listener_port, leech_timeout_seconds=120)
 
 
-def verify_retained_diagnostic_view(adb, capture):
+def verify_retained_diagnostic_view(adb, capture, expected_name):
     # Real log filters replace the native subscription with a full retained
     # snapshot. Exercise this after a large verified transfer, not an empty
     # first-use view; do not inject backend facts or increase retention.
@@ -211,7 +227,7 @@ def verify_retained_diagnostic_view(adb, capture):
     for field, value in [("content-desc", "More options"), ("text", "Logs"),
                          ("text", "Minimum: info"), ("text", "warning"),
                          ("text", "Minimum: warning"), ("text", "info")]:
-        product.tap_bounds(adb, unique_observed_control(adb, field, value).get("bounds"))
+        product.tap_bounds(adb, wait_unique_observed_control(adb, field, value).get("bounds"))
     deadline = time.monotonic() + 30
     summary = None
     while time.monotonic() < deadline:
@@ -229,10 +245,26 @@ def verify_retained_diagnostic_view(adb, capture):
     if any("initial snapshot is" in line and "exceeds" in line for line in recent):
         raise RuntimeError("owned retained diagnostic subscription still exceeds its queue")
     capture("06-retained-diagnostic-view")
-    product.tap_bounds(adb, unique_observed_control(adb, "content-desc", "Back").get("bounds"))
+    product.tap_bounds(adb, wait_unique_observed_control(adb, "content-desc", "Back").get("bounds"))
+    wait_unique_observed_control(adb, "text", "Live")
+    wait_unique_observed_control(adb, "text", expected_name)
+    capture("06-diagnostic-live-library")
     adb.shell("input", "keyevent", "KEYCODE_HOME")
-    return {"actual_filter_replacements": ["warning", "info"], "delivery_health": summary,
+    return {"actual_live_library_after_filters": True, "actual_filter_replacements": ["warning", "info"], "delivery_health": summary,
             "large_retained_history_observed": True, "snapshot_queue_failure": False}
+
+
+def capture_failed_upload_peer_view(adb, capture, destination):
+    # Preserve actual native rejection/registration facts before finally clears
+    # only this owned profile. This is diagnosis after failure, never a pass.
+    adb.shell("am", "start", "-W", "-n", ACTIVITY)
+    for field, value in [("content-desc", "More options"), ("text", "Logs"),
+                         ("text", "Category: all"), ("text", "peer")]:
+        product.tap_bounds(adb, wait_unique_observed_control(adb, field, value).get("bounds"))
+    wait_unique_observed_control(adb, "text", "Category: peer")
+    nodes = product.dump_ui(adb)
+    destination.write_text(ET.tostring(nodes, encoding="unicode"))
+    capture("failure-peer-diagnostics")
 
 
 def reopened_library_action(nodes, expected_name):
@@ -544,6 +576,7 @@ def main():
                 # shutdown during that wait is not background-mode evidence.
                 if args.observation_lifetime == "background":
                     listener_port = configure_background_observation(adb, keep_seeding=args.completed_upload)
+                    report["observed_listener_port_before_intake"] = listener_port
                 adb.shell("am", "start", "-W", "-n", ACTIVITY, "-a", "android.intent.action.VIEW", "-d", magnet_uri(fixture.info_hash, f"{args.seed_address}:{port}"))
                 deadline = time.monotonic()+300
                 while time.monotonic() < deadline:
@@ -586,7 +619,7 @@ def main():
                 if not verified:
                     raise RuntimeError("observation completion did not verify within the recovery budget")
                 if args.completed_upload:
-                    report["retained_diagnostic_view"] = verify_retained_diagnostic_view(adb, capture)
+                    report["retained_diagnostic_view"] = verify_retained_diagnostic_view(adb, capture, fixture.payload_path.parent.name)
                     handle.pause()
                     uploaded = verify_completed_upload(adb, fixture, args.registry, args.target, listener_port)
                     report["completed_background_upload"] = {"payload_bytes": uploaded, "sha1": fixture.payload_hash,
@@ -602,6 +635,11 @@ def main():
         if report.get("observation", {}).get("status") == "running":
             report["observation"]["status"] = "fail"
         diagnostic("failure", failure=True)
+        if report.get("retained_diagnostic_view") and args.diagnostics is not None:
+            try:
+                capture_failed_upload_peer_view(adb, capture, args.diagnostics / "failure-peer-view.xml")
+            except Exception as error:
+                report["peer_diagnostic_capture_failure"] = str(error)
         try:
             capture("failure")
         except Exception as error:

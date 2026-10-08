@@ -81,3 +81,32 @@ diagnoses. Add bounded connect/peer alerts (last100 retained; existing1000
 alert queue) so future transport/refusal failures have concrete evidence.
 Five transport ownership/refusal tests still pass. Targeted actual native
 diagnostic/upload probes are active; no upload or joined-reopen pass yet.
+
+### Diagnostic stage and transport refusal checkpoint
+
+Source2ad cohortA and latest source0aa cohortB both pass actual native
+Warning/Info replacements with retained history and no new snapshot queue
+error; observed local-eviction counters are2602 and2601 respectively. Overall
+upload trials still fail and owned cleanup succeeds. CohortB's first filter
+trial captures a correct rendered Logs page after the control lookup failed.
+Wait for fresh observed controls for at most30 seconds; ambiguous, disabled
+or clipped controls refuse. Three meaningful late/absent/refusal tests bring
+driver safety coverage to23 passing cases. Full latest-source Live recovery
+and upload remain pending.
+
+Actual libtorrent connect/peer alerts show TCP opening then EOF before peer
+establishment. Preserve bounded SSH stderr after terminating/joining the
+tunnel; local listener readiness never proved the remote endpoint. A
+separate owned raw handshake on cohortB's detached current app receives zero
+bytes with clean tunnel stderr; it is diagnostic evidence, not payload proof.
+An earlier interactive probe answered but included an extra trailing byte
+after its68-byte handshake, so it does not establish a clean comparative
+foreground/background gate. No engine cause is inferred. Next native failure
+capture filters the actual Logs page to peer events before clearing the owned
+profile; exact observed listener port is also recorded before intake.
+
+The diagnostic phase now explicitly requires the actual Live view and owned
+row after Back before detaching. Existing finally cleanup remains; peer
+diagnostics collected after an upload failure cannot relabel that run pass.
+Five transport tests still pass, including captured stderr from a real
+joined child. No engine, lifetime, encryption or incoming policy changes.

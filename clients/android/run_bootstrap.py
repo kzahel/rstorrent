@@ -983,7 +983,7 @@ class ChromeForwardTransport:
                 raise BootstrapFailure(f"ChromeOS forward SSH tunnel failed: {last_detail}")
         raise BootstrapFailure(f"ChromeOS forward SSH tunnel failed: {last_detail}")
 
-    def close(self) -> None:
+    def close(self) -> str:
         self.process.terminate()
         try:
             self.process.wait(timeout=5)
@@ -991,8 +991,11 @@ class ChromeForwardTransport:
             self.process.kill()
             self.process.wait(timeout=5)
         finally:
+            detail = ""
             if self.process.stderr is not None:
+                detail = self.process.stderr.read(65_536)
                 self.process.stderr.close()
+        return detail
 
 
 def clear_application(target: Any) -> None:
@@ -3825,7 +3828,9 @@ def verify_product_upload(
             hash_proxy.close()
         target.run(["forward", "--remove", f"tcp:{host_port}"], timeout=15, check=False)
         if chrome_forward is not None:
-            chrome_forward.close()
+            tunnel_detail = chrome_forward.close()
+            if tunnel_detail:
+                print(json.dumps({"stage": "android_upload_tunnel_joined", "stderr": tunnel_detail}), file=sys.stderr, flush=True)
         shutil.rmtree(output_root)
 
 

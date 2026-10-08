@@ -9,10 +9,28 @@ from unittest.mock import Mock, patch
 import xml.etree.ElementTree as ET
 
 import android_reactive_surface as product
-from chromeos_android_qualification import observation_result, PACKAGE, RemoteAdb, confirm_intake, finish_first_use, native_maximize_arguments, reset_owned_profile, create_owned_fixture, observation_payload_size, reopened_library_action
+from chromeos_android_qualification import wait_unique_observed_control, observation_result, PACKAGE, RemoteAdb, confirm_intake, finish_first_use, native_maximize_arguments, reset_owned_profile, create_owned_fixture, observation_payload_size, reopened_library_action
 
 
 class QualificationSafety(unittest.TestCase):
+    def test_delayed_filter_control_uses_fresh_observed_bounds(self):
+        snapshots = [ET.fromstring('<h/>'), ET.fromstring('<h><n text="Minimum: info" enabled="true" bounds="[1,2][31,42]"/></h>')]
+        with patch.object(product, 'dump_ui', side_effect=snapshots), patch('chromeos_android_qualification.time.sleep'):
+            self.assertEqual(wait_unique_observed_control(Mock(), 'text', 'Minimum: info').get('bounds'), '[1,2][31,42]')
+
+    def test_delayed_control_refuses_ambiguous_disabled_or_clipped(self):
+        for nodes in ['<n text="info" enabled="false" bounds="[1,2][31,42]"/>',
+                      '<n text="info" enabled="true" bounds="[0,0][0,0]"/>',
+                      '<n text="info" enabled="true" bounds="[1,2][31,42]"/>' * 2]:
+            with patch.object(product, 'dump_ui', return_value=ET.fromstring('<h>'+nodes+'</h>')):
+                with self.assertRaises(RuntimeError):
+                    wait_unique_observed_control(Mock(), 'text', 'info')
+
+    def test_absent_control_has_a_bounded_wait(self):
+        with patch.object(product, 'dump_ui', return_value=ET.fromstring('<h/>')), patch('chromeos_android_qualification.time.monotonic', side_effect=[0, 1, 31]), patch('chromeos_android_qualification.time.sleep'):
+            with self.assertRaisesRegex(RuntimeError, 'not observed within'):
+                wait_unique_observed_control(Mock(), 'text', 'info')
+
     def test_targeted_upload_cannot_be_used_to_skip_repetitions_for_an_hour(self):
         command = [sys.executable, str(Path(__file__).with_name('chromeos_android_qualification.py')),
                    '--machine-control', '/missing-owned-controller', '--registry', '/missing-owned-registry',

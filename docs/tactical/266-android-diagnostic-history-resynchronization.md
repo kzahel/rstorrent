@@ -53,3 +53,16 @@ original-signed release and generated dual-ABI isolated debug builds pass;
 121 release JVM cases/lint and independent signing, labels, launcher, API,
 ABI/alignment and notice validation pass. The APK/AAB are retained by exact
 source/hash; code26 is not uploaded. Current physical stage trials remain active.
+
+## Actual physical retained-history checkpoint
+
+Source2ad cohortA passes native Warning/Info filter replacements with
+local evicted2602 and no new snapshot queue failure. Latest-source0aa cohortB
+also passes with local evicted2601. Both actual native Logs captures are
+retained under the ignored259 evidence path. A previous cohortB control
+lookup failure is retained, and the driver now waits for fresh controls.
+Normal original-key release at0aa passes122 JVM cases,lint and independent
+packaging checks. Actual Live-library return is now explicitly required by
+the next bounded trial; completed-file upload and joined reopen remain
+separate pending gates. The diagnostic queue fix is not asserted as their
+cause or remedy.
