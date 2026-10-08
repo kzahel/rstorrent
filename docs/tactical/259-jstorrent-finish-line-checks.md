@@ -868,3 +868,24 @@ Tactical274 begins a bounded installed native GNOME default-encoder recording
 prerequisite to resolve transparent ARM PNG capture data. No graphics setting,
 permission bypass or product change is authorized. Boot occurs only after the
 controller is prepared, with serialized finally shutdown/claim release.
+
+### Native ARM compositor recording and preserved migration
+
+Tactical274's installed GNOME46 default recording route supplies real desktop,
+legacy window and native JSTorrent tray pixels. The unchanged real old-writer
+helper again passes all eight migration assertions and six refusal routes,
+full source/payload preservation, normal native Quit and complete restoration.
+Migrated/restarted and refusal recording regions remain almost uniformly black;
+cause and populated visual acceptance stay open. Disclosure is actually
+acknowledged with unchecked statistics and remains absent after restart. All
+recording exports independently hash/decode; each guest recording root is
+removed. The VM is verified off with claim release before a prepared bounded
+exact-recording recent-file metadata cleanup follow-up. No product/GPU/policy
+change or final signed-source claim occurs.
+
+Tactical274 completes its bounded capture investigation. Its final exact-owned
+cleanup finds and removes all eight recording URIs after delayed recent-file
+flush, independently verifies zero owned metadata entries and all recording
+roots absent, then confirms serialized shutdown/off/claim release. The earlier
+immediate absent observations remain preserved and do not establish final
+metadata absence. Normal real migration passes; visual acceptance remains open.

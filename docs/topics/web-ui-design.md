@@ -32,6 +32,17 @@ it. Recorded GVfs/module warnings and a separate spice-vdagent crash do not
 establish its cause. Tactical259 retains original captures/adjudication plus the
 alpha follow-up, with no graphics override or product change.
 
+Tactical [274](../tactical/274-linux-arm-native-compositor-capture.md) checks
+GNOME46's installed native default-encoder recording route without graphics
+or permission overrides. Actual desktop/legacy window and native tray menus
+are legible; migrated/restarted and refusal-dialog recording regions remain
+almost uniformly black. The real old-writer helper repeats all eight assertions
+and six refusal routes with full source/payload preservation and restoration.
+This completes bounded capture investigation without closing visual acceptance
+or establishing its cause. Final cleanup removes eight exact owned recording
+URIs after delayed recent-file flush, verifies all recording roots absent and
+serializes verified off/claim release.
+
 Tactical [258](../tactical/258-cross-surface-branding-and-design-audit.md)
 completes the broader branded surface audit with an
 [audit execution record](../tactical/258-cross-surface-branding-and-design-audit.md). The website uses

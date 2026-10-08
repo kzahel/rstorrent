@@ -57,8 +57,8 @@ Latest release qualification work:
   inside the existing deadline and without a product/power-policy change.
 
 - [`274-linux-arm-native-compositor-capture.md`](274-linux-arm-native-compositor-capture.md):
-  active; bounded native GNOME recording prerequisite for transparent ARM
-  captures, without graphics overrides or inferred visual acceptance.
+  complete locally; native GNOME recordings and restored migration evidence
+  retain the ARM visual gap, with exact-owned cleanup and no graphics override.
 
 ## Work Selection And Concurrency
 
