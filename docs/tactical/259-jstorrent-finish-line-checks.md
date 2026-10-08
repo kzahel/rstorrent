@@ -1,5 +1,22 @@
 # Tactical 259: JSTorrent Finish-Line Checks
 
+The final signed source8c Windows x64 NSIS candidate now passes actual
+per-user legacy0.2.1-to-successor0.3.0 installation: eight assertions, eight
+registered refusal routes, four imported records, valid100%/corrupt0% recheck,
+retained unavailable root, stable native Quit/restart and source/payload
+preservation. All eleven new native captures are visually inspected. The
+owned disclosure saves statistics off and remains version1/off after restart.
+Independent checks compare48 HKCU scopes and seven restored file scopes;
+exactly four newly created program-bound firewall Block rules are removed,
+unrelated OS rules are preserved, no owned process remains, and35 hash-bound
+staging files are removed. The VM is verified off and its claim released.
+Native MSI metadata/signature inspection passes, but per-machine installation,
+Windows automatic/GUI updating and full launch/association cohorts remain open.
+The advanced firewall rule inventory exposes the executable label
+`rstorrent-desktop.exe`; it is an unresolved OS-facing branding finding,
+separate from the eleven branded product screenshots. The raw native-host
+registration error also confirms the existing actionable-copy design gap.
+
 The authorized native Windows x64 appliance rebuild is handed off with verified
 AMD64 Windows11, real Python3.13 sqlite3/winreg, native semantic/capture/input
 readiness and a real cold locked-to-unlocked stored-password login. Credential
