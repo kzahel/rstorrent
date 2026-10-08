@@ -574,6 +574,10 @@ class MainActivity : ComponentActivity() {
                     onOpenNotificationSettings = ::openNotificationSettings,
                     onOpenFeedback = ::openFeedback,
                     onOpenPrivacy = ::openPrivacy,
+                    onShutdown = {
+                        productService.value?.shutdownFromUi()
+                        finishAndRemoveTask()
+                    },
                     onBackgroundDownloads = ::setBackgroundDownloads,
                     notificationNavigation = notificationNavigation.value,
                     onNotificationNavigationConsumed = { sequence ->

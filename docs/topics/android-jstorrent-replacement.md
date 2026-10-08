@@ -1,5 +1,13 @@
 # Android JSTorrent Replacement Readiness
 
+Tactical [278](../tactical/278-android-shutdown-window-lifecycle.md) follows a
+real code26 managed menu failure: the engine joins successfully, but the bound
+activity still displays Live. The next local candidate27 routes Shutdown
+through the activity owner, requesting the existing terminal stop then removing
+the task so its binding is released. Engine/network/background/privacy policy
+is unchanged. Debug JVM tests and lint pass; actual isolated menu/reopen and
+original-key packaging remain pending. Existing managed code26 is preserved.
+
 Topic: `android-jstorrent-replacement`
 
 The maintainer explicitly approves exact sourceaeaa original-key code26

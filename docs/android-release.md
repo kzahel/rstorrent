@@ -1,7 +1,7 @@
 # Android Release Runbook
 
 Android release now targets the existing JSTorrent `com.jstorrent.app` app,
-with source candidate 1.0.26/versionCode 26 and `android-vX.Y.Z` tags.
+with next local candidate 1.0.27/versionCode 27 and `android-vX.Y.Z` tags.
 Debug builds retain `org.rstorrent.bootstrap`; Kotlin/JNI namespace stays
 unchanged. A release-only alias preserves the legacy launcher component.
 The Android Release workflow builds both arm64-v8a and x86_64, runs release
@@ -49,7 +49,8 @@ must increase; the version code is never derived from CI run numbers. If a
 push fails, the local commit/tag remain available for inspection and retry;
 do not run the bump helper again blindly.
 
-The already-prepared 1.0.26/code 26 candidate uses the manual build route below.
+The next local 1.0.27/code 27 candidate uses the manual build route below.
+Code26 is available on the existing internal Play track; production remains23.
 The bump helper requires a strictly newer version; it cannot tag that same
 prepared version. Publishing the exact candidate would require separate explicit
 tag/publication direction rather than another accidental bump.

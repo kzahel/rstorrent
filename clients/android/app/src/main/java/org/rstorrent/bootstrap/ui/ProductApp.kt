@@ -126,6 +126,7 @@ fun ProductApp(
     onOpenFeedback: (Boolean, String) -> Unit = { _, _ -> },
     onPreviewFeedback: (suspend (Boolean) -> ProductFeedbackPreview?)? = null,
     onOpenPrivacy: () -> Unit = {},
+    onShutdown: () -> Unit = { service?.shutdownFromUi() },
     themeMode: ProductThemeMode,
     dynamicColor: Boolean,
     onThemeMode: (ProductThemeMode) -> Unit,
@@ -186,6 +187,7 @@ fun ProductApp(
         Box(modifier = Modifier.fillMaxSize()) {
             Surface(modifier = Modifier.fillMaxSize()) {
                 ProductNavHost(
+                    onShutdown = onShutdown,
                     state = state,
                     service = service,
                     onSelectStorage = onSelectStorage,
@@ -650,6 +652,7 @@ private fun externalIntakeNoticeText(kind: ExternalIntakeNoticeKind): String =
 
 @Composable
 private fun ProductNavHost(
+    onShutdown: () -> Unit,
     state: ProductState,
     service: ProductEngineService?,
     onSelectStorage: () -> Unit,
@@ -782,7 +785,7 @@ private fun ProductNavHost(
                 onDht = { navController.navigate(ProductRoutes.DHT) },
                 onLogs = { navController.navigate(ProductRoutes.LOGS) },
                 onSettings = { navController.navigate(ProductRoutes.SETTINGS) },
-                onShutdown = { service?.shutdownFromUi() },
+                onShutdown = onShutdown,
             )
         }
         composable(ProductRoutes.DETAIL) { entry ->
