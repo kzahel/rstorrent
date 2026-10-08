@@ -1,5 +1,23 @@
 # JSTorrent In-Place Cutover Checklist
 
+The locally qualified candidate source is03e63443. The full default bundled
+Chromium suite now passes62 cases with14 existing live/opt-in skips; focused
+managed-package captures pass separately. Current branding2037 display values/
+40 original assets and all maintained localization catalogs pass. Fresh exact-
+lock Rust/npm review passes the unchanged seven-warning/backport policy and
+2026-10-12 expiry; native WebKit/OpenSSL/source/relink holds remain separate.
+The rebuilt production extension1.1.2 is400105 bytes/SHA-256
+`38be77fd4237f8f09218dc69a1618b0cfdc8aa6143bbfe36346809edc2c93bfb`,
+retains the existing item ID, and passes54 extension cases, exact19-entry ZIP/
+13-bundle CSP validation and17 injected packaged onboarding/cache scenarios.
+No device/store acceptance is inferred from injected cases. Authenticated
+read-only store refresh remains Web Store published/draft1.1.1 with three
+legacy screenshots/privacy text, and Play internal26/production23. No new
+upload/draft save/certification/submission occurs. Frozen03e push/nonpublishing
+signed-build review supersedes pending681/b0b/932 proposals; explicit action
+instruction remains pending. D-01/D-02 reopen for changed final package inputs;
+immutable source8c signature/identity evidence remains valid for its own bytes.
+
 Tactical [281](tactical/281-managed-package-update-status.md) locally
 repairs the actual MSI About-screen automatic-update contradiction. MSI/DEB/RPM
 and unknown packages start and stay in existing manual package guidance, own

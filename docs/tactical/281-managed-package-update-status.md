@@ -79,3 +79,9 @@ Fresh exact-source signed package and native updated MSI screen/restart
 qualification remain open under259. The source8c native screenshots remain
 before-fix evidence; controlled renderer images do not establish installed
 Windows acceptance.
+
+The full default bundled-Chromium suite subsequently passes62 cases, with14
+existing opt-in live skips. Updated production extension packaging also passes
+54 extension cases/19-entry archive validation/13 companion CSP bundles and17
+explicitly injected Android/Linux/cache journeys. These checks use owned test
+browsers and do not substitute for installed or store acceptance.
