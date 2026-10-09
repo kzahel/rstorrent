@@ -2,6 +2,16 @@
 
 Topic: `android-saf-storage`
 
+Tactical259 now adds actual Play-managed code27 owned-folder outage/restoration
+on physical cohort B. A normally closed, marker/inventory-checked test tree is
+renamed; the original path is not recreated and Library/Storage show retained
+library/Repair. Restoring its original path recovers available storage and the
+paused independently hashed file with the source paused. Original persisted URI
+grant identity/modes/time and package identity remain; normal owned cleanup
+retains only the empty selected folder/grant and closes every tab/window.
+This is path-availability evidence, not managed grant revocation/regrant, completed
+repair picking, two-tree, exact opaque-root-ID, removable-provider or reboot proof.
+
 Tactical
 [253](../tactical/253-chromeos-onboarding-recovery-and-physical-qualification.md)
 adds current isolated physical APK evidence on cohort A: the real picker

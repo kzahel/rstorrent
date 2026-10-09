@@ -2,6 +2,15 @@
 
 Topic: `download-roots`
 
+Tactical259's managed Android27 cohort now proves an owned missing default
+folder is not recreated, its paused library is retained with actionable Repair,
+and original-path restoration returns available storage and the verified file
+without a live source. Persisted grant identity/modes/time and package identity
+remain; exact owned cleanup leaves only the empty selected test folder/grant.
+Grant-loss/Repair picking and exact relocated/per-torrent binding remain separate.
+The current Storage screen's duplicate default/retained-root rows and Select versus
+Repair wording are recorded design notes, with no source change in this check.
+
 Tactical 253's second-cohort follow-up keeps the native Library in a checking
 state until the startup probe completes, instead of offering premature folder
 repair. Android browser HTTP 408 now explains picker expiration and an explicit

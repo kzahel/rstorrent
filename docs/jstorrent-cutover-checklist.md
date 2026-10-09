@@ -49,6 +49,11 @@ as historical exact-byte evidence. All other package inputs stay unchanged.
   foreground return retains partial intent/prefix and completes the whole hash.
   Identity/grant and exact cleanup pass. Enabled-background/hour, sleep/reboot,
   physical network loss and upload serving remain separate.
+- [x] Qualify managed27 owned default-folder outage without path recreation,
+  retained-library/Repair presentation and source-paused original-path recovery
+  with a full1MiB hash. Identity/grant and exact cleanup pass. Grant-loss/regrant,
+  completed Repair picking, second-tree/provider/reboot and opaque binding remain
+  separate; selected empty owned folder/grant retained.
 - [x] Verify actual extension inventories: B has none; A has unpacked1.1.1 and
   stale unpacked Beta0.4.0. Close tabs individually before windows on both
   Chromebooks; independent fresh launches restore only one new tab, then close

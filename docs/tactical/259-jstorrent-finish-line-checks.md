@@ -2,6 +2,18 @@
 
 ## Current restart checkpoint, 2026-10-10
 
+Slice041 passes managed27 owned-folder unavailability/restoration with a
+verified1MiB paused payload. Normal Shutdown removes task/service before each
+marker/inventory-checked rename; the missing original path is not recreated.
+Actual Library retains its row with Your library is retained/Repair, and Storage
+shows unavailable/Repair. Restoring the original path returns Live/paused row,
+available Storage and the full SHA-256 with the source paused. Package identity
+and persisted grant identity/modes/time remain. Normal Keep data/Back/Shutdown,
+exact owned cleanup and zero tab/window inventory pass; empty selected folder/
+grant remain. No grant loss/regrant, completed Repair picking, second tree,
+opaque root-ID, removable provider, relocated binding or reboot claim follows.
+Duplicate current-folder rows and Select/Repair/provider wording are design notes.
+
 Slice040 passes exact original-signed A7 x64 DMG standard copying on ARM
 with existing Rosetta: read-only source/copy strict/deep signatures and detach,
 independent thin-x64 app-archive/main hash comparison, eight migration assertions/

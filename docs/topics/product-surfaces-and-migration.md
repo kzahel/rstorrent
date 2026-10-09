@@ -1,5 +1,17 @@
 # Product Surfaces And JSTorrent Migration
 
+Slice041 passes managed27 owned-folder unavailability/restoration with a
+verified1MiB paused payload. Normal Shutdown removes task/service before each
+marker/inventory-checked rename; the missing original path is not recreated.
+Actual Library retains its row with Your library is retained/Repair, and Storage
+shows unavailable/Repair. Restoring the original path returns Live/paused row,
+available Storage and the full SHA-256 with the source paused. Package identity
+and persisted grant identity/modes/time remain. Normal Keep data/Back/Shutdown,
+exact owned cleanup and zero tab/window inventory pass; empty selected folder/
+grant remain. No grant loss/regrant, completed Repair picking, second tree,
+opaque root-ID, removable provider, relocated binding or reboot claim follows.
+Duplicate current-folder rows and Select/Repair/provider wording are design notes.
+
 Slice039 passes actual managed27 notification-denied partial-transfer OS
 Minimize, cooperative service/controlled-peer closure and10-second stable
 reference upload with the source available. Normal foreground return retains
