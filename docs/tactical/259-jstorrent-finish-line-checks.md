@@ -7,6 +7,10 @@ incompatibility message still asks to update both components without a link.
 Actual store-delivered scenarios remain unchecked; no publication is performed.
 All71 focused existing Android/desktop companion tests pass on 2026-10-09;
 source-reviewed messages and links are not claimed as installed/store evidence.
+The maintainer requests screenshots and a short default-choice explanation
+for each scenario, with before/after for changes and feedback during ongoing
+work. This review cadence is recorded in the scenario checklist; routine
+reversible copy/design choices do not require a separate approval pause.
 
 Linux first-release scope is narrowed by maintainer direction on 2026-10-09:
 best-effort AppImage desktop support, maintained bundled libraries, no older-

@@ -4,6 +4,22 @@ First-release checklist, agreed 2026-10-09. Make a good-faith effort to give
 users an understandable next step when updates arrive separately. This is a
 small rollout and recovery checklist, not a promise of legacy feature parity.
 
+## Per-scenario review
+
+For each scenario, show the maintainer representative screenshots in the
+conversation with a short account of the behavior, chosen copy/design and any
+accepted limitation. Show before/after when changing the screen; otherwise
+show the current result. Label renderer fixtures, injected states and real
+installed/store captures accurately. If a scenario cannot be exercised, say
+so rather than presenting a substitute as its screenshot evidence.
+
+Choose a sensible default and continue independent work without requiring
+approval for every reversible copy/design change. Leave room for feedback
+before finalizing the scenario, and incorporate incoming feedback into the
+active work. Scenario acceptance, screenshot review and store publication
+authority remain distinct. Keep images and detailed notes in the ignored
+finish-line report; use absolute Markdown image links in conversation.
+
 ## Release order
 
 - [ ] Freeze and test the exact desktop, Android and extension candidates.
