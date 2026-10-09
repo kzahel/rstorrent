@@ -25,14 +25,45 @@ so managed Shutdown/reopen and payload-row acceptance remain pending. The other
 device's documented ADB connection attempt refuses; no reboot, rootfs repair
 or power-policy change is performed. Private receipts/screenshots stay ignored.
 
-Original-root nonpublishing desktop qualification now runs at `a7ee65ed` in
-[37958746928](https://github.com/kzahel/rstorrent/actions/runs/37958746928).
-The first attempt37957327863 proved the original signing root and was cancelled
-before package qualification because the final signature CLI still requiredten.
-The tool-only correction requires six production/ten preview signatures;20
-focused cases pass. Production publication and website deployment remain outside
-this instruction. The exact extension draft upload is authorized but waiting
-for the user's Google passkey verification; no new Web Store upload is claimed.
+Original-root desktop candidate `a7ee65ed` now completes all five signed lanes
+and collector in run37958746928; main CI37958695272 also succeeds. Independent
+checks reconcile15 core sizes/hashes, six original-root signatures/six wrong-
+root refusals and11 selectors. Both actual Noble AppImages carry the reviewed
+WebKit2.52.6/OpenSSL3.0.13-0ubuntu3.16 floors. Five extracted formats reconcile
+first-party binaries and notice manifests; owned extractions are removed.
+
+Both Mac archives independently pass strict/deep Developer ID signatures,
+original team, original icons and local ARM-host Gatekeeper. Both DMGs pass
+stapling; Accepted Apple ticket CDHashes match each delivered app/main/host/DMG.
+Native Windows x64 independently observes valid Kyle Graehl NSIS/MSI signatures
+and Microsoft timestamps, with exact package hashes and read-only MSI identity.
+Two harness errors stay failed: COM table methods initially emitted null and a
+subsequent assertion incorrectly required manufacturer capitalization. Corrected
+independent checks reconcile retained native observations; no package bytes
+change. Windows staging is removed, VM off and claim released.
+
+D-01/D-02 now close their bounded final identity/signature contracts alongside
+D-03. Native installed/automatic-update/launcher, complete native security and
+corresponding-source/relink acceptance remain separate P/R requirements. The
+collector has exactly15 core assets; a production draft adds a separately
+verified SHA256SUMS support file. Its synthetic draft metadata is not a live
+GitHub draft, release, tag or updater feed.
+
+Current signed Linux x64 AppImage and Mac ARM archive each pass eight real
+old-writer migration assertions, valid/corrupt reverification, missing-root
+preservation and stable four-row native Quit/restart. Refusal routes pass six
+on Linux/nine on Mac. Actual native captures are visually reviewed; current
+product titles/icons/menus show JSTorrent. The owned fresh profiles opt out of
+statistics through real native input; independent persisted-state checks pass.
+Inherited scoped state is restored, owned staging/capture copies removed, VMs
+off, claims released and transfer servers reaped. Manual archive/AppImage
+replacement does not qualify automatic updater, Intel native launch, FUSE or
+all associations. Technical registration-failure copy and default tab/status
+clipping remain recorded design findings.
+
+The exact extension draft upload remains authorized and blocked on the user's
+Google passkey verification. Production publication and website deployment
+remain outside the current instruction.
 
 The maintained cutover checklist is condensed from780 to222 lines: dated
 checkpoint narrative moves out of the current task view, with every25 acceptance

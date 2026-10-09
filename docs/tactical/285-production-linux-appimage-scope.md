@@ -72,3 +72,14 @@ input/nightly and candidate cases, 26 distribution review cases and actionlint
 pass. No hosted/signed build runs. Actual Noble bundled package versions,
 minimum ABI, source/relink offer and installed screenshots remain under259;
 this local policy change does not clear the old signed AppImages.
+
+## Hosted qualification under259, 2026-10-09
+
+Frozen a7ee65ed completes the nonpublishing five-target production build in
+37958746928. Exact15 core assets/six retained-root signatures/11 selectors and
+six wrong-root refusals pass independently; no DEB/RPM is collected. Both real
+AppImage inventories meet the reviewed Noble WebKit/OpenSSL floors, reconcile
+first-party binaries and packaged notices, and remove owned extractions. Linux
+x64 native supported extract-and-run migration/restart and visual checks pass
+with VM-off/claim-release restoration. Complete native security/source/relink
+delivery, ARM installed acceptance and normal update/FUSE remain under259.

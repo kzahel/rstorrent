@@ -1,5 +1,45 @@
 # Desktop JSTorrent Replacement
 
+## Current candidate qualification, 2026-10-09
+
+Original-root desktop candidate `a7ee65ed` now completes all five signed lanes
+and collector in run37958746928; main CI37958695272 also succeeds. Independent
+checks reconcile15 core sizes/hashes, six original-root signatures/six wrong-
+root refusals and11 selectors. Both actual Noble AppImages carry the reviewed
+WebKit2.52.6/OpenSSL3.0.13-0ubuntu3.16 floors. Five extracted formats reconcile
+first-party binaries and notice manifests; owned extractions are removed.
+
+Both Mac archives independently pass strict/deep Developer ID signatures,
+original team, original icons and local ARM-host Gatekeeper. Both DMGs pass
+stapling; Accepted Apple ticket CDHashes match each delivered app/main/host/DMG.
+Native Windows x64 independently observes valid Kyle Graehl NSIS/MSI signatures
+and Microsoft timestamps, with exact package hashes and read-only MSI identity.
+Two harness errors stay failed: COM table methods initially emitted null and a
+subsequent assertion incorrectly required manufacturer capitalization. Corrected
+independent checks reconcile retained native observations; no package bytes
+change. Windows staging is removed, VM off and claim released.
+
+D-01/D-02 now close their bounded final identity/signature contracts alongside
+D-03. Native installed/automatic-update/launcher, complete native security and
+corresponding-source/relink acceptance remain separate P/R requirements. The
+collector has exactly15 core assets; a production draft adds a separately
+verified SHA256SUMS support file. Its synthetic draft metadata is not a live
+GitHub draft, release, tag or updater feed.
+
+Current signed Linux x64 AppImage and Mac ARM archive each pass eight real
+old-writer migration assertions, valid/corrupt reverification, missing-root
+preservation and stable four-row native Quit/restart. Refusal routes pass six
+on Linux/nine on Mac. Actual native captures are visually reviewed; current
+product titles/icons/menus show JSTorrent. The owned fresh profiles opt out of
+statistics through real native input; independent persisted-state checks pass.
+Inherited scoped state is restored, owned staging/capture copies removed, VMs
+off, claims released and transfer servers reaped. Manual archive/AppImage
+replacement does not qualify automatic updater, Intel native launch, FUSE or
+all associations. Technical registration-failure copy and default tab/status
+clipping remain recorded design findings.
+
+The following earlier checkpoints remain pinned historical evidence.
+
 Authorized source fe30d273 candidate attempt 37957327863 passes the original-root
 nonce probe, then is cancelled before package qualification: the final signature
 CLI still expected ten payloads. Tactical285 now requires six production/ten

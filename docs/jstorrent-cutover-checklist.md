@@ -26,10 +26,20 @@ copy and independent store timing.
 - [x] Observe physical Play26-to27 update on one retained Chromebook: UID,
   first-install date, Play installer and URI grants remain unchanged. Its
   inherited unresolved privacy disclosure remains; no lifecycle pass is inferred.
-- [ ] Finish original-root signed desktop build and package qualification at
+- [x] Finish original-root signed desktop build and bounded identity/signature
+  qualification at
   frozen `a7ee65ed`, [run37958746928](https://github.com/kzahel/rstorrent/actions/runs/37958746928).
-  Source checks and signing nonce pass. Inspect15 core assets, six updater
-  signatures,11 selectors, native libraries, notices and source/relink delivery.
+  All five lanes and collector pass, as does main CI37958695272. Independently
+  qualify15 core hashes, six original-root signatures/six wrong-root refusals,
+  11 selectors, both Mac trust/notary/staples and native Windows publishers.
+- [x] Repeat bounded signed Linux x64 and Mac ARM migration/restart with native
+  screenshots. Both pass eight assertions, stable four-row restart and preserved
+  source/payload; scoped restoration, staging removal, VM-off and claim-release
+  verify. These are manual replacement checks, not automatic-update acceptance.
+- [ ] Complete current installed Windows and remaining selected native cohorts;
+  review native security, notices and corresponding-source/relink delivery.
+  Both actual AppImages meet the reviewed Noble WebKit/OpenSSL build floors;
+  this does not close complete redistribution or installed acceptance.
 - [ ] Upload the exact approved extension1.1.2 ZIP to the existing draft item.
   Google account verification currently needs the user. Draft upload authority
   excludes submission, certifications and publication.
@@ -55,25 +65,24 @@ they cannot satisfy production delivery. Keep private values out of public docs.
 
 ## Candidate Identity And Delivery
 
-- [ ] **D-01 Desktop identity:** JSTorrent name/icons, `com.jstorrent.desktop`,
+- [x] **D-01 Desktop identity:** JSTorrent name/icons, `com.jstorrent.desktop`,
   existing Tauri updater trust root and `updates.jstorrent.com` route. Candidate
   version exceeds every selected installed source. Beta route/key remain separate.
-  Exact source8c signed five-target0.3.0 metadata, both packaged Mac icons,
-  2,037 display values/40 original assets, retained ID/key/route and selected
-  legacy0.2.1 ordering qualify. Native/updater/launcher/pixel cohorts remain
-  separate installed gates. This source8c pass remains historical;279/280/281
-  change final package inputs, so final-candidate identity must be repeated.
-- [ ] **D-02 Desktop signatures:** retained updater key verifies final signatures;
+  Frozen a7 signed five-target0.3.0 metadata, actual Mac/Windows package names,
+  both packaged Mac icons,2,040 display values/40 original assets, retained
+  ID/key/route and selected legacy0.2.1 ordering qualify. Native installed,
+  updater/launcher/pixel cohorts remain separate P gates.
+- [x] **D-02 Desktop signatures:** retained updater key verifies final signatures;
   wrong key fails. macOS Developer ID/team, notarization/stapling/Gatekeeper and
   Windows publisher/signature match the accepted production delivery lane.
-  Exact final source8c qualifies ten retained-root signatures/ten wrong-root
-  refusals, both Mac signatures/notary/staples and local ARM-host Gatekeeper
-  assessments. Native Windows ARM verifies NSIS/MSI hashes, valid accepted-
-  publisher Authenticode and Microsoft timestamps without install/login. Nine
-  independently extracted signed formats reconcile binaries and notice integrity;
-  AppImage source/redistribution review and installed/native acceptance retain
-  separate R-05/P requirements. Fresh signatures for the279/280/281 candidate
-  are required; do not carry source8c whole-row closure onto changed bytes.
+  Exact a7 qualifies six retained-root signatures/six wrong-root refusals,
+  both Mac strict/deep signatures, Accepted notary CDHash bindings, DMG staples
+  and ARM-host Gatekeeper assessments. Native Windows x64 verifies exact
+  NSIS/MSI hashes, accepted-publisher Authenticode and Microsoft timestamps.
+  Five independently extracted formats reconcile binaries/notices; actual MSI
+  read-only metadata qualifies identity. Failed inspection-script assumptions
+  stay recorded; corrected checks reconcile the retained native observations.
+  Native source/redistribution review and installed acceptance remain R-05/P.
 - [x] **D-03 Android identity:** `com.jstorrent.app`; versionCode exceeds all Play
   tracks, including closed/internal/testing, and selected GitHub APKs. Record
   upload certificate separately from the existing Play app-signing certificate.
