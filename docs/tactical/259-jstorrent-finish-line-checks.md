@@ -67,6 +67,19 @@ independently. All50 registry/seven file scopes restore exactly; owned cleanup,
 VM-off/claim-release and private trial removal pass. The original failed attempt
 and separate exact recovery remain preserved; product bytes stay unchanged.
 
+## Per-slice installer and Intel readiness, 2026-10-09
+
+Ignored short reports022/023 retain actual evidence. The exact a7 Windows
+NSIS welcome/location/finish pages use JSTorrent names with generic installer
+artwork. The presentation runner wrongly advanced Next on the location page,
+which installed the candidate; that run stays failed. Exact initially absent
+50-registry/seven-file scopes were reconstructed only after their digest
+matched the recorded baseline, restored and independently verified identical.
+Owned staging is removed, Windows off/claim released. Existing Rosetta is
+available on the ARM Mac VM; no Intel app acceptance is inferred. Its graceful
+shutdown required administrator authorization; explicit owned stop/release
+completes cleanup. Original failed receipts remain unchanged.
+
 ## Current execution checkpoint: 2026-10-09
 
 Slice007 initially rejects the invalid signature without changing the old
