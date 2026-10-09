@@ -2,6 +2,13 @@
 
 ## Current execution checkpoint: 2026-10-09
 
+Slice003 also closes all observed cohort-A browser tabs/application windows.
+Both physical devices now independently expose zero browser page targets and
+zero native Close controls, with actual clean desktop captures. Installed data,
+grants and appliance power policy are preserved. Current common doctors report
+degraded SSH boot persistence/pending OS update on both devices; no reboot or
+rootfs transition is attempted as part of cleanup.
+
 The maintainer directs execution of all next qualification slices and a separate
 ignored report per slice. Close every physical Chromebook browser tab and
 application window after each slice, verify the empty inventory, and retain VM
