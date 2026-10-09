@@ -1,5 +1,15 @@
 # Tactical 259: JSTorrent Finish-Line Checks
 
+Slice021 prepares exact extension1.1.2 permission/privacy field replacements
+from a fresh authenticated read-only dashboard observation. Old raw-I/O and
+browser-progress explanations remain; all nine data categories are unchecked.
+The local proposal distinguishes pairing/session credentials, local counters/
+content and the disabled hosted identifier/counter fields. Google guidance
+includes local handling; category interpretation and certifications remain
+account-owner review. No draft save, checkbox edit, submission or deployment
+occurs. Slice019 separately prepares three visibly labeled demo image candidates;
+actual installed connected/native screenshot selection remains open.
+
 Slice020 collects the final A7 AppImages' exact89 Ubuntu Noble source versions,
 every SHA-256-bound descriptor/source file and original128/129 notice files.
 A local529.8MB review capsule includes frozen first-party source, selected
