@@ -40,10 +40,17 @@ Machine Control between uses, including while waiting for builds, approvals or
 other targets; do not leave idle VMs running for later checks. Verify the stopped
 state and release the claim when the session no longer needs exclusive access.
 
-On physical Chromebooks, close all browser tabs and application windows after
-each test slice, and verify the remaining tab/window inventory is empty. Preserve
-installed application data, grants and the appliance power policy. Capture and
-report each slice separately under the ignored evidence path.
+On physical Chromebooks, close browser tabs individually before closing the
+application windows after each test slice. Closing only the Chrome window can
+leave the entire session available to restore on its next launch. Use fresh
+Machine Control browser and native inventories, verify input focus before tab
+shortcuts, and require the page count to decrease after each close. Treat the
+common ChromeOS targets projection as page entries even when it omits `type`;
+an absent field is not proof of an empty browser. Verify zero remaining pages
+and native Close controls. When correcting accumulated sessions, independently
+check that a fresh normal Chrome launch opens only a new tab, then close it too.
+Preserve installed application data, grants and the appliance power policy.
+Capture and report each slice separately under the ignored evidence path.
 
 Do not substitute direct hypervisor commands or legacy platform-specific
 testbed repositories for ordinary cross-platform acceptance. Direct provider

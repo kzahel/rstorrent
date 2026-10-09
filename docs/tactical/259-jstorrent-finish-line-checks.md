@@ -2,6 +2,18 @@
 
 ## Current restart checkpoint, 2026-10-10
 
+Slices034/035 inspect actual physical extension inventories: B has no
+JSTorrent extension; A has unpacked1.1.1 under the production ID and stale
+unpacked Beta0.4.0 with retired branding. Neither proves installed-store
+continuity. Installed extensions remain unchanged for mixed-version work.
+Cleanup corrects browser session restoration: individually close tabs with
+verified input focus and decreasing actual page counts before windows. The
+common targets projection omits type; its entries still represent pages.
+After nine B tab closures and one A tab closure, independent normal Chrome
+relaunches each expose only one new tab; those tabs also close. Original
+window-only and shelf-focus failures remain distinct from the final empty
+inventories. DEVELOPMENT.md records the durable cleanup procedure.
+
 Slice033 qualifies actual Play-managed code27 foreground trackerless1MiB
 magnet intake/file confirmation, independent SHA-256 and three normal populated
 Shutdown/task/service removal/Live reopen repetitions. Completed paused intent,

@@ -13,7 +13,7 @@ per-slice finish-line reports. Earlier passes remain bound to their exact artifa
 Use the shorter [update scenarios](jstorrent-update-scenarios.md) for recovery
 copy and independent store timing.
 
-## Current finish-line tasks, 2026-10-09
+## Current finish-line tasks, 2026-10-10
 
 Tactical290 now corrects Windows installer artwork locally. Its actual native
 presentation harness passes, but it changes Windows packaging inputs after
@@ -34,6 +34,15 @@ as historical exact-byte evidence. All other package inputs stay unchanged.
   actual managed27 normal Shutdown removes its task/service and normal reopen
   returns Live after saving statistics opt-out. Exact grants remain unchanged;
   populated-library and reboot acceptance are separate.
+- [x] Qualify actual managed27 controlled1MiB download/file confirmation and
+  three populated paused Shutdown/reopen cycles with independent hashes and
+  persisted folder grant retained. Exact owned row/file/marker cleanup passes;
+  the selected empty test folder remains. Removed-detail navigation polish is
+  recorded; background/hour/reboot and populated old-store migration stay open.
+- [x] Verify actual extension inventories: B has none; A has unpacked1.1.1 and
+  stale unpacked Beta0.4.0. Close tabs individually before windows on both
+  Chromebooks; independent fresh launches restore only one new tab, then close
+  that too. These unpacked installations do not qualify actual store updates.
 - [x] Finish original-root signed desktop build and bounded identity/signature
   qualification at
   frozen `a7ee65ed`, [run37958746928](https://github.com/kzahel/rstorrent/actions/runs/37958746928).
