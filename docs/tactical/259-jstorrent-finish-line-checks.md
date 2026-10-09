@@ -2,6 +2,16 @@
 
 ## Current execution checkpoint: 2026-10-09
 
+Slice006 repeats actual cohort-A Play/ARC access: normal Play launch remains
+at Starting Play Store; canonical ADB connection refuses. The runtime audit
+confirms SSH/autostart/power checks, but the pending OS update prevents full
+readiness and no-reboot repair reports guided recovery required. No reboot,
+rootfs transition, data clear or sideload occurs. Initial probe and its
+ADB-dependent cleanup stay failed; exact owned host marker removal and final
+zero-page/zero-Close-control cleanup verify separately. Actual captures and
+a separate blocked-slice report remain ignored. Cohort-A installed acceptance
+cannot be inferred from the passing cohort-B or isolated evidence.
+
 Slice003 also closes all observed cohort-A browser tabs/application windows.
 Both physical devices now independently expose zero browser page targets and
 zero native Close controls, with actual clean desktop captures. Installed data,
