@@ -23,8 +23,14 @@ no check timers, and show no in-app check/install or automatic-check privacy
 copy. Backend policy, trust/routes and preference behavior remain unchanged.
 Full web typecheck/478 tests (two existing skips),20 focused bundled-Chromium
 render/accessibility cases and16 inspected managed/theme/width captures pass.
-Fresh exact-source signed native MSI evidence remains open under259; renderer
-fixtures are labeled separately from unchanged source8c before-fix captures.
+The exact original-signed a7 MSI now passes actual native About & updates
+checks, tray Quit/reopen and independent cabinet/installed-byte reconciliation
+under259. Initial and reopened screens both show manual guidance without
+automatic-update controls. Independent100-registry/nine-file restoration,
+owned cleanup, VM-off and claim-release pass. Earlier harness failures remain
+recorded; installer wizard, historical MSI migration, associations and complete
+installed acceptance remain separate. Renderer fixtures and source8c captures
+retain their original scope.
 
 Tactical [278](../tactical/278-android-shutdown-window-lifecycle.md) follows a
 real code26 managed menu failure: the engine joins successfully, but the bound
