@@ -1,5 +1,12 @@
 # Product Surfaces And JSTorrent Migration
 
+Tactical289 completes the prepared successor website's No Play Store recovery:
+AppImage, best-effort Linux support, headless setup explicitly from source and
+separate Android/Linux libraries replace legacy daemon instructions only when
+curated production metadata is enabled. Actual disabled answer/links remain
+unchanged. Fresh builds,24 guards, tracked docs and three-width screenshots pass;
+separate ignored slice015 records the before/after. No public deployment occurs.
+
 Slice010 passes exact A7 Linux x64 AppImage automatic delivery from released
 unmodified0.2.1 over the private HTTPS trial on Ubuntu24.04 extract-and-run.
 Ten assertions/installed refusals, four imported rows, native tray Quit/reopen,
