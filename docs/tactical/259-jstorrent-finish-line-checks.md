@@ -2,6 +2,20 @@
 
 ## Current restart checkpoint, 2026-10-09
 
+Ignored slice028 passes exact signed a7 ARM DMG read-only mounting, strict/deep
+source/copied signatures, standard bundle copying, eight migration assertions,
+nine refusal routes and ordinary zero-exit/reopen. Independent ARM archive main
+hash, disclosure1/statistics-off persistence, inherited scoped restoration,
+mount/staging/capture/server cleanup and VM-off/release pass. This is not Finder
+drag/drop, Intel hardware or automatic updating. Native key receiver metadata
+reports Finder despite accepted JSTorrent targeting; process-zero-exit evidence
+does not establish an additional focus-metadata guarantee.
+Slice029 observes three actual Web Store screenshots of the retired green Ready
+interface and prepares the light Torrents/Library/dark Torrents replacement
+order from slice019. Those captures visibly retain Demo data. No cloud image is
+removed or uploaded; supported gallery export is blocked and native menus do
+not expose image download. Concrete replacement authorization is pending.
+
 Ignored slices024–027 close bounded Intel-app ordinary GUI updating under
 existing Rosetta, local Windows installer artwork, and saved/reloaded Web Store
 draft permission/description copy. The Mac trial is removed, VM off/released

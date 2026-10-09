@@ -1,5 +1,16 @@
 # Product Surfaces And JSTorrent Migration
 
+Slice028 passes exact signed a7 ARM DMG standard bundle-copy installation,
+eight migration assertions/nine refusals, ordinary zero-exit/reopen, independent
+ARM binary comparison and persisted statistics opt-out. Read-only mount,
+staging/captures/server and inherited scopes restore; VM off/claim released.
+Finder drag/drop and physical Intel remain separate. Native key receipt receiver
+metadata reports Finder despite confirmed target activation; process joins
+provide the exit evidence without a stronger focus claim.
+Slice029 records the actual store's three retired-interface screenshots and
+the current light Torrents/Library/dark Torrents proposal, visibly labeled Demo
+data. No cloud graphic replacement or submission occurs in that review.
+
 Slice024 passes exact a7 Intel-app ordinary GUI HTTPS updating under existing
 Rosetta on the ARM VM: ten assertions/nine refusals, four records, native
 Cmd-Q/reopen, independent privacy persistence and exact scoped restoration.
