@@ -1,5 +1,13 @@
 # Tactical 259: JSTorrent Finish-Line Checks
 
+Linux first-release scope is narrowed by maintainer direction on 2026-10-09:
+best-effort AppImage desktop support, maintained bundled libraries, no older-
+distro WebKit backport campaign, and CLI/headless fallback. DEB/RPM retirement
+and the maintained-runtime packaging change are not implemented yet. Broader
+Linux historical rows are scoped by this decision, not marked passed; final
+candidate security, source obligations and representative installed checks
+remain open. See the [accepted scope](../topics/product-direction.md#linux-release-scope-accepted-2026-10-09).
+
 The frozen production-code build proposal is `13dde7a1`; shared web/extension
 validation below was executed at source `03e63443`. New AppRun notice inputs
 are locally qualified; revised hosted/signed qualification remains pending.

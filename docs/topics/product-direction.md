@@ -2,6 +2,26 @@
 
 Topic: `product-direction`
 
+## Linux release scope accepted 2026-10-09
+
+Linux desktop support is best effort for the first JSTorrent replacement.
+The primary desktop download is an ordinary-user AppImage with maintained
+bundled libraries and documented minimum system requirements. DEB/RPM are
+excluded from the first-release offering; the workflow still produces them
+and must be reconciled before the next candidate. There is no commitment to
+older-distribution WebKit backports or an exhaustive distro compatibility
+matrix. Older-system failures receive actionable guidance toward the native
+CLI/headless composition, subject to that binary's own requirements. Existing
+headless implementation evidence does not imply a promoted public download;
+its packaging and access instructions must be checked before advertising it.
+
+A truly webview-free tray/browser-controlled package is later work. Deferring
+a desktop window does not remove its linked WebKit dependencies. This policy
+narrows Linux compatibility qualification; it does not clear the old bundled
+WebKit/OpenSSL candidates, source/redistribution obligations or retained-data
+checks on the selected representative systems. ChromeOS Android qualification
+remains unchanged; older Crostini Linux configurations are best effort.
+
 Status: initial direction and successor vision accepted. Android storage
 foundations are proven on an AVD, Chromebook ARCVM, Pixel 7a, and Moto X4
 internal and removable exFAT storage; the in-process engine bootstrap is

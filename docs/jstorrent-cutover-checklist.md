@@ -1,5 +1,28 @@
 # JSTorrent In-Place Cutover Checklist
 
+## Remaining release work, in brief
+
+Linux best-effort scope is accepted on 2026-10-09; no older-distro WebKit
+backport project is required. AppImage is the primary Linux desktop offering;
+DEB/RPM retirement, maintained bundled libraries and actual minimum-system
+checks still need implementation. The native CLI/headless route remains a
+fallback, with public availability and instructions to be verified. See the
+[accepted product scope](topics/product-direction.md#linux-release-scope-accepted-2026-10-09).
+
+- Build and qualify fresh signed desktop candidates with the latest fixes.
+- Deliver Android code 27 and extension 1.1.2 to the authorized test/draft
+  channels, then verify real preserved-install and mixed-version updates.
+- Finish physical reboot, sleep/network and storage recovery checks, plus
+  final-candidate migration, updater and failure/recovery checks on selected
+  supported platforms. iOS is outside this cutover.
+- Finish native license/source delivery review and agree the soak window,
+  rollout/stop criteria and recovery responsibility.
+- Review exact artifacts and publish the website, store listings and update
+  routes only under explicit publication instructions.
+
+Earlier passes remain evidence for their exact bytes. The detailed historical
+matrix below is not a promise to qualify every older Linux distribution.
+
 The frozen production-code build proposal is `13dde7a1`; shared web/extension
 validation below was executed at source `03e63443`. New AppRun notice inputs
 are locally qualified; revised hosted/signed qualification remains pending.
@@ -702,15 +725,16 @@ rows independently; those tests use disposable signing and owned emulators.
 After the current source/package gates, prioritize the remaining work in this
 order. These are qualification and product decisions, not publication authority:
 
-1. Review corrected Android code 26 for a separately authorized internal Play
-   release; code 25's visible Canary label cannot be repaired in place.
+1. Deliver locally qualified Android code 27 through a separately authorized
+   internal Play release; code 26 remains the last delivered internal version.
 2. Qualify companion/browser-local writers and the actual production extension
    ID updated in place, then repeat mixed-store pairings on both physical cohorts.
 3. Complete the two-tree/reboot/grant-loss and sleep/network-loss matrix; include
    retained bytes, actual upload serving and independently verified repair.
 4. Requalify installed delivery against the fresh signed desktop bytes where
-   source changes matter. Extend macOS x64/Linux arm64 and the old Linux GUI
-   cohorts; previous signed-candidate evidence remains pinned to its own hashes.
+   source changes matter. Extend macOS x64 and representative current Linux
+   systems under the accepted best-effort scope; previous signed-candidate
+   evidence remains pinned to its own hashes.
 5. Select the supported persistence/platform scope, feature dispositions, soak
    window and recovery responsibility, then review the exact shipment capsule.
    Keep unrun rows unchecked or explicitly exclude their unsupported scope.
