@@ -62,6 +62,12 @@ finish-line report; avoid adding private device details to this document.
 
 ## Source/render checkpoint, 2026-10-09
 
+Tactical285 makes production Linux AppImage-only on Ubuntu24.04; Tactical287
+reconciles the disabled website handoff with15 assets and both architecture
+downloads. Its controlled before/after views pass narrow/wide checks and link
+to headless setup explicitly from source. New signed/runtime requirements and
+obtainable downloads remain to qualify; these fixtures do not close release rows.
+
 Tactical284 also passes a current-source owned API35 installed upgrade using
 the released1.0.24 Android app/1.1.1 extension and current beta package. Actual
 old/old, both mixed pairs and new/new captures plus native before/after are in

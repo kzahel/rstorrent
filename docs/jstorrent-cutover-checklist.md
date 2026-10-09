@@ -11,6 +11,12 @@ bound to its own bytes. No new build/store publication occurs.
 
 ## Remaining release work, in brief
 
+Local checkpoints now include the real controlled Android four-pair upgrade,
+retained roots/bytes/restart, settled narrow layout and the AppImage-only
+production website view. See Tacticals284–287 for exact scope and failures.
+The website change is locally committed atc84fed4b in its owning repository;
+its descriptor remains disabled and the live site is unchanged.
+
 Use the short [update scenario checklist](jstorrent-update-scenarios.md) for
 store timing, mixed versions and user-facing recovery messages.
 

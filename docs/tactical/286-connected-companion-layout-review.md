@@ -19,7 +19,7 @@ Compose, engine/migration changes, physical/store delivery and publication.
 
 ## Invariants and evidence
 
-The existing760px drawer and table-owned horizontal scrolling remain the
+The existing 760px drawer and table-owned horizontal scrolling remain the
 accepted design. A closed drawer must be outside the narrow viewport while
 the main pane fills it. Wait for actual layout and virtual rows rather than
 using an arbitrary screenshot delay. Captures may use reduced motion and
@@ -36,7 +36,7 @@ The first settled repeat passes upgrade/restart/control and measured390/1100
 bounds. A later interaction repeat fails in the unchanged old client's tracker
 writer before replacement, despite a recorded announce request. Its HTTP client
 asks for Connection: close, so HTTP/1.1 alone cannot eliminate the fixture EOF
-race. Retain that failure and allow a bounded100ms response drain after flushing
+race. Retain that failure and allow a bounded 100ms response drain after flushing
 the local fixture body, without changing product code or source state.
 
 ## Result and remaining scope
@@ -44,8 +44,8 @@ the local fixture body, without changing product code or source state.
 The apparent clipping is a screenshot taken during the existing drawer
 transition, not a settled product-layout defect. Captures now use reduced
 motion/disabled animations and await actual main/drawer/document bounds.
-At390px, the main spans0–390, document width is390 and the closed drawer ends
-at-13.6px. At1100px, the wide drawer spans0–210 and main spans210–1100. The
+At 390px, the main spans 0–390, document width is 390 and the closed drawer ends
+at -13.6px. At 1100px, the wide drawer spans 0–210 and main spans 210–1100. The
 final repeat opens/closes the narrow filter drawer through the actual button,
 captures it visibly within the viewport, and preserves the imported library.
 Table columns retain their own horizontal scroll owner. No product CSS,

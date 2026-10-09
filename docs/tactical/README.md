@@ -39,6 +39,8 @@ production and installed migration qualification remain separate.
 
 Latest release qualification work:
 
+- [`287-website-appimage-production-handoff.md`](287-website-appimage-production-handoff.md):
+  disabled website handoff matches15 assets; both AppImage views pass locally.
 - [`286-connected-companion-layout-review.md`](286-connected-companion-layout-review.md):
   settled connected layout/drawer passes; initial clipping was a capture artifact.
 - [`285-production-linux-appimage-scope.md`](285-production-linux-appimage-scope.md):
