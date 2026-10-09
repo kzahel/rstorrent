@@ -239,13 +239,13 @@ jobs:
             rust_target: x86_64-apple-darwin
           - name: Linux x86_64
             lane: linux-x86_64
-            runner: ubuntu-22.04
-            args: "--bundles appimage,deb,rpm"
+            runner: ubuntu-24.04
+            args: "--bundles ${{ needs.release-input.outputs.production == 'true' && 'appimage' || 'appimage,deb,rpm' }}"
             rust_target: ""
           - name: Linux arm64
             lane: linux-aarch64
-            runner: ubuntu-22.04-arm
-            args: "--bundles appimage,deb,rpm"
+            runner: ubuntu-24.04-arm
+            args: "--bundles ${{ needs.release-input.outputs.production == 'true' && 'appimage' || 'appimage,deb,rpm' }}"
             rust_target: ""
           - name: Windows x86_64
             lane: windows-x86_64
@@ -327,6 +327,8 @@ jobs:
             openssl \
             patchelf \
             xdg-utils
+          WEBKIT_VERSION=$(dpkg-query -W -f='${Version}' libwebkit2gtk-4.1-0)
+          dpkg --compare-versions "$WEBKIT_VERSION" ge 2.52.6-0ubuntu0.24.04.1
 
       - name: Exercise the GLib backport with release optimization
         if: runner.os == 'Linux'
@@ -553,9 +555,15 @@ jobs:
         shell: bash
         run: |
           test "$(find target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' | wc -l)" -eq 1
-          test "$(find target/release/bundle/deb -maxdepth 1 -type f -name '*.deb' | wc -l)" -eq 1
-          test "$(find target/release/bundle/rpm -maxdepth 1 -type f -name '*.rpm' | wc -l)" -eq 1
-          for kind in appimage deb rpm; do
+          KINDS=(appimage)
+          if [ "$PACKAGE_PRODUCT" != JSTorrent ]; then
+            test "$(find target/release/bundle/deb -maxdepth 1 -type f -name '*.deb' | wc -l)" -eq 1
+            test "$(find target/release/bundle/rpm -maxdepth 1 -type f -name '*.rpm' | wc -l)" -eq 1
+            KINDS+=(deb rpm)
+          else
+            test -z "$(find target/release/bundle -type f \( -name '*.deb' -o -name '*.rpm' \) -print -quit)"
+          fi
+          for kind in "${KINDS[@]}"; do
             EXTRACT_DIR="$RUNNER_TEMP/rstorrent-$kind"
             mkdir -p "$EXTRACT_DIR"
             NATIVE_NOTICE_ARGS=()
@@ -796,7 +804,11 @@ jobs:
             echo "- Five signed updater targets validated from \`latest.json\`."
             echo "- Developer ID signing and notarization validated for both macOS architectures."
             echo "- Authenticode signatures validated for Windows NSIS and MSI."
-            echo "- Linux AppImage, DEB, and RPM packages validated for x86_64 and ARM64."
+            if [ "$PACKAGE_PRODUCT" = JSTorrent ]; then
+              echo "- Best-effort Linux AppImages validated for x86_64 and ARM64."
+            else
+              echo "- Linux AppImage, DEB, and RPM packages validated for x86_64 and ARM64."
+            fi
             echo "- Workflow: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo "- Commit: \`${SOURCE_SHA}\`"
             echo "- Exact hashes: https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/SHA256SUMS"

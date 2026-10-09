@@ -1,5 +1,14 @@
 # Desktop Release Runbook
 
+For the first JSTorrent production replacement, Linux support is best effort
+and offers AppImages only. Both Linux lanes use Ubuntu 24.04 and refresh vendor
+WebKit/OpenSSL packages; the reviewed WebKit build floor is 2.52.6. The production
+collector requires 15 core assets, six signature sidecars and 11 updater keys;
+`SHA256SUMS` is the additional 16th support asset. Production DEB/RPM assets and
+selectors are refused. Preview still uses the existing 23-asset/15-key matrix.
+Tactical 285 records local validation. A new signed inventory, actual ABI/minimum
+requirements and representative launch checks remain required before shipment.
+
 RSTorrent desktop releases use the `desktop-v<version>` tag family and the
 [`Desktop Release`](../.github/workflows/desktop-release.yml) workflow. The
 workflow builds signed updater packages and ordinary installers for macOS
@@ -111,7 +120,8 @@ Authenticode, and Linux AppImage/DEB/RPM packages.
 The five signed package jobs run in parallel and never write to a GitHub
 Release. Each retains an exact package/signature set with source, run, version,
 and SHA-256 evidence. The sole finalizer checks all five sets, creates the
-15-key `latest.json`, and validates the complete manifest before creating a
+product-specific `latest.json` (11 production keys,15 preview keys), and
+validates the complete manifest before creating a
 private draft. It uploads those exact assets, checks their GitHub digests,
 validates same-release URLs and signatures, adds `SHA256SUMS`, and only then
 publishes. Failed builds create no release; a failure after draft creation

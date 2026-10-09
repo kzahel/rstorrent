@@ -6,6 +6,7 @@ import { createReadStream, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { updaterPublicKey, verifySignature } from "./verify-desktop-signatures.mjs";
+import { validateDesktopRelease } from "../.github/scripts/validate-desktop-release.mjs";
 
 const { values } = parseArgs({ options: Object.fromEntries([
   "candidate", "source-sha", "run-id", "attempt", "asset-base-url", "installation-ids", "output", "receipts",
@@ -31,7 +32,8 @@ function readJson(file) {
 const release = readJson(path.join(directory, "release.json"));
 const latest = readJson(path.join(directory, "assets/latest.json"));
 assert(release.isDraft === true && release.isPrerelease === false && release.tagName === `desktop-v${latest.version}`);
-assert(release.assets.length === 23, "Expected complete collected candidate inventory");
+assert(release.assets.length === 15, "Expected complete AppImage-only production candidate inventory");
+validateDesktopRelease({release, latest, tag:release.tagName, repository:"kzahel/rstorrent"});
 const names = new Set();
 for (const receipt of release.assets) {
   assert(typeof receipt.name === "string" && path.basename(receipt.name) === receipt.name && !names.has(receipt.name));
@@ -61,4 +63,4 @@ const bytes = JSON.stringify(manifest, null, 2) + "\n"; assert(Buffer.byteLength
 writeFileSync(values.output, bytes, { mode: 0o600, flag: "wx" });
 if (values.receipts) writeFileSync(values.receipts, JSON.stringify({ qualification: "Authenticated complete CI candidate; installed migration not yet qualified", ...candidate,
   downloadedReceiptHashesVerified: release.assets.length, originalRootPayloadSignaturesVerified: 5 }, null, 2) + "\n", { flag: "wx" });
-console.log("Prepared private trial configuration; verified all 23 receipts and five delivery payload signatures.");
+console.log("Prepared private trial configuration; verified all 15 receipts and five delivery payload signatures.");

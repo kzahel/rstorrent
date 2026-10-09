@@ -7,8 +7,10 @@ Topic: `product-direction`
 Linux desktop support is best effort for the first JSTorrent replacement.
 The primary desktop download is an ordinary-user AppImage with maintained
 bundled libraries and documented minimum system requirements. DEB/RPM are
-excluded from the first-release offering; the workflow still produces them
-and must be reconciled before the next candidate. There is no commitment to
+excluded from the first-release offering. Tactical 285 makes the production
+workflow AppImage-only on Ubuntu 24.04; new signed/runtime qualification is
+still required. Existing preview package-manager channels are unchanged.
+There is no commitment to
 older-distribution WebKit backports or an exhaustive distro compatibility
 matrix. Older-system failures receive actionable guidance toward the native
 CLI/headless composition, subject to that binary's own requirements. Existing

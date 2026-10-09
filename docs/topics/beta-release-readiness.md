@@ -11,8 +11,11 @@ bound to its own bytes. No new build/store publication occurs.
 
 Linux first-release scope is narrowed by maintainer direction on 2026-10-09:
 best-effort AppImage desktop support, maintained bundled libraries, no older-
-distro WebKit backport campaign, and CLI/headless fallback. DEB/RPM retirement
-and the maintained-runtime packaging change are not implemented yet. Broader
+distro WebKit backport campaign, and CLI/headless fallback. Tactical 285 locally
+applies production AppImage-only packaging on Ubuntu 24.04, with a reviewed
+vendor WebKit build floor. Production now requires 15 core assets, six updater
+signatures and 11 selectors; preview retains23/ten/15. Fresh signed inventories,
+runtime/source review and representative launch evidence are still needed. Broader
 Linux historical rows are scoped by this decision, not marked passed; final
 candidate security, source obligations and representative installed checks
 remain open. See the [accepted scope](product-direction.md#linux-release-scope-accepted-2026-10-09).

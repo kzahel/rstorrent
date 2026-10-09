@@ -1,5 +1,12 @@
 # Desktop JSTorrent Replacement
 
+Tactical [285](../tactical/285-production-linux-appimage-scope.md) locally
+applies the accepted first-release Linux policy: Ubuntu 24.04 production
+AppImages only, with 15 core assets/six signatures/11 updater selectors across
+the five desktop lanes. Preview package-manager channels remain unchanged.
+New signed inventories, actual minimum requirements and representative native
+qualification remain under259; older candidate receipts are historical.
+
 Topic: `desktop-jstorrent-replacement`
 
 ## Current final signed checkpoint, 2026-10-08

@@ -39,6 +39,8 @@ production and installed migration qualification remain separate.
 
 Latest release qualification work:
 
+- [`285-production-linux-appimage-scope.md`](285-production-linux-appimage-scope.md):
+  local production AppImage-only packaging; signed/installed repeats remain259.
 - [`283-companion-update-recovery-guidance.md`](283-companion-update-recovery-guidance.md):
   local source/render recovery pass; real installed/store scenarios remain259.
 - [`256-swarm-touch-ci-stabilization.md`](256-swarm-touch-ci-stabilization.md):

@@ -28,8 +28,10 @@ function laneFiles(lane, version, product = "RSTorrent") {
   ];
   const linux = (appArch, debArch, rpmArch) => [
     [`target/release/bundle/appimage/${product}_${version}_${appArch}.AppImage`, `${product}_${version}_${appArch}.AppImage`, true],
+    ...(product === "JSTorrent" ? [] : [
     [`target/release/bundle/deb/${product}_${version}_${debArch}.deb`, `${product}_${version}_${debArch}.deb`, true],
     [`target/release/bundle/rpm/${product}-${version}-1.${rpmArch}.rpm`, `${product}-${version}-1.${rpmArch}.rpm`, true],
+    ]),
   ];
   const windows = [
     [`target/release/bundle/nsis/${product}_${version}_x64-setup.exe`, `${product}_${version}_x64-setup.exe`, true],
@@ -150,11 +152,15 @@ function updaterPlatforms(version, tag, repository, assetDirectory, product) {
   add(["darwin-aarch64", "darwin-aarch64-app"], `${product}_aarch64.app.tar.gz`);
   add(["darwin-x86_64", "darwin-x86_64-app"], `${product}_x64.app.tar.gz`);
   add(["linux-aarch64", "linux-aarch64-appimage"], `${product}_${version}_aarch64.AppImage`);
-  add(["linux-aarch64-deb"], `${product}_${version}_arm64.deb`);
-  add(["linux-aarch64-rpm"], `${product}-${version}-1.aarch64.rpm`);
+  if (product !== "JSTorrent") {
+    add(["linux-aarch64-deb"], `${product}_${version}_arm64.deb`);
+    add(["linux-aarch64-rpm"], `${product}-${version}-1.aarch64.rpm`);
+  }
   add(["linux-x86_64", "linux-x86_64-appimage"], `${product}_${version}_amd64.AppImage`);
-  add(["linux-x86_64-deb"], `${product}_${version}_amd64.deb`);
-  add(["linux-x86_64-rpm"], `${product}-${version}-1.x86_64.rpm`);
+  if (product !== "JSTorrent") {
+    add(["linux-x86_64-deb"], `${product}_${version}_amd64.deb`);
+    add(["linux-x86_64-rpm"], `${product}-${version}-1.x86_64.rpm`);
+  }
   add(["windows-x86_64", "windows-x86_64-nsis"], `${product}_${version}_x64-setup.exe`);
   add(["windows-x86_64-msi"], `${product}_${version}_x64_en-US.msi`);
   return platforms;
@@ -262,7 +268,7 @@ export async function verifyProductionFinalDraft({ local, remote, checksumPath }
   expected.push("latest.json");
   if (!Array.isArray(local.assets) ||
       JSON.stringify(local.assets.map(asset => asset.name).sort()) !== JSON.stringify(expected.sort())) {
-    fail("final production draft requires exactly 23 JSTorrent core assets");
+    fail(`final production draft requires exactly ${expected.length} JSTorrent core assets`);
   }
   const checksum = { name: "SHA256SUMS", size: checkedFile(checksumPath, MAX_METADATA_BYTES),
     digest: `sha256:${await digestFile(checksumPath)}` };
@@ -308,7 +314,7 @@ async function main() {
       remote: JSON.parse(readFileSync(resolve(args.remote), "utf8")),
       checksumPath: resolve(args.checksums),
     });
-    console.log("Verified 23 production core assets and SHA256SUMS in the complete private draft");
+    console.log("Verified 15 production core assets and SHA256SUMS in the complete private draft");
   } else {
     fail(`unknown desktop release artifact command: ${command}`);
   }

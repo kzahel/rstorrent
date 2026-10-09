@@ -636,9 +636,11 @@ gh workflow run desktop-release.yml --repo kzahel/rstorrent --ref desktop-v0.3.0
 The collector rechecks that the fetched tag still resolves to the exact built
 source before draft creation and publication. It validates every same-run leg,
 all original-root updater signatures and the complete private draft. Production
-retains its23 core assets, including ten signature sidecars; `SHA256SUMS` is
-an additional24th support asset. The website's curated inventory still owns
-exactly the23 core assets. Final native/store/public-route acceptance is not
+now requires 15 core assets, including six signature sidecars; `SHA256SUMS` is
+an additional 16th support asset. Both production Linux lanes build AppImages
+only on Ubuntu 24.04. Preview retains its existing 23-asset package matrix.
+The website's curated inventory must match the new exact production asset set
+when the final candidate is selected. Final native/store/public-route acceptance is not
 implied by this workflow mode or local publisher tests.
 
 ## Packaging The JSTorrent Beta Extension Seed

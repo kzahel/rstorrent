@@ -16,8 +16,9 @@ store timing, mixed versions and user-facing recovery messages.
 
 Linux best-effort scope is accepted on 2026-10-09; no older-distro WebKit
 backport project is required. AppImage is the primary Linux desktop offering;
-DEB/RPM retirement, maintained bundled libraries and actual minimum-system
-checks still need implementation. The native CLI/headless route remains a
+Tactical285 locally retires production DEB/RPM and moves the Linux builds to
+Ubuntu24.04 with a reviewed WebKit floor. Fresh signed inventories, maintained
+bundled libraries and actual minimum-system checks remain to qualify. The native CLI/headless route remains a
 fallback, with public availability and instructions to be verified. See the
 [accepted product scope](topics/product-direction.md#linux-release-scope-accepted-2026-10-09).
 

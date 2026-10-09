@@ -23,8 +23,13 @@ reversible copy/design choices do not require a separate approval pause.
 
 Linux first-release scope is narrowed by maintainer direction on 2026-10-09:
 best-effort AppImage desktop support, maintained bundled libraries, no older-
-distro WebKit backport campaign, and CLI/headless fallback. DEB/RPM retirement
-and the maintained-runtime packaging change are not implemented yet. Broader
+distro WebKit backport campaign, and CLI/headless fallback. Tactical
+[285](285-production-linux-appimage-scope.md) locally applies production
+AppImage-only packaging on Ubuntu24.04 with a reviewed WebKit build floor.
+Production requires15 core assets/six signatures/11 updater selectors; preview
+retains23/ten/15. All15 release,33 source and26 distribution cases and actionlint
+pass. Fresh signed inventories and representative native qualification remain
+required. Broader
 Linux historical rows are scoped by this decision, not marked passed; final
 candidate security, source obligations and representative installed checks
 remain open. See the [accepted scope](../topics/product-direction.md#linux-release-scope-accepted-2026-10-09).

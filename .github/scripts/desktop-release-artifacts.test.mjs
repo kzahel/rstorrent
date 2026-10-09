@@ -192,7 +192,7 @@ test("JSTorrent candidates use exact product receipts and cannot publish", async
   } finally {rmSync(data.root,{recursive:true,force:true});}
 });
 
-test("explicit Stable production assembly preserves all 23 core assets", async () => {
+test("production assembly offers both AppImages without DEB/RPM assets or selectors", async () => {
   const data = fixture("JSTorrent");
   try {
     await data.stage();
@@ -200,8 +200,20 @@ test("explicit Stable production assembly preserves all 23 core assets", async (
       channel:"stable", version, product:"JSTorrent", tag:`desktop-v${version}`, productionPublication:true };
     const result = await assembleDesktopRelease(options);
     validateDesktopRelease({ ...result, tag:result.release.tagName, repository });
-    assert.equal(result.release.assets.length, 23);
-    assert.equal(result.release.assets.filter(asset => asset.name.endsWith(".sig")).length, 10);
+    assert.equal(result.release.assets.length, 15);
+    assert.equal(result.release.assets.filter(asset => asset.name.endsWith(".sig")).length, 6);
+    assert.equal(Object.keys(result.latest.platforms).length, 11);
+    assert.equal(result.release.assets.some(asset => /\.(?:deb|rpm)(?:\.sig)?$/.test(asset.name)), false);
+    assert.equal(Object.keys(result.latest.platforms).some(key => /-(?:deb|rpm)$/.test(key)), false);
+    for (const arch of ["aarch64", "x86_64"]) {
+      assert(result.latest.platforms[`linux-${arch}-appimage`]);
+    }
+    const excluded = structuredClone(result);
+    excluded.release.assets.push({name:`JSTorrent_${version}_amd64.deb`, digest:`sha256:${"f".repeat(64)}`});
+    assert.throws(() => validateDesktopRelease({...excluded, tag:result.release.tagName, repository}), /excludes DEB\/RPM/);
+    const staleAlias = structuredClone(result);
+    staleAlias.latest.platforms["linux-x86_64-deb"] = staleAlias.latest.platforms["linux-x86_64"];
+    assert.throws(() => validateDesktopRelease({...staleAlias, tag:result.release.tagName, repository}), /exactly the 11/);
     assert.equal(result.release.isPrerelease, false);
     assert(Object.values(result.latest.platforms).every(platform => platform.url.includes(`/desktop-v${version}/JSTorrent`)));
     for (const overrides of [{ channel:"latest" }, { product:"RSTorrent" }, { tag:"" },
@@ -236,6 +248,6 @@ test("final production private draft requires every core byte and exact checksum
       await assert.rejects(verifyProductionFinalDraft({ local:result.release, remote:wrong, checksumPath }));
     }
     const preview = structuredClone(result.release);preview.assets[0].name="JSTorrent Preview_wrong.dmg";
-    await assert.rejects(verifyProductionFinalDraft({ local:preview,remote,checksumPath }),/23 JSTorrent core/u);
+    await assert.rejects(verifyProductionFinalDraft({ local:preview,remote,checksumPath }),/15 JSTorrent core/u);
   } finally { rmSync(data.root, { recursive:true, force:true }); }
 });
