@@ -67,6 +67,16 @@ independently. All50 registry/seven file scopes restore exactly; owned cleanup,
 VM-off/claim-release and private trial removal pass. The original failed attempt
 and separate exact recovery remain preserved; product bytes stay unchanged.
 
+## Saved store draft permission copy, 2026-10-09
+
+Ignored slice026 records an actual native Save draft and reload verification
+for the four prepared single-purpose/nativeMessaging/storage/host explanations.
+Draft1.1.2 remains bound to the exact uploaded ZIP. Remote-code selection,
+nine data categories, three existing certifications and policy URL are
+unchanged; final category/policy reconciliation and review submission remain
+open. Published1.1.1 is unchanged. Slice021 remains the original read-only
+baseline/proposal and is superseded only for these four saved draft fields.
+
 ## Per-slice installer and Intel readiness, 2026-10-09
 
 Ignored short reports022/023 retain actual evidence. The exact a7 Windows
