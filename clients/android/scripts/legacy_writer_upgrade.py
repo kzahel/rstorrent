@@ -37,7 +37,7 @@ class WriterOracle:
             timeout = 5
 
             def do_GET(self):
-                oracle.tracker_requests.append({"path": self.path.split("?", 1)[0], "peer": self.client_address[0]})
+                oracle.tracker_requests.append({"path": self.path.split("?", 1)[0], "peer": self.client_address[0], "connection": self.headers.get("Connection")})
                 del oracle.tracker_requests[:-32]
                 peers = struct.pack("!4BH", 127, 0, 0, 1, oracle.seed_port)
                 body = lt.bencode({b"interval": 2, b"complete": 1, b"incomplete": 0, b"peers": peers})
@@ -45,6 +45,11 @@ class WriterOracle:
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
+                self.wfile.flush()
+                # The released companion batches socket data separately from
+                # EOF. Give those bytes a bounded drain window before honoring
+                # its Connection: close; this is only the local test fixture.
+                time.sleep(0.1)
 
             def log_message(self, *args):
                 pass

@@ -68,7 +68,9 @@ browser/server/emulator cleanup completes, its AVD is deleted and ordinary
 incubation debug/test APK outputs rebuild successfully. Old/old and both mixed
 pair screenshots are shown to the maintainer. Visual review finds the connected
 new/new page clips at390px; its data/migration assertions pass, but presentation
-is not qualified at that width. Tactical286 owns that follow-up. The legacy
+is initially not qualified at that width. Tactical286 resolves this as a capture
+during drawer motion and qualifies settled bounds/interaction; no product CSS
+change is needed. The legacy
 extension also overflows at390 and gives generic Offline/launch guidance after
 replacement; its already-shipped screen remains unchanged. Current native/help
 guidance and physical store-delivered scenarios stay under259.

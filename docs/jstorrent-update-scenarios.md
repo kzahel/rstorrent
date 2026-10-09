@@ -68,7 +68,9 @@ old/old, both mixed pairs and new/new captures plus native before/after are in
 the ignored report. Root/payload/import/restart/control assertions pass.
 Disposable signing, emulated ARC and pre-granted beta permission do not close
 store or physical rows. Visual review finds the connected390px layout clips;
-Tactical286 owns the presentation fix. The already-shipped old extension's
+Tactical286 qualifies the settled layout and filter-drawer interaction: the
+first capture caught responsive motion and no product CSS change is needed.
+The already-shipped old extension's
 generic Offline message remains; native/help guidance is the recovery story.
 
 The first pass covers nine injected packaged connection states and bundled

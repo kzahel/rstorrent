@@ -39,6 +39,8 @@ production and installed migration qualification remain separate.
 
 Latest release qualification work:
 
+- [`286-connected-companion-layout-review.md`](286-connected-companion-layout-review.md):
+  settled connected layout/drawer passes; initial clipping was a capture artifact.
 - [`285-production-linux-appimage-scope.md`](285-production-linux-appimage-scope.md):
   local production AppImage-only packaging; signed/installed repeats remain259.
 - [`284-owned-upgrade-scenario-captures.md`](284-owned-upgrade-scenario-captures.md):

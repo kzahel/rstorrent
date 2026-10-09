@@ -1,5 +1,12 @@
 # Web UI Design
 
+Tactical [286](../tactical/286-connected-companion-layout-review.md) qualifies
+the actual controlled connected page at390/1100 and its narrow filter drawer.
+An initial clipped image was captured during the drawer transition; settled
+bounds show no page overflow or product-layout defect. The capture runner now
+uses reduced motion and awaits actual bounds. Product presentation stays
+unchanged; physical/store delivery remains a separate gate under259.
+
 Tactical [283](../tactical/283-companion-update-recovery-guidance.md) adds
 component-specific recovery links and plain connection guidance in the
 packaged extension, preserving attach-only retries and existing discovery/

@@ -71,11 +71,45 @@ const newId = "gcgoepclopkgijmclmlheafaglmbjlcc";
 let oldPage, newPage;
 async function capture(page, label) {
   if (!evidenceDir || evidenceDir === "-") return;
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const layouts = [];
   for (const width of [390, 1100]) {
     await page.setViewportSize({ width, height: 850 });
-    await page.screenshot({ path: path.join(evidenceDir, `${label}-${width}.png`), fullPage: true });
+    if (label === "new-extension-new-android") {
+      await page.waitForFunction(() => {
+        const app = document.querySelector("#app [data-sidebar-open]");
+        const main = app?.querySelector("main");
+        const drawer = main?.parentElement.querySelector("nav");
+        if (!app || !main || !drawer) return false;
+        const bounds = main.getBoundingClientRect();
+        return document.documentElement.scrollWidth <= innerWidth + 1 && bounds.left >= 0 && bounds.right <= innerWidth + 1 &&
+          (innerWidth > 760 || (app.dataset.sidebarOpen === "false" && drawer.getBoundingClientRect().right <= 1));
+      }, undefined, { timeout: 10000 });
+      layouts.push(await page.evaluate(() => {
+        const app = document.querySelector("#app [data-sidebar-open]");
+        const main = app.querySelector("main").getBoundingClientRect();
+        const drawer = app.querySelector("main").parentElement.querySelector("nav").getBoundingClientRect();
+        return { width: innerWidth, documentWidth: document.documentElement.scrollWidth,
+          main: {left: main.left, right: main.right}, drawer: {left: drawer.left, right: drawer.right},
+          sidebarOpen: app.dataset.sidebarOpen };
+      }));
+    }
+    await page.screenshot({ path: path.join(evidenceDir, `${label}-${width}.png`), fullPage: true, animations: "disabled" });
+    if (label === "new-extension-new-android" && width === 390) {
+      const toggle = page.getByRole("button", { name: /^Toggle .* filters$/ });
+      await toggle.click();
+      await page.waitForFunction(() => {
+        const app = document.querySelector("#app [data-sidebar-open]");
+        const drawer = app?.querySelector("main").parentElement.querySelector("nav").getBoundingClientRect();
+        return app?.dataset.sidebarOpen === "true" && drawer.left >= 0 && drawer.right <= innerWidth;
+      });
+      await page.screenshot({ path: path.join(evidenceDir, `${label}-filters-${width}.png`), fullPage: true, animations: "disabled" });
+      await toggle.click();
+      await page.waitForFunction(() => document.querySelector("#app [data-sidebar-open]")?.dataset.sidebarOpen === "false");
+    }
   }
   await writeFile(path.join(evidenceDir, `${label}-ui.txt`), await page.locator("body").innerText());
+  if (layouts.length) await writeFile(path.join(evidenceDir, `${label}-layout.json`), JSON.stringify(layouts, null, 2) + "\n");
 }
 async function command(request) {
   switch (request.op) {

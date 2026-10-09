@@ -6,7 +6,8 @@ actual four-pair and native before/after captures. Three existing upgrade,
 restart and successor-control assertions pass with independent payload hashes.
 Failed fixture attempts are retained; owned browser/emulator state is removed.
 This uses disposable signing and explicitly granted extracted-beta permission,
-so physical/Play delivery remains open. Narrow connected presentation needs286.
+so physical/Play delivery remains open. Tactical286 qualifies settled narrow
+presentation; the first clipped capture caught drawer motion.
 
 Tactical [278](../tactical/278-android-shutdown-window-lifecycle.md) follows a
 real code26 managed menu failure: the engine joins successfully, but the bound
