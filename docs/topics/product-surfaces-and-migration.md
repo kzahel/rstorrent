@@ -1,5 +1,14 @@
 # Product Surfaces And JSTorrent Migration
 
+Slice010 passes exact A7 Linux x64 AppImage automatic delivery from released
+unmodified0.2.1 over the private HTTPS trial on Ubuntu24.04 extract-and-run.
+Ten assertions/installed refusals, four imported rows, native tray Quit/reopen,
+actual JSTorrent screens and independent statistics opt-out pass. Inherited
+scopes restore; owned guest/controller staging and capture copies are removed,
+VM off/claim released and trial disabled with ordinary routes unchanged. The
+finished transient unit is already absent at cleanup (stop exit5). FUSE, ARM,
+older distributions and the ordinary old GUI remain separate best-effort scope.
+
 Slice009 passes exact A7 Mac ARM automatic delivery from released unmodified
 0.2.1 over the bounded private HTTPS trial. Ten assertions/nine refusal routes,
 four imported rows, payload reverification and native Cmd-Q/reopen pass. Actual
