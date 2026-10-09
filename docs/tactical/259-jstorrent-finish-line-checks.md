@@ -2,6 +2,21 @@
 
 ## Current restart checkpoint, 2026-10-09
 
+Slices030/031 freshly verify all three VMs off/claims available, private updater
+root/drop-in absent, eight ordinary responses unchanged and five trial routes
+404. Both physical workspaces close; managed B subsequently passes actual
+system-folder-picker cancellation and three normal Shutdown/task/service
+removal/Live reopen repetitions with exact identity/grants retained. Its library
+is empty and no download folder is selected; population/reboot are not inferred.
+The original one-Back cancellation assumption stays failed and cleaned up.
+Slice033 next qualifies a controlled private populated managed-B transfer and
+restart in a newly owned download subfolder. Cleanup removes owned rows/files
+and closes all windows, intentionally retaining its empty selected test folder:
+normal Android controls cannot forget the current root. No app data reset or
+exact restoration to the original no-folder setup is claimed. Original setup
+runner failures remain separate; zero-sized Android picker bounds require
+fresh ChromeOS presentation/control observations before further input.
+
 Ignored slice028 passes exact signed a7 ARM DMG read-only mounting, strict/deep
 source/copied signatures, standard bundle copying, eight migration assertions,
 nine refusal routes and ordinary zero-exit/reopen. Independent ARM archive main

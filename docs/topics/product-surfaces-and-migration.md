@@ -1,5 +1,14 @@
 # Product Surfaces And JSTorrent Migration
 
+Slice031 passes actual Play-managed code27 system-picker cancellation and three
+normal Shutdown/reopen repetitions on an empty B library, retaining exact
+identity/grants and closing every window/tab. Two observed Back actions cancel;
+the original one-Back runner assumption remains failed with cleanup preserved.
+The native setup cards and system Download-root restriction are reviewed.
+Population/reboot and other physical cohorts retain their own requirements.
+Slice030 freshly verifies all VMs off/claims available and the private updater
+root/drop-in absent, with unchanged ordinary routes and five private-route404s.
+
 Slice028 passes exact signed a7 ARM DMG standard bundle-copy installation,
 eight migration assertions/nine refusals, ordinary zero-exit/reopen, independent
 ARM binary comparison and persisted statistics opt-out. Read-only mount,
