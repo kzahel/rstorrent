@@ -1,5 +1,13 @@
 # Product Surfaces And JSTorrent Migration
 
+Slice007 corrected attempt4 passes actual wrong-signature rejection, unchanged
+old executable and valid A7 retry, eleven assertions/installed refusal routes,
+four-row native Quit/reopen and source/payload preservation. Fresh native focus/
+hover observation uses the resident-declared move operation; independent privacy
+state,50-registry/seven-file restoration, owned cleanup/off/release and trial
+removal pass. Three earlier runner failures remain failed and restored. No
+product bytes change; the evidence does not claim one cause for every failure.
+
 Tactical289 completes the prepared successor website's No Play Store recovery:
 AppImage, best-effort Linux support, headless setup explicitly from source and
 separate Android/Linux libraries replace legacy daemon instructions only when

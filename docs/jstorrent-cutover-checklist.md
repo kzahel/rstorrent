@@ -9,7 +9,7 @@ campaign or production DEB/RPM qualification. See the
 This document keeps the current tasks and acceptance contracts. Dated execution,
 failures and historical signed candidates live in
 [Tactical259](tactical/259-jstorrent-finish-line-checks.md) and the ignored
-finish-line report. Earlier passes remain bound to their exact artifacts.
+per-slice finish-line reports. Earlier passes remain bound to their exact artifacts.
 Use the shorter [update scenarios](jstorrent-update-scenarios.md) for recovery
 copy and independent store timing.
 
@@ -49,6 +49,15 @@ copy and independent store timing.
   disable; ordinary routes stay unchanged. Released Windows0.2.1 automatically
   authenticates/installs exact A7, then native Quit/restart retains four fixture
   records. Ten assertions/eight refusals and exact restoration/off/release pass.
+- [x] Qualify current Mac ARM and Linux x64 automatic HTTPS updates and native
+  Quit/reopen. Each passes ten assertions and scoped restoration/off/release;
+  private trials are removed. Ordinary GUI and unrun architectures stay separate.
+- [x] Correct website initial fragments,320px layout and conditional successor
+  No Play Store guidance. Fresh builds/guards/responsive captures pass locally;
+  real metadata stays disabled and the public website is unchanged.
+- [x] Qualify Windows wrong-signature refusal and valid retry against exact A7.
+  Eleven assertions, native Quit/reopen, preservation and exact restoration pass.
+  Earlier runner failures stay recorded; interrupted/ordinary GUI repeat is separate.
 - [ ] Complete remaining selected native installed/updater/launcher cohorts;
   Exact current isolated updater trial and15-file checksum support are prepared;
   the maintainer has directed execution of the next slices, including the

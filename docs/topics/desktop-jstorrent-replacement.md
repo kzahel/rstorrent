@@ -1,5 +1,13 @@
 # Desktop JSTorrent Replacement
 
+Slice007 corrected attempt4 passes actual wrong-signature rejection, unchanged
+old executable and valid A7 retry, eleven assertions/installed refusal routes,
+four-row native Quit/reopen and source/payload preservation. Fresh native focus/
+hover observation uses the resident-declared move operation; independent privacy
+state,50-registry/seven-file restoration, owned cleanup/off/release and trial
+removal pass. Three earlier runner failures remain failed and restored. No
+product bytes change; the evidence does not claim one cause for every failure.
+
 Slice010 passes exact A7 Linux x64 AppImage automatic delivery from released
 unmodified0.2.1 over the private HTTPS trial on Ubuntu24.04 extract-and-run.
 Ten assertions/installed refusals, four imported rows, native tray Quit/reopen,

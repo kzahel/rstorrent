@@ -1,5 +1,13 @@
 # Tactical 259: JSTorrent Finish-Line Checks
 
+Slice007 corrected attempt4 passes actual wrong-signature rejection, unchanged
+old executable and valid A7 retry, eleven assertions/installed refusal routes,
+four-row native Quit/reopen and source/payload preservation. Fresh native focus/
+hover observation uses the resident-declared move operation; independent privacy
+state,50-registry/seven-file restoration, owned cleanup/off/release and trial
+removal pass. Three earlier runner failures remain failed and restored. No
+product bytes change; the evidence does not claim one cause for every failure.
+
 Slice016 prepares a concrete10.95MB current outer-runtime review capsule:
 seven verified upstream source archives, original notices, pinned Alpine
 recipes/patches and the independently exercised x64 relink prototype. All43
@@ -156,7 +164,7 @@ replacement does not qualify automatic updater, Intel native launch, FUSE or
 all associations. Technical registration-failure copy and default tab/status
 clipping remain recorded design findings.
 
-## Prepared updater trial checkpoint
+## Historical updater preparation checkpoint (superseded by slices004–010)
 
 Exact current a7 updater-trial preparation authenticates15 core receipt bytes,
 five selected delivery signatures and29 actual unchanged-server boundary cases.
@@ -228,9 +236,9 @@ the corrected repeat. This qualifies current native presentation/restart,
 not installer wizard, legacy MSI migration, full associations or automatic
 updater acceptance. Detailed receipts/screenshots remain ignored under259.
 
-The exact extension draft upload remains authorized and blocked on the user's
-Google passkey verification. Production publication and website deployment
-remain outside the current instruction.
+The earlier Google-verification blocker is resolved: slice001 uploads the exact
+extension1.1.2 draft and verifies the unchanged published1.1.1 table. Production
+publication and website deployment remain outside the current instruction.
 
 The maintained cutover checklist is condensed from780 to222 lines: dated
 checkpoint narrative moves out of the current task view, with every25 acceptance
