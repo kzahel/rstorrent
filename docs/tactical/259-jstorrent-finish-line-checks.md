@@ -1,5 +1,13 @@
 # Tactical 259: JSTorrent Finish-Line Checks
 
+Slice020 collects the final A7 AppImages' exact89 Ubuntu Noble source versions,
+every SHA-256-bound descriptor/source file and original128/129 notice files.
+A local529.8MB review capsule includes frozen first-party source, selected
+runtime material and provenance; all736 covered members verify independently.
+Owned extraction is removed, no signed byte or public route changes. The older
+Jammy matrix stays historical. Public delivery, per-package disposition and
+complete runtime relink/native review remain open; slice016 caveats are retained.
+
 Slice017 passes exact A7 Mac ARM ordinary GUI HTTPS updating from released
 unmodified0.2.1. Actual Install & Restart, ten assertions/nine refusal routes,
 four-row native Cmd-Q/reopen, reverification, one marker and preservation pass.

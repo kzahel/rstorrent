@@ -1,5 +1,13 @@
 # Beta Release Readiness
 
+Slice020 collects the final A7 AppImages' exact89 Ubuntu Noble source versions,
+every SHA-256-bound descriptor/source file and original128/129 notice files.
+A local529.8MB review capsule includes frozen first-party source, selected
+runtime material and provenance; all736 covered members verify independently.
+Owned extraction is removed, no signed byte or public route changes. The older
+Jammy matrix stays historical. Public delivery, per-package disposition and
+complete runtime relink/native review remain open; slice016 caveats are retained.
+
 Slice016 prepares a concrete10.95MB current outer-runtime review capsule:
 seven verified upstream source archives, original notices, pinned Alpine
 recipes/patches and the independently exercised x64 relink prototype. All43
