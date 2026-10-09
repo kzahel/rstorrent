@@ -1,5 +1,13 @@
 # Product Surfaces And JSTorrent Migration
 
+Slice009 passes exact A7 Mac ARM automatic delivery from released unmodified
+0.2.1 over the bounded private HTTPS trial. Ten assertions/nine refusal routes,
+four imported rows, payload reverification and native Cmd-Q/reopen pass. Actual
+JSTorrent screens and statistics opt-out are reviewed; independent SQLite and
+inherited scoped restoration verify. Owned staging/captures and transfer server
+are removed, VM off/claim released, trial disabled with ordinary routes unchanged.
+Intel, DMG drag/drop and ordinary Mac GUI update remain separate.
+
 Tactical288 locally corrects initial website fragments after client-only
 Download hydration, sticky-header spacing and320px header/release-note/FAQ
 presentation. Nine actual before/after views and fresh enabled/disabled builds,

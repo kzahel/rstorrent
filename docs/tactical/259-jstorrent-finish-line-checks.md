@@ -1,5 +1,13 @@
 # Tactical 259: JSTorrent Finish-Line Checks
 
+Slice009 passes exact A7 Mac ARM automatic delivery from released unmodified
+0.2.1 over the bounded private HTTPS trial. Ten assertions/nine refusal routes,
+four imported rows, payload reverification and native Cmd-Q/reopen pass. Actual
+JSTorrent screens and statistics opt-out are reviewed; independent SQLite and
+inherited scoped restoration verify. Owned staging/captures and transfer server
+are removed, VM off/claim released, trial disabled with ordinary routes unchanged.
+Intel, DMG drag/drop and ordinary Mac GUI update remain separate.
+
 Slice008 observes an interrupted updater download without changing the old
 binary; ordinary old GUI Install & Restart reaches exact A7 with four owned
 records and independently persisted statistics opt-out. Final tray Quit fails,
