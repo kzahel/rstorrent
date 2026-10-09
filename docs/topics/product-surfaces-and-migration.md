@@ -1,5 +1,17 @@
 # Product Surfaces And JSTorrent Migration
 
+Slice033 qualifies actual Play-managed code27 controlled1MiB magnet/file
+confirmation, independent payload SHA-256 and three normal populated paused
+Shutdown/reopen repetitions with persisted SAF identity/modes/time and package
+identity retained. Keep data removes the torrent but leaves its detail route
+showing Torrent is no longer available; this navigation polish is recorded.
+The original runner stays failed at its auto-navigation assumption. Separate
+ordinary reopen verifies empty library and retained hash; normal Shutdown,
+exact owned file/marker removal and seed/window/tab cleanup pass. The empty
+selected owned test folder/grant deliberately remain. Notifications stay denied;
+background/hour/upload/reboot and populated old-store migration are unqualified.
+Original runner failures and scoped recoveries remain separate ignored receipts.
+
 Slice031 passes actual Play-managed code27 system-picker cancellation and three
 normal Shutdown/reopen repetitions on an empty B library, retaining exact
 identity/grants and closing every window/tab. Two observed Back actions cancel;

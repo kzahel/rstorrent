@@ -1,21 +1,34 @@
 # Tactical 259: JSTorrent Finish-Line Checks
 
-## Current restart checkpoint, 2026-10-09
+## Current restart checkpoint, 2026-10-10
 
-Slices030/031 freshly verify all three VMs off/claims available, private updater
+Slice033 qualifies actual Play-managed code27 foreground trackerless1MiB
+magnet intake/file confirmation, independent SHA-256 and three normal populated
+Shutdown/task/service removal/Live reopen repetitions. Completed paused intent,
+payload bytes, package identity/install times and persisted SAF grant identity,
+modes and creation time remain unchanged. The reference seed listener closes
+and owned controller staging is removed. Normal Keep data removes the torrent
+but leaves details on Torrent is no longer available; the runner's immediate
+empty-library assumption stays failed. Separate normal reopen independently
+proves empty library and retained hash, then ordinary Shutdown and exact owned
+file/marker removal pass. Every B tab/window closes and its selected owned
+folder remains empty with its grant intentionally retained. The original
+no-folder configuration is not restored; no app data reset occurs.
+
+Original setup/private-metadata/control-label failures and individual recovery
+receipts remain unchanged. Pinned libtorrent's private metadata plugin refusal
+requires the corrected trackerless nonprivate controlled fixture. Permission
+verification compares persisted identity/modes/time rather than transient
+ActivityRecord owners. Report033 records the removal navigation polish and
+actual screenshots. Notifications stay denied; background/hour/upload/reboot,
+populated old-store migration and other cohorts retain their requirements.
+
+Slices030/031 verify all three VMs off/claims available, private updater
 root/drop-in absent, eight ordinary responses unchanged and five trial routes
-404. Both physical workspaces close; managed B subsequently passes actual
-system-folder-picker cancellation and three normal Shutdown/task/service
-removal/Live reopen repetitions with exact identity/grants retained. Its library
-is empty and no download folder is selected; population/reboot are not inferred.
-The original one-Back cancellation assumption stays failed and cleaned up.
-Slice033 next qualifies a controlled private populated managed-B transfer and
-restart in a newly owned download subfolder. Cleanup removes owned rows/files
-and closes all windows, intentionally retaining its empty selected test folder:
-normal Android controls cannot forget the current root. No app data reset or
-exact restoration to the original no-folder setup is claimed. Original setup
-runner failures remain separate; zero-sized Android picker bounds require
-fresh ChromeOS presentation/control observations before further input.
+404. Managed B also passes system-folder-picker cancellation and three empty
+normal shutdown/reopen repetitions before033's controlled population. Both
+physical workspaces close between slices. The original one-Back cancellation
+assumption stays failed and cleaned up.
 
 Ignored slice028 passes exact signed a7 ARM DMG read-only mounting, strict/deep
 source/copied signatures, standard bundle copying, eight migration assertions,
