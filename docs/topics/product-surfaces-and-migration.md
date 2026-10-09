@@ -5,7 +5,9 @@ main CI pass; bounded D-01/D-02/D-03 identity/signature contracts close. Actual
 Mac ARM/Linux x64/Windows x64 NSIS manual migration/restart and signed native MSI
 manual-update presentation pass with scoped restoration/off/release. Play27 is
 available only to existing internal testers; one actual Play26-to27 install
-preserves identity/grants, while inherited privacy/lifecycle remains pending.
+preserves identity/grants and now passes bounded normal Shutdown/task/service
+closure and Live reopen after actual statistics opt-out. Populated-library and
+reboot acceptance remain separate.
 Exact extension1.1.2 draft upload now succeeds on the existing item; actual
 package tables confirm draft1.1.2 and unchanged published1.1.1. Submission and
 publication remain separate. Full installed/store/security/source/relink and shipment disposition

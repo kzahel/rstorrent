@@ -72,3 +72,11 @@ internal testers. Play reports Available to internal testers; production23 and
 tester/device settings remain unchanged. Independent Play-generated managed
 certificate/package/API/ABI/alignment checks pass. Actual managed27 Shutdown/
 reopen acceptance remains separate under259.
+
+Managed27 task closure now passes on a retained physical Play installation under
+259: after the authorized real statistics opt-out, normal Shutdown removes the
+exact app task/service and normal launch returns Live without the disclosure.
+UID/first-install/installer and exact grants remain unchanged. The library is
+empty after earlier owned-fixture cleanup, so this closes only managed task/
+service/reopen behavior. Actual captures and per-slice report stay ignored.
+All observed browser tabs and application windows close afterward.

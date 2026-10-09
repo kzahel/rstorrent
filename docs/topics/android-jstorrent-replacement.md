@@ -20,8 +20,12 @@ uninstall. A-01–08 data/lifecycle/mixed-store and production shipment remain o
 One retained physical Chromebook now updates26-to27 through the actual Play
 Update control without sideload, uninstall or clear. UID, first-install time,
 Play installer and exact URI grants remain unchanged; both owned observations
-clean up successfully. Its inherited unresolved disclosure is still visible,
-so managed Shutdown/reopen and payload-row acceptance remain pending. The other
+clean up successfully. Its disclosure is now saved with statistics opted out through the real checkbox.
+Managed27 normal Shutdown removes the task/service; normal reopen returns Live
+without the disclosure, with unchanged identity and exact grants. Its library is
+empty after prior owned-fixture cleanup; populated payload-row acceptance and
+reboot remain separate. All observed tabs/application windows close after this
+slice; browser page targets and Close controls are empty. The other
 device's documented ADB connection attempt refuses; no reboot, rootfs repair
 or power-policy change is performed. Private receipts/screenshots stay ignored.
 

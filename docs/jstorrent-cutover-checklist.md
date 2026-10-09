@@ -25,7 +25,9 @@ copy and independent store timing.
   API28 minimum, both ABIs and16-KiB ZIP/ELF alignment.
 - [x] Observe physical Play26-to27 update on one retained Chromebook: UID,
   first-install date, Play installer and URI grants remain unchanged. Its
-  inherited unresolved privacy disclosure remains; no lifecycle pass is inferred.
+  actual managed27 normal Shutdown removes its task/service and normal reopen
+  returns Live after saving statistics opt-out. Exact grants remain unchanged;
+  populated-library and reboot acceptance are separate.
 - [x] Finish original-root signed desktop build and bounded identity/signature
   qualification at
   frozen `a7ee65ed`, [run37958746928](https://github.com/kzahel/rstorrent/actions/runs/37958746928).
