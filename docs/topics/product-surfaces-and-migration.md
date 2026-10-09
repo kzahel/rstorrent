@@ -1,5 +1,11 @@
 # Product Surfaces And JSTorrent Migration
 
+Current checkpoint259 also qualifies the bounded live private updater selection
+and verified removal, with unchanged ordinary routes. Released Windows0.2.1
+automatically authenticates/installs exact A7 NSIS and passes native migration/
+restart/restoration/off/release. Signature-failure retry attempts preserve their
+runner failures and passing cleanup; complete retry remains pending.
+
 Current checkpoint259: frozen a7 original-signed desktop five-target build and
 main CI pass; bounded D-01/D-02/D-03 identity/signature contracts close. Actual
 Mac ARM/Linux x64/Windows x64 NSIS manual migration/restart and signed native MSI

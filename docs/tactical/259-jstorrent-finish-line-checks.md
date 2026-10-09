@@ -2,6 +2,14 @@
 
 ## Current execution checkpoint: 2026-10-09
 
+Slice007 initially rejects the invalid signature without changing the old
+executable, then installs the valid retry. The final tray Quit fails beneath
+an overlapping OneDrive popup; a second runner attempt fails on an incorrect
+root-window snapshot assumption. Both failed receipts remain unchanged; exact
+50-registry/seven-file restoration, owned cleanup, VM-off/release and service
+trial removal pass independently. Corrected observation uses the native window
+inventory and bounded fresh menu retries; complete repeat remains pending.
+
 Slice004 qualifies the unchanged live HTTPS server's bounded private trial:
 three owned IDs select all five exact A7 payloads;23 selection cases plus channel
 behavior and full payload hashes pass. Eight ordinary responses remain unchanged.
