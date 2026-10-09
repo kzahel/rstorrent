@@ -11,6 +11,12 @@ managed signing certificate, package identity, API28 minimum, target36, both
 native ABIs and16-KiB ZIP/ELF alignment. Store availability and download checks
 are separate from complete preserved-library and Shutdown/reopen acceptance.
 
+D-03 now closes its bounded identity/version/signing contract: current27 exceeds
+fresh Play pre-upload maximum26 and selected GitHub code24; original AAB upload
+certificate and actual downloaded/installed Play certificates independently
+verify. The managed upgrade retains its installation identity without clear or
+uninstall. A-01–08 data/lifecycle/mixed-store and production shipment remain open.
+
 One retained physical Chromebook now updates26-to27 through the actual Play
 Update control without sideload, uninstall or clear. UID, first-install time,
 Play installer and exact URI grants remain unchanged; both owned observations

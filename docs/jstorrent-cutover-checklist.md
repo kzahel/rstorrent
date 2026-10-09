@@ -74,10 +74,15 @@ they cannot satisfy production delivery. Keep private values out of public docs.
   AppImage source/redistribution review and installed/native acceptance retain
   separate R-05/P requirements. Fresh signatures for the279/280/281 candidate
   are required; do not carry source8c whole-row closure onto changed bytes.
-- [ ] **D-03 Android identity:** `com.jstorrent.app`; versionCode exceeds all Play
+- [x] **D-03 Android identity:** `com.jstorrent.app`; versionCode exceeds all Play
   tracks, including closed/internal/testing, and selected GitHub APKs. Record
   upload certificate separately from the existing Play app-signing certificate.
   Play-generated APK updates an installed Play build without uninstall/data clear.
+  Code27 exceeds the fresh pre-upload maximum26 and selected GitHub code24.
+  Exact original-upload-signed AAB, Play-generated APK and actual installed
+  base APK independently verify their separate certificates. The retained
+  Play26-to27 installation preserves UID, first-install time and installer.
+  Library, privacy/lifecycle and broader physical acceptance remain A gates.
 - [ ] **D-04 Extension identity:** existing Web Store item
   `dbokmlpefliilbjldladbimlcfgbolhk`, public manifest key derives that ID, and
   version exceeds every published track. Review permission/CSP/launch-route changes
