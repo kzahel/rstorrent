@@ -1,5 +1,14 @@
 # Desktop JSTorrent Replacement
 
+Slice008 observes an interrupted updater download without changing the old
+binary; ordinary old GUI Install & Restart reaches exact A7 with four owned
+records and independently persisted statistics opt-out. Final tray Quit fails,
+then runner cleanup misses its deadline. The original failed receipt remains
+failed. Separate guarded administration-only recovery verifies all50 registry/
+seven file scopes against the original snapshot, removes only owned firewall/
+staging state, powers the VM off and releases its claim. The temporary trial is
+removed; complete GUI failure/retry acceptance remains open.
+
 ## Current candidate qualification, 2026-10-09
 
 Slice004 qualifies the unchanged live HTTPS server's bounded private trial:

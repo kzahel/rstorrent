@@ -1,5 +1,14 @@
 # Tactical 259: JSTorrent Finish-Line Checks
 
+Slice008 observes an interrupted updater download without changing the old
+binary; ordinary old GUI Install & Restart reaches exact A7 with four owned
+records and independently persisted statistics opt-out. Final tray Quit fails,
+then runner cleanup misses its deadline. The original failed receipt remains
+failed. Separate guarded administration-only recovery verifies all50 registry/
+seven file scopes against the original snapshot, removes only owned firewall/
+staging state, powers the VM off and releases its claim. The temporary trial is
+removed; complete GUI failure/retry acceptance remains open.
+
 ## Current execution checkpoint: 2026-10-09
 
 Slice007 initially rejects the invalid signature without changing the old

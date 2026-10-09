@@ -1,5 +1,14 @@
 # Product Surfaces And JSTorrent Migration
 
+Slice008 observes an interrupted updater download without changing the old
+binary; ordinary old GUI Install & Restart reaches exact A7 with four owned
+records and independently persisted statistics opt-out. Final tray Quit fails,
+then runner cleanup misses its deadline. The original failed receipt remains
+failed. Separate guarded administration-only recovery verifies all50 registry/
+seven file scopes against the original snapshot, removes only owned firewall/
+staging state, powers the VM off and releases its claim. The temporary trial is
+removed; complete GUI failure/retry acceptance remains open.
+
 Current checkpoint259 also qualifies the bounded live private updater selection
 and verified removal, with unchanged ordinary routes. Released Windows0.2.1
 automatically authenticates/installs exact A7 NSIS and passes native migration/
