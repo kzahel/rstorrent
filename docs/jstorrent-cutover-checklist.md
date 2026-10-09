@@ -85,8 +85,12 @@ as historical exact-byte evidence. All other package inputs stay unchanged.
   ten assertions/nine refusals, four records, native Quit/reopen, independent
   privacy persistence and exact restoration/off/release/trial removal pass.
   Physical Intel hardware and DMG installation remain separate.
+- [x] Save/reload four conservative local-data categories in the unsubmitted
+  store draft: resettable identifier, authentication, activity and content.
+  Five other categories and existing three certifications remain unchanged.
+  Final owner certification and accurate deployed policy are still open.
 - [x] Save and reload-verify accurate draft Web Store single-purpose/permission
-  explanations and description; public version, data categories/certifications,
+  explanations and description; public version and certifications,
   policy URL and graphic assets remain unchanged. Submission stays separate.
 - [ ] Complete remaining selected native installed/updater/launcher cohorts;
   Exact current isolated updater trial and15-file checksum support are prepared;

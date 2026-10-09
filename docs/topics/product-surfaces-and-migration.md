@@ -1,5 +1,15 @@
 # Product Surfaces And JSTorrent Migration
 
+Slice037 saves and reload-verifies four conservative Web Store draft data
+categories: local resettable identifier, authentication, usage activity and
+website content. Five other categories, remote-code choice, existing three
+certification values and policy URL remain unchanged. No submission or
+publication occurs; final owner certification and accurate public policy
+remain open. Slice036 observes the actual published1.1.1 official listing and
+its ARC-data/notifications/native-application permission prompt, canceled
+before installation. The old-store/new-managed pair awaits the concrete
+installation-access answer; all B tabs/windows close after this preflight.
+
 Slices034/035 inspect actual physical extension inventories: B has no
 JSTorrent extension; A has unpacked1.1.1 under the production ID and stale
 unpacked Beta0.4.0 with retired branding. Neither proves installed-store
