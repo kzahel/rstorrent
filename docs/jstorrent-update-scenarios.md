@@ -62,6 +62,15 @@ finish-line report; avoid adding private device details to this document.
 
 ## Source/render checkpoint, 2026-10-09
 
+Tactical284 also passes a current-source owned API35 installed upgrade using
+the released1.0.24 Android app/1.1.1 extension and current beta package. Actual
+old/old, both mixed pairs and new/new captures plus native before/after are in
+the ignored report. Root/payload/import/restart/control assertions pass.
+Disposable signing, emulated ARC and pre-granted beta permission do not close
+store or physical rows. Visual review finds the connected390px layout clips;
+Tactical286 owns the presentation fix. The already-shipped old extension's
+generic Offline message remains; native/help guidance is the recovery story.
+
 The first pass covers nine injected packaged connection states and bundled
 no-update help, with before/after screenshots. New links, plain recovery copy
 and button contrast are locally qualified. No full installed/store scenario

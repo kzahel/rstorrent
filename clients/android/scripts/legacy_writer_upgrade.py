@@ -27,10 +27,18 @@ class WriterOracle:
         self.session.apply_settings({"upload_rate_limit": 64 * 1024, "ignore_limits_on_local_network": False, "alert_mask": int(lt.alert.category_t.all_categories), "in_enc_policy": int(lt.enc_policy.disabled), "out_enc_policy": int(lt.enc_policy.disabled)})
         self.cases = []
         self.handles = []
+        self.tracker_requests = []
         oracle = self
 
         class Handler(BaseHTTPRequestHandler):
+            # A normal length-delimited HTTP/1.1 response avoids an immediate
+            # server EOF racing the released companion's buffered socket data.
+            protocol_version = "HTTP/1.1"
+            timeout = 5
+
             def do_GET(self):
+                oracle.tracker_requests.append({"path": self.path.split("?", 1)[0], "peer": self.client_address[0]})
+                del oracle.tracker_requests[:-32]
                 peers = struct.pack("!4BH", 127, 0, 0, 1, oracle.seed_port)
                 body = lt.bencode({b"interval": 2, b"complete": 1, b"incomplete": 0, b"peers": peers})
                 self.send_response(200)

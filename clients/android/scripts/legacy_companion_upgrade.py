@@ -18,7 +18,7 @@ EXTENSION_URL = 'https://github.com/kzahel/JSTorrent/releases/download/extension
 EXTENSION_SHA256 = '9366af2f2443d2e50b9ebf5c6b8f3097c8e96c51e386a2779e6896ee149812b6'
 
 class CompanionBrowser:
-    def __init__(self, target, directory):
+    def __init__(self, target, directory, evidence_dir=None):
         self.process = None
         old = directory / 'old-extension.zip'
         urllib.request.urlretrieve(EXTENSION_URL, old)
@@ -45,7 +45,7 @@ class CompanionBrowser:
         new_port = self.forward(target, 3030)
         io_port = self.forward(target, 7801)
         streaming_port = self.forward(target, 7802)
-        self.process = subprocess.Popen(['node', str(Path(__file__).with_name('legacy_companion_browser.mjs')), str(directory / 'browser-profile'), str(old_root), str(new_root), str(old_port), str(new_port), str(io_port), str(streaming_port)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, start_new_session=True)
+        self.process = subprocess.Popen(['node', str(Path(__file__).with_name('legacy_companion_browser.mjs')), str(directory / 'browser-profile'), str(old_root), str(new_root), str(old_port), str(new_port), str(io_port), str(streaming_port), str(evidence_dir.resolve()) if evidence_dir else '-'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, start_new_session=True)
 
     @staticmethod
     def forward(target, port):
@@ -77,6 +77,11 @@ class CompanionBrowser:
 
 def prepare(target, probe, directory, oracle, browser):
     for port in (oracle.seed_port, oracle.server.server_port): target.run(['reverse', f'tcp:{port}', f'tcp:{port}'])
+    result = target.shell([f"(printf 'GET /fixture-probe HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n'; sleep 1) | toybox nc -W 3 -w 3 127.0.0.1 {oracle.server.server_port} | head -n 1"])
+    response = result.stdout.strip()
+    if response != 'HTTP/1.1 200 OK':
+        raise RuntimeError('owned emulator tracker is unreachable: ' + response + ' ' + result.stderr)
+    print(json.dumps({'tracker_probe': response}), flush=True)
     target.shell(['pm', 'grant', PACKAGE, 'android.permission.POST_NOTIFICATIONS'], check=False)
     for folder in FOLDERS:
         target.shell(['mkdir', '-p', f'/sdcard/Download/JSTorrent/{folder}'])

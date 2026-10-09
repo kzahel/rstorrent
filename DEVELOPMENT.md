@@ -1522,6 +1522,11 @@ pre-grants only the extracted successor extension's exact optional permission.
 It does not alter phone product policy, attached devices, physical apps or
 shipping extension manifests. This is controlled evidence, not actual store
 or physical ARC replacement; Tactical 248 records its precise limits.
+With `--evidence-dir`, the browser also retains each actual old/new pair at
+390/1100 pixels. The local fixture uses length-delimited HTTP/1.1 responses
+and a bounded emulator reachability probe; tracker receipts distinguish a
+fixture failure from a completed ordinary writer. Tactical284 records the
+current-source API35 repeat and its presentation finding.
 
 Tactical `003`'s self-contained Android probe builds both supported native
 ABIs and targets only an explicitly verified environment:

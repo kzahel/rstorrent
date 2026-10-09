@@ -2,10 +2,12 @@
 // ADB forwards terminate inside the runner's owned emulator.
 import http from "node:http";
 import net from "node:net";
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
 import { createInterface } from "node:readline";
 import { chromium } from "../../web/node_modules/playwright-core/index.mjs";
 
-const [profile, oldExtension, newExtension, oldPort, newPort, ioPort, streamingPort] = process.argv.slice(2);
+const [profile, oldExtension, newExtension, oldPort, newPort, ioPort, streamingPort, evidenceDir] = process.argv.slice(2);
 const allowed = new Map([[7800, Number(oldPort)], [3030, Number(newPort)], [7801, Number(ioPort)], [7802, Number(streamingPort)]]);
 const requests = [];
 const rejected = [];
@@ -67,6 +69,14 @@ const browser = await chromium.launchPersistentContext(profile, {
 });
 const newId = "gcgoepclopkgijmclmlheafaglmbjlcc";
 let oldPage, newPage;
+async function capture(page, label) {
+  if (!evidenceDir || evidenceDir === "-") return;
+  for (const width of [390, 1100]) {
+    await page.setViewportSize({ width, height: 850 });
+    await page.screenshot({ path: path.join(evidenceDir, `${label}-${width}.png`), fullPage: true });
+  }
+  await writeFile(path.join(evidenceDir, `${label}-ui.txt`), await page.locator("body").innerText());
+}
 async function command(request) {
   switch (request.op) {
     case "open-old": {
@@ -86,6 +96,7 @@ async function command(request) {
     }
     case "old-ready":
       await oldPage.waitForFunction(() => window.engineManager?.engine && window.engineManager?.daemonConnection, undefined, { timeout: 45000 });
+      await capture(oldPage, "old-extension-old-android");
       return oldPage.evaluate(() => {
         const manager = window.engineManager;
         manager.configHub.set("dhtEnabled", false);
@@ -129,10 +140,12 @@ async function command(request) {
       await newPage.goto(`chrome-extension://${newId}/companion/companion.html`);
       await newPage.getByText(/Update the JSTorrent Android app in Google Play/).waitFor({ timeout: 20000 });
       if (!(await newPage.getByRole("link", { name: "Open JSTorrent in Google Play" }).isVisible())) throw new Error("missing update action");
+      await capture(newPage, "new-extension-old-android");
       await newPage.close(); newPage = undefined;
       return { new_extension_old_android: "update_required" };
     case "old-retired":
       await oldPage.waitForFunction(() => !window.engineManager?.daemonConnection, { timeout: 20000 });
+      await capture(oldPage, "old-extension-new-android");
       return { old_extension_new_android: "disconnected" };
     case "open-new":
       newPage = await browser.newPage();
@@ -141,6 +154,7 @@ async function command(request) {
     case "new-ready":
       await newPage.locator("#companion-identity").waitFor({ state: "visible", timeout: 45000 });
       for (const name of ["writer-0.bin", "writer-1.bin"]) await newPage.getByText(name, { exact: true }).first().waitFor({ timeout: 30000 });
+      await capture(newPage, "new-extension-new-android");
       return { identity: await newPage.locator("#companion-identity").innerText(), migrated_library: "passed" };
     case "pause-new":
       await newPage.getByRole("row", { name: /writer-1.bin/ }).click();

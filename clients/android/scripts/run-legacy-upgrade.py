@@ -134,11 +134,12 @@ def main():
                     target.run(["wait-for-device"])
                     target.shell(["ip", "address", "add", "100.115.92.2/32", "dev", "lo"])
                     target.shell(["iptables", "-t", "nat", "-A", "OUTPUT", "-p", "tcp", "-d", "127.0.0.1", "--dport", "3030", "-j", "DNAT", "--to-destination", "100.115.92.2:3030"])
-                    browser = CompanionBrowser(target, owned)
+                    browser = CompanionBrowser(target, owned, args.evidence_dir)
                     resources.callback(browser.close)
                 try:
                     spec = prepare(target, probe, owned, oracle, browser) if browser else prepare(target, probe, owned, oracle)
                 except BaseException:
+                    print(json.dumps({"tracker_requests": oracle.tracker_requests}), flush=True)
                     print([alert.message() for alert in oracle.session.pop_alerts()][-50:], flush=True)
                     print([(n.attrib.get("text"), n.attrib.get("content-desc")) for n in probe.ui_nodes(target) if n.attrib.get("text") or n.attrib.get("content-desc")], flush=True)
                     print(target.shell(["logcat", "-d", "-t", "500"], check=False).stdout[-24000:], flush=True)

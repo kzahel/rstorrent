@@ -1,5 +1,13 @@
 # Android JSTorrent Replacement Readiness
 
+Tactical [284](../tactical/284-owned-upgrade-scenario-captures.md) repeats the
+current-source API35 ordinary extension-writer upgrade successfully, retaining
+actual four-pair and native before/after captures. Three existing upgrade,
+restart and successor-control assertions pass with independent payload hashes.
+Failed fixture attempts are retained; owned browser/emulator state is removed.
+This uses disposable signing and explicitly granted extracted-beta permission,
+so physical/Play delivery remains open. Narrow connected presentation needs286.
+
 Tactical [278](../tactical/278-android-shutdown-window-lifecycle.md) follows a
 real code26 managed menu failure: the engine joins successfully, but the bound
 activity still displays Live. The next local candidate27 routes Shutdown
