@@ -45,14 +45,15 @@ copy and independent store timing.
   seven-file restoration, owned firewall/staging cleanup and off/release verify.
 - [ ] Complete remaining selected native installed/updater/launcher cohorts;
   Exact current isolated updater trial and15-file checksum support are prepared;
-  updater activation awaits separate instruction. Linux extracted-native launch
+  the maintainer has directed execution of the next slices, including the
+  prepared isolated updater trial and its cleanup. Linux extracted-native launch
   probe remains partial/failed; its final scoped cleanup and VM-off verify.
   review native security, notices and corresponding-source/relink delivery.
   Both actual AppImages meet the reviewed Noble WebKit/OpenSSL build floors;
   this does not close complete redistribution or installed acceptance.
-- [ ] Upload the exact approved extension1.1.2 ZIP to the existing draft item.
-  Google account verification currently needs the user. Draft upload authority
-  excludes submission, certifications and publication.
+- [x] Upload the exact approved extension1.1.2 ZIP to the existing draft item.
+  Actual package tables confirm draft1.1.2 and unchanged published1.1.1.
+  Submission, certifications, publication and installed-store updates stay separate.
 - [ ] Complete final managed/installed updates, mixed versions, Shutdown/reopen,
   selected physical recovery and supported desktop cohorts below. Existing
   inherited privacy choices and device policies require explicit disposition.
@@ -61,8 +62,9 @@ copy and independent store timing.
 
 Machine Control is the preferred machine-testbed interface. Use repository
 runners first, its common CLI/platform guides for native evidence, and shut down
-VMs and release claims between uses. Screenshots and detailed notes remain
-ignored. None of these local tasks closes a broader delivery row by itself.
+VMs and release claims between uses. Close all physical Chromebook tabs and
+application windows after every slice, then verify the empty inventory. Keep a
+separate report per slice; screenshots and detailed notes remain ignored. None of these local tasks closes a broader delivery row by itself.
 
 Owner: [product-surfaces-and-migration](topics/product-surfaces-and-migration.md).
 Campaign: [231](tactical/231-jstorrent-migration-working-campaign.md).

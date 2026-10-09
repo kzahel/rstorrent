@@ -2,6 +2,22 @@
 
 ## Current execution checkpoint: 2026-10-09
 
+The maintainer directs execution of all next qualification slices and a separate
+ignored report per slice. Close every physical Chromebook browser tab and
+application window after each slice, verify the empty inventory, and retain VM
+off/claim-release cleanup. This includes the prepared isolated updater trial
+and managed Android disclosure opt-out/lifecycle work; production publication
+is outside the qualification instruction.
+
+Slice001 uploads the exact400493-byte extension1.1.2 ZIP, SHA-256
+`e9e75609d537355d4bee4639b57f9369203cdcb74886537ae1d90ac65b006527`,
+to existing item dbokmlpefliilbjldladbimlcfgbolhk. Fresh authenticated native
+package tables show draft1.1.2 and unchanged published1.1.1; required permissions
+reduce to nativeMessaging/storage plus loopback host permission. Before/after
+captures and byte-bound receipt are retained under the ignored slice001 path.
+No review submission, certification, publication or actual installed-store update
+is claimed; D-04 remains open for that separate installed acceptance.
+
 The reviewed Android27 AAB is delivered to the existing internal track. Play
 reports **27 (1.0.27), Available to internal testers**; production remains23,
 and existing testers and all supported-device counts are unchanged. Its exact
@@ -61,14 +77,15 @@ replacement does not qualify automatic updater, Intel native launch, FUSE or
 all associations. Technical registration-failure copy and default tab/status
 clipping remain recorded design findings.
 
-## Next executable checkpoint: updater trial review
+## Prepared updater trial checkpoint
 
 Exact current a7 updater-trial preparation authenticates15 core receipt bytes,
 five selected delivery signatures and29 actual unchanged-server boundary cases.
 It selects three new private installation IDs; no service configuration changes
 or activation occur. Serverf45885cd remains active. The previous approved
 three-action review excludes updater activation; the temporary isolated trial
-and cleanup are prepared for a separate instruction. Local SHA256SUMS independently
+and cleanup were prepared for a separate instruction; the subsequent maintainer
+direction to execute all next slices now authorizes that bounded trial. Local SHA256SUMS independently
 binds all15 core files and remains unuploaded. Normal production delivery is
 unchanged; complete shipment/security/source obligations remain open.
 

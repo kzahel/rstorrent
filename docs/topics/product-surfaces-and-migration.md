@@ -6,8 +6,9 @@ Mac ARM/Linux x64/Windows x64 NSIS manual migration/restart and signed native MS
 manual-update presentation pass with scoped restoration/off/release. Play27 is
 available only to existing internal testers; one actual Play26-to27 install
 preserves identity/grants, while inherited privacy/lifecycle remains pending.
-Exact extension1.1.2 draft upload is authorized but Google verification remains
-unavailable. Full installed/store/security/source/relink and shipment disposition
+Exact extension1.1.2 draft upload now succeeds on the existing item; actual
+package tables confirm draft1.1.2 and unchanged published1.1.1. Submission and
+publication remain separate. Full installed/store/security/source/relink and shipment disposition
 remain open. The historical candidate checkpoints below retain their own scope.
 
 

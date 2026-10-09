@@ -40,6 +40,11 @@ Machine Control between uses, including while waiting for builds, approvals or
 other targets; do not leave idle VMs running for later checks. Verify the stopped
 state and release the claim when the session no longer needs exclusive access.
 
+On physical Chromebooks, close all browser tabs and application windows after
+each test slice, and verify the remaining tab/window inventory is empty. Preserve
+installed application data, grants and the appliance power policy. Capture and
+report each slice separately under the ignored evidence path.
+
 Do not substitute direct hypervisor commands or legacy platform-specific
 testbed repositories for ordinary cross-platform acceptance. Direct provider
 access is reserved for a recovery procedure explicitly documented by
