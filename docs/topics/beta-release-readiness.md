@@ -1,5 +1,29 @@
 # Beta Release Readiness
 
+## Current execution checkpoint: 2026-10-09
+
+The reviewed Android27 AAB is delivered to the existing internal track. Play
+reports **27 (1.0.27), Available to internal testers**; production remains23,
+and existing testers and all supported-device counts are unchanged. Its exact
+AAB SHA-256 remains `383379eeb05363e6a361e02a9a1250fb6e72c8dc595b6267bb897b17f34156d8`.
+The downloaded Play-generated universal APK independently verifies the existing
+managed signing certificate, package identity, API28 minimum, target36, both
+native ABIs and16-KiB ZIP/ELF alignment. Store availability and download checks
+are separate from preserved physical installation and Shutdown/reopen acceptance.
+
+Original-root nonpublishing desktop qualification now runs at `a7ee65ed` in
+[37958746928](https://github.com/kzahel/rstorrent/actions/runs/37958746928).
+The first attempt37957327863 proved the original signing root and was cancelled
+before package qualification because the final signature CLI still requiredten.
+The tool-only correction requires six production/ten preview signatures;20
+focused cases pass. Production publication and website deployment remain outside
+this instruction. The exact extension draft upload is authorized but waiting
+for the user's Google passkey verification; no new Web Store upload is claimed.
+
+Ignored finish-line evidence retains delivery screenshots, exact artifact and
+execution receipts, and each physical/build attempt. Nothing above closes the
+whole installed/store acceptance checklist.
+
 The maintainer authorizes the reviewed next candidate actions on 2026-10-09:
 nonpublishing signed desktop build, exact production extension draft ZIP only,
 and unchanged Android 27 delivery only to existing internal testers. No production

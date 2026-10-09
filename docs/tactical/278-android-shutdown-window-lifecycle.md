@@ -67,4 +67,8 @@ changes product behavior.
 The repaired source additionally passes workspace formatting, clippy and1,575
 Rust cases with18 existing ignores. This is local evidence; source8c's original
 hosted listener-test failure remains until revised-source CI is instructed.
-Code27 has not been uploaded. Existing internal26/production23 are unchanged.
+On2026-10-09 the exact reviewed code27 AAB is published only to the existing
+internal testers. Play reports Available to internal testers; production23 and
+tester/device settings remain unchanged. Independent Play-generated managed
+certificate/package/API/ABI/alignment checks pass. Actual managed27 Shutdown/
+reopen acceptance remains separate under259.
