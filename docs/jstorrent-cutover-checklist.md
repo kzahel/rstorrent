@@ -2,6 +2,9 @@
 
 ## Remaining release work, in brief
 
+Use the short [update scenario checklist](jstorrent-update-scenarios.md) for
+store timing, mixed versions and user-facing recovery messages.
+
 Linux best-effort scope is accepted on 2026-10-09; no older-distro WebKit
 backport project is required. AppImage is the primary Linux desktop offering;
 DEB/RPM retirement, maintained bundled libraries and actual minimum-system

@@ -1,5 +1,13 @@
 # Tactical 259: JSTorrent Finish-Line Checks
 
+The [update scenario checklist](../jstorrent-update-scenarios.md) records the
+2026-10-09 accepted publication order and good-faith recovery contract. Source
+review finds specific Android update guidance and a Play link, but the desktop
+incompatibility message still asks to update both components without a link.
+Actual store-delivered scenarios remain unchecked; no publication is performed.
+All71 focused existing Android/desktop companion tests pass on 2026-10-09;
+source-reviewed messages and links are not claimed as installed/store evidence.
+
 Linux first-release scope is narrowed by maintainer direction on 2026-10-09:
 best-effort AppImage desktop support, maintained bundled libraries, no older-
 distro WebKit backport campaign, and CLI/headless fallback. DEB/RPM retirement

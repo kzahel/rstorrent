@@ -307,6 +307,16 @@ qualification gates; source branding alone does not prove an installed update.
 
 ## ChromeOS Android Cutover Contract
 
+Maintainer direction on 2026-10-09 selects a good-faith staggered rollout:
+submit store candidates with publication held, make desktop/Android updates
+obtainable, then publish the extension. Mixed versions remain expected after
+publication. Recovery names the component to update when known, offers a
+relevant link and explains native use while waiting; unknown connection
+failures must not masquerade as confirmed version mismatches. The short
+[scenario checklist](../jstorrent-update-scenarios.md) owns the walkthrough
+and source-reviewed copy gaps; exact installed/store checks remain under259.
+This direction does not itself authorize store submission or publication.
+
 Maintainer direction on 2026-09-30 accepts independently staggered extension
 and Android updates. Crostini automatic legacy migration is outside this
 cutover. Android remains the sole successor engine, catalog and SAF owner;
