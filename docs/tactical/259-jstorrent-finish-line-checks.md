@@ -34,14 +34,13 @@ inherited scoped restoration verify. Owned staging/captures and transfer server
 are removed, VM off/claim released, trial disabled with ordinary routes unchanged.
 Intel, DMG drag/drop and ordinary Mac GUI update remain separate.
 
-Slice008 observes an interrupted updater download without changing the old
-binary; ordinary old GUI Install & Restart reaches exact A7 with four owned
-records and independently persisted statistics opt-out. Final tray Quit fails,
-then runner cleanup misses its deadline. The original failed receipt remains
-failed. Separate guarded administration-only recovery verifies all50 registry/
-seven file scopes against the original snapshot, removes only owned firewall/
-staging state, powers the VM off and releases its claim. The temporary trial is
-removed; complete GUI failure/retry acceptance remains open.
+Slice008 corrected attempt2 passes actual interrupted-download preservation
+and ordinary old GUI Install & Restart to exact A7. Eleven assertions/eight
+refusal routes, four records, native Quit/reopen, reverification, one marker and
+source/payload preservation pass. Visually reviewed statistics opt-out persists
+independently. All50 registry/seven file scopes restore exactly; owned cleanup,
+VM-off/claim-release and private trial removal pass. The original failed attempt
+and separate exact recovery remain preserved; product bytes stay unchanged.
 
 ## Current execution checkpoint: 2026-10-09
 

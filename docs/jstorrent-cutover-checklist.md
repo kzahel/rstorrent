@@ -58,6 +58,10 @@ copy and independent store timing.
 - [x] Qualify Windows wrong-signature refusal and valid retry against exact A7.
   Eleven assertions, native Quit/reopen, preservation and exact restoration pass.
   Earlier runner failures stay recorded; interrupted/ordinary GUI repeat is separate.
+- [x] Qualify Windows interrupted download and ordinary GUI valid retry against
+  exact A7. Eleven assertions/eight refusal routes, four-record native Quit/reopen,
+  privacy persistence and exact restoration/off/release/trial removal pass.
+  Original failure and guarded recovery remain separately recorded.
 - [ ] Complete remaining selected native installed/updater/launcher cohorts;
   Exact current isolated updater trial and15-file checksum support are prepared;
   the maintainer has directed execution of the next slices, including the
