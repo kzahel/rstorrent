@@ -9,7 +9,15 @@ AAB SHA-256 remains `383379eeb05363e6a361e02a9a1250fb6e72c8dc595b6267bb897b17f34
 The downloaded Play-generated universal APK independently verifies the existing
 managed signing certificate, package identity, API28 minimum, target36, both
 native ABIs and16-KiB ZIP/ELF alignment. Store availability and download checks
-are separate from preserved physical installation and Shutdown/reopen acceptance.
+are separate from complete preserved-library and Shutdown/reopen acceptance.
+
+One retained physical Chromebook now updates26-to27 through the actual Play
+Update control without sideload, uninstall or clear. UID, first-install time,
+Play installer and exact URI grants remain unchanged; both owned observations
+clean up successfully. Its inherited unresolved disclosure is still visible,
+so managed Shutdown/reopen and payload-row acceptance remain pending. The other
+device's documented ADB connection attempt refuses; no reboot, rootfs repair
+or power-policy change is performed. Private receipts/screenshots stay ignored.
 
 Original-root nonpublishing desktop qualification now runs at `a7ee65ed` in
 [37958746928](https://github.com/kzahel/rstorrent/actions/runs/37958746928).
@@ -19,6 +27,12 @@ The tool-only correction requires six production/ten preview signatures;20
 focused cases pass. Production publication and website deployment remain outside
 this instruction. The exact extension draft upload is authorized but waiting
 for the user's Google passkey verification; no new Web Store upload is claimed.
+
+The maintained cutover checklist is condensed from780 to222 lines: dated
+checkpoint narrative moves out of the current task view, with every25 acceptance
+row and its scope retained. Historical facts remain in this tactical, the report
+and Git history; an ignored pre-condensation copy is preserved. Current tasks
+now describe delivered27, frozen a7 qualification and authorized draft upload.
 
 Ignored finish-line evidence retains delivery screenshots, exact artifact and
 execution receipts, and each physical/build attempt. Nothing above closes the

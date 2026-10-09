@@ -9,7 +9,15 @@ AAB SHA-256 remains `383379eeb05363e6a361e02a9a1250fb6e72c8dc595b6267bb897b17f34
 The downloaded Play-generated universal APK independently verifies the existing
 managed signing certificate, package identity, API28 minimum, target36, both
 native ABIs and16-KiB ZIP/ELF alignment. Store availability and download checks
-are separate from preserved physical installation and Shutdown/reopen acceptance.
+are separate from complete preserved-library and Shutdown/reopen acceptance.
+
+One retained physical Chromebook now updates26-to27 through the actual Play
+Update control without sideload, uninstall or clear. UID, first-install time,
+Play installer and exact URI grants remain unchanged; both owned observations
+clean up successfully. Its inherited unresolved disclosure is still visible,
+so managed Shutdown/reopen and payload-row acceptance remain pending. The other
+device's documented ADB connection attempt refuses; no reboot, rootfs repair
+or power-policy change is performed. Private receipts/screenshots stay ignored.
 
 Original-root nonpublishing desktop qualification now runs at `a7ee65ed` in
 [37958746928](https://github.com/kzahel/rstorrent/actions/runs/37958746928).
