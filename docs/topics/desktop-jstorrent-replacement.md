@@ -38,6 +38,16 @@ replacement does not qualify automatic updater, Intel native launch, FUSE or
 all associations. Technical registration-failure copy and default tab/status
 clipping remain recorded design findings.
 
+## Current signed Windows NSIS, 2026-10-09
+
+Exact a7 per-user NSIS manually replaces pinned0.2.1 and passes eight migration/
+payload assertions, eight legacy refusal routes and stable four-row native
+tray Quit/reopen. Nine actual captures are reviewed, including the correctly
+branded firewall prompt. Independent50-registry/seven-file restoration, owned
+firewall/staging cleanup and off/release pass. Earlier runner failures remain
+failed; automatic updater and complete launcher/cohort acceptance stay open.
+See Tactical259 for the byte-bound private receipt and design findings.
+
 ## Current signed native MSI qualification, 2026-10-09
 
 Exact original-signed a7ee65ed MSI now passes quiet per-machine installation,

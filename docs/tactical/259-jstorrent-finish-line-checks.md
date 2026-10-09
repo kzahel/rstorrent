@@ -61,6 +61,29 @@ replacement does not qualify automatic updater, Intel native launch, FUSE or
 all associations. Technical registration-failure copy and default tab/status
 clipping remain recorded design findings.
 
+## Current signed Windows NSIS, 2026-10-09
+
+Exact a7 per-user NSIS manually replaces pinned0.2.1 and passes eight migration/
+payload assertions, eight legacy refusal routes and stable four-row native
+tray Quit/reopen. Nine actual captures are reviewed, including the correctly
+branded firewall prompt. Independent50-registry/seven-file restoration, owned
+firewall/staging cleanup and off/release pass. Earlier runner failures remain
+failed; automatic updater and complete launcher/cohort acceptance stay open.
+Owned fresh disclosure is visually unchecked before Save; independent SQLite
+inspection records version1/statistics false. Source/payload hashes remain
+unchanged, missing roots are not recreated and foreign verified bits recheck.
+Attempt1 fails on a duplicate capture label; its single residual PNG is exported
+and hash-bound removed. Attempt2 mistakes accessibility selection for checked
+state. Both restore inherited scopes/off/release. Attempt3 has a local missing-
+helper-name preflight failure before VM mutation, then the corrected native run
+passes. Retain failed receipts and the Windows error183/status-truncation notes.
+Ignored receipt: `windows-a7-signed-nsis-populated-attempt3.json`.
+
+Both current AppImage outer runtimes independently match the historical signed
+and pinned upstream8f39b89 bytes except the16-byte payload digest section.
+This binds prior runtime source inspection to the current candidate; it does
+not close mimalloc attribution or source/relink/security delivery.
+
 ## Current signed native MSI qualification, 2026-10-09
 
 Exact original-signed a7ee65ed MSI now passes quiet per-machine installation,

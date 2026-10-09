@@ -1,5 +1,16 @@
 # Product Surfaces And JSTorrent Migration
 
+Current checkpoint259: frozen a7 original-signed desktop five-target build and
+main CI pass; bounded D-01/D-02/D-03 identity/signature contracts close. Actual
+Mac ARM/Linux x64/Windows x64 NSIS manual migration/restart and signed native MSI
+manual-update presentation pass with scoped restoration/off/release. Play27 is
+available only to existing internal testers; one actual Play26-to27 install
+preserves identity/grants, while inherited privacy/lifecycle remains pending.
+Exact extension1.1.2 draft upload is authorized but Google verification remains
+unavailable. Full installed/store/security/source/relink and shipment disposition
+remain open. The historical candidate checkpoints below retain their own scope.
+
+
 Tactical [283](../tactical/283-companion-update-recovery-guidance.md) adds
 component-specific recovery links and plain connection guidance in the
 packaged extension, preserving attach-only retries and existing discovery/

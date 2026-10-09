@@ -40,7 +40,10 @@ copy and independent store timing.
   Quit/reopen. Cabinet binaries/notices match actual installation; independent
   100-registry/nine-file restoration and off/release cleanup pass. Installer
   wizard, legacy MSI migration and full associations remain separate.
-- [ ] Complete current installed Windows and remaining selected native cohorts;
+- [x] Repeat current signed Windows NSIS populated migration and tray Quit/reopen.
+  Eight assertions/eight refusal routes and nine actual captures pass;50-registry/
+  seven-file restoration, owned firewall/staging cleanup and off/release verify.
+- [ ] Complete remaining selected native installed/updater/launcher cohorts;
   review native security, notices and corresponding-source/relink delivery.
   Both actual AppImages meet the reviewed Noble WebKit/OpenSSL build floors;
   this does not close complete redistribution or installed acceptance.
