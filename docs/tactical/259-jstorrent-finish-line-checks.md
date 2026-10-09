@@ -12,14 +12,17 @@ released. No updater activation occurs. Physical Intel, Finder drag/drop and
 architecture crossover remain unrun. Actual screenshots retain JSTorrent
 branding; narrow Status/detail-tab clipping and OS overlays are recorded.
 
-Slice039 is active: actual managed27 notification-denied partial transfer,
-ordinary OS Minimize, service/controlled-peer closure with the source still
-available, foreground return and independent whole-file hash. Preserve durable
-intent and existing settings/grants, use only owned fixture bytes, and finish
-with normal Keep data/Shutdown, exact fixture removal and zero tabs/windows.
-Stop at this bounded negative background-policy case; enabled background,
-hour/soak, device sleep/reboot/network loss and upload serving are non-goals.
-No diagnostic/debug intent, reset, sideload or new permission is used.
+Slice039 passes actual managed27 notification-denied partial-transfer OS
+Minimize, cooperative service/controlled-peer closure and10-second stable
+reference upload with the source available. Normal foreground return retains
+row/64KiB prefix; source resumption completes the whole4MiB SHA-256. Active
+states use fresh native accessibility/screenshots; two UIAutomator idle-capture
+timeouts stay failed with separate ordinary owned cleanup. Package identity
+and persisted grant identity/modes/time remain; normal Keep data/Back/Shutdown,
+exact owned removal and zero tab/window cleanup pass. The empty selected folder/
+grant remain, notifications stay denied and settings are untouched. A brief
+source pause after hidden observation supports the return screenshot; no enabled-
+background completion/hour, sleep/reboot/device network-loss or upload claim.
 
 Slice038 passes actual Play-managed code27 partial4MiB recovery on B.
 Independent64KiB prefix survives task/service-absent force-stop and source-paused
