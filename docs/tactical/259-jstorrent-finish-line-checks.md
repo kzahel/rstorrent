@@ -2,6 +2,21 @@
 
 ## Current execution checkpoint: 2026-10-09
 
+Slice004 qualifies the unchanged live HTTPS server's bounded private trial:
+three owned IDs select all five exact A7 payloads;23 selection cases plus channel
+behavior and full payload hashes pass. Eight ordinary responses remain unchanged.
+Initial startup-race502 observations remain failed; actual HTTPS readiness fixes
+the runner. Terminal disable removes the private drop-in/configuration/assets,
+restores ordinary responses and returns404 for all trial payloads.
+
+Slice005 passes released Windows0.2.1's actual automatic HTTPS update to exact
+original-signed A7 NSIS0.3.0. Ten assertions/eight refusal routes, native four-row
+Quit/restart, independent disclosure-version1/statistics-off state and visual
+JSTorrent review pass. All50-registry/seven-file scopes restore exactly; owned
+firewall/staging cleanup, VM-off and claim-release verify. It is an owned
+populated fixture; ordinary GUI update, failure/retry, every architecture and
+existing-user cohorts remain separate. Each slice has an ignored short report.
+
 Slice006 repeats actual cohort-A Play/ARC access: normal Play launch remains
 at Starting Play Store; canonical ADB connection refuses. The runtime audit
 confirms SSH/autostart/power checks, but the pending OS update prevents full

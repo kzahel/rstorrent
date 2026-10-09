@@ -2,6 +2,21 @@
 
 ## Current candidate qualification, 2026-10-09
 
+Slice004 qualifies the unchanged live HTTPS server's bounded private trial:
+three owned IDs select all five exact A7 payloads;23 selection cases plus channel
+behavior and full payload hashes pass. Eight ordinary responses remain unchanged.
+Initial startup-race502 observations remain failed; actual HTTPS readiness fixes
+the runner. Terminal disable removes the private drop-in/configuration/assets,
+restores ordinary responses and returns404 for all trial payloads.
+
+Slice005 passes released Windows0.2.1's actual automatic HTTPS update to exact
+original-signed A7 NSIS0.3.0. Ten assertions/eight refusal routes, native four-row
+Quit/restart, independent disclosure-version1/statistics-off state and visual
+JSTorrent review pass. All50-registry/seven-file scopes restore exactly; owned
+firewall/staging cleanup, VM-off and claim-release verify. It is an owned
+populated fixture; ordinary GUI update, failure/retry, every architecture and
+existing-user cohorts remain separate. Each slice has an ignored short report.
+
 Original-root desktop candidate `a7ee65ed` now completes all five signed lanes
 and collector in run37958746928; main CI37958695272 also succeeds. Independent
 checks reconcile15 core sizes/hashes, six original-root signatures/six wrong-
@@ -40,8 +55,8 @@ clipping remain recorded design findings.
 
 The current a7 isolated updater trial is prepared locally:15 authenticated core
 files, five delivery signatures and29 unchanged-server boundary cases pass.
-Its three private IDs/configuration remain unactivated, outside the previous
-three-action approval. The local checksum support file is verified and unuploaded.
+Its three private IDs are now qualified under the maintainer's next-slice
+instruction, with bounded activation and verified terminal removal. The local checksum support file is verified and unuploaded.
 The Linux extracted-executable launch probe remains failed/partial with separate
 final off/cleanup reconciliation; it does not replace the full AppImage's current
 manual migration/native restart evidence. Tactical259 owns the next step.

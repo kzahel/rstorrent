@@ -45,6 +45,10 @@ copy and independent store timing.
 - [x] Repeat current signed Windows NSIS populated migration and tray Quit/reopen.
   Eight assertions/eight refusal routes and nine actual captures pass;50-registry/
   seven-file restoration, owned firewall/staging cleanup and off/release verify.
+- [x] Qualify the unchanged live HTTPS server’s private A7 selection and clean
+  disable; ordinary routes stay unchanged. Released Windows0.2.1 automatically
+  authenticates/installs exact A7, then native Quit/restart retains four fixture
+  records. Ten assertions/eight refusals and exact restoration/off/release pass.
 - [ ] Complete remaining selected native installed/updater/launcher cohorts;
   Exact current isolated updater trial and15-file checksum support are prepared;
   the maintainer has directed execution of the next slices, including the
