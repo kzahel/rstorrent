@@ -62,6 +62,10 @@ copy and independent store timing.
   exact A7. Eleven assertions/eight refusal routes, four-record native Quit/reopen,
   privacy persistence and exact restoration/off/release/trial removal pass.
   Original failure and guarded recovery remain separately recorded.
+- [x] Qualify exact A7 Mac ARM ordinary GUI Install & Restart, native Cmd-Q/
+  reopen, ten assertions/nine refusal routes and independent privacy persistence.
+  Exact scoped restoration, capture/server cleanup, VM-off/release and private
+  trial removal pass. Intel and DMG drag/drop remain separate.
 - [ ] Complete remaining selected native installed/updater/launcher cohorts;
   Exact current isolated updater trial and15-file checksum support are prepared;
   the maintainer has directed execution of the next slices, including the

@@ -1,5 +1,12 @@
 # Product Surfaces And JSTorrent Migration
 
+Slice017 passes exact A7 Mac ARM ordinary GUI HTTPS updating from released
+unmodified0.2.1. Actual Install & Restart, ten assertions/nine refusal routes,
+four-row native Cmd-Q/reopen, reverification, one marker and preservation pass.
+Native screens/privacy input and independent persisted opt-out are reviewed.
+Inherited scoped trees restore exactly; owned staging/captures/server, VM-off/
+claim-release and private trial cleanup pass. Intel/DMG drag/drop stay separate.
+
 Slice007 corrected attempt4 passes actual wrong-signature rejection, unchanged
 old executable and valid A7 retry, eleven assertions/installed refusal routes,
 four-row native Quit/reopen and source/payload preservation. Fresh native focus/
@@ -30,7 +37,7 @@ four imported rows, payload reverification and native Cmd-Q/reopen pass. Actual
 JSTorrent screens and statistics opt-out are reviewed; independent SQLite and
 inherited scoped restoration verify. Owned staging/captures and transfer server
 are removed, VM off/claim released, trial disabled with ordinary routes unchanged.
-Intel, DMG drag/drop and ordinary Mac GUI update remain separate.
+Slice017 now passes the ordinary Mac GUI; Intel and DMG drag/drop stay separate.
 
 Tactical288 locally corrects initial website fragments after client-only
 Download hydration, sticky-header spacing and320px header/release-note/FAQ
