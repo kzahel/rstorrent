@@ -61,6 +61,28 @@ replacement does not qualify automatic updater, Intel native launch, FUSE or
 all associations. Technical registration-failure copy and default tab/status
 clipping remain recorded design findings.
 
+## Next executable checkpoint: updater trial review
+
+Exact current a7 updater-trial preparation authenticates15 core receipt bytes,
+five selected delivery signatures and29 actual unchanged-server boundary cases.
+It selects three new private installation IDs; no service configuration changes
+or activation occur. Serverf45885cd remains active. The previous approved
+three-action review excludes updater activation; the temporary isolated trial
+and cleanup are prepared for a separate instruction. Local SHA256SUMS independently
+binds all15 core files and remains unuploaded. Normal production delivery is
+unchanged; complete shipment/security/source obligations remain open.
+
+The separate current Linux extracted-executable launch probe remains failed.
+Attempt1 stops before launch on staged-file chmod ownership. Attempt2 passes
+12 post-Quit Retry replies and controlled busy-owner retry/timeout, then misses
+the foreground-launch tray deadline. It bypasses the full AppImage wrapper and
+uses guest GUI libraries; no cause or full launcher pass is inferred. Scoped
+state/controller staging are removed. Graceful shutdown times out; guest systemd
+accepts poweroff, a subsequent recovery force-stop is refused, and fresh common
+doctor independently verifies off with all claims released. Failed attempts and
+cleanup reconciliation stay separate. The full AppImage's earlier current native
+migration/restart pass retains its own scope; Linux remains best effort.
+
 ## Current signed Windows NSIS, 2026-10-09
 
 Exact a7 per-user NSIS manually replaces pinned0.2.1 and passes eight migration/

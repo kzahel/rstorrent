@@ -44,6 +44,9 @@ copy and independent store timing.
   Eight assertions/eight refusal routes and nine actual captures pass;50-registry/
   seven-file restoration, owned firewall/staging cleanup and off/release verify.
 - [ ] Complete remaining selected native installed/updater/launcher cohorts;
+  Exact current isolated updater trial and15-file checksum support are prepared;
+  updater activation awaits separate instruction. Linux extracted-native launch
+  probe remains partial/failed; its final scoped cleanup and VM-off verify.
   review native security, notices and corresponding-source/relink delivery.
   Both actual AppImages meet the reviewed Noble WebKit/OpenSSL build floors;
   this does not close complete redistribution or installed acceptance.

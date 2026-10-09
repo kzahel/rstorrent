@@ -38,6 +38,14 @@ replacement does not qualify automatic updater, Intel native launch, FUSE or
 all associations. Technical registration-failure copy and default tab/status
 clipping remain recorded design findings.
 
+The current a7 isolated updater trial is prepared locally:15 authenticated core
+files, five delivery signatures and29 unchanged-server boundary cases pass.
+Its three private IDs/configuration remain unactivated, outside the previous
+three-action approval. The local checksum support file is verified and unuploaded.
+The Linux extracted-executable launch probe remains failed/partial with separate
+final off/cleanup reconciliation; it does not replace the full AppImage's current
+manual migration/native restart evidence. Tactical259 owns the next step.
+
 ## Current signed Windows NSIS, 2026-10-09
 
 Exact a7 per-user NSIS manually replaces pinned0.2.1 and passes eight migration/
