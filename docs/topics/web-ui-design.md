@@ -1,5 +1,14 @@
 # Web UI Design
 
+Tactical [290](../tactical/290-windows-installer-brand-artwork.md) corrects the
+actual Windows NSIS generic artwork with original JSTorrent icons and blue/navy
+welcome/header assets. Pinned schema/bitmap checks and26 release/trust cases pass;
+actual non-installing native previews cancel normally with50-registry/seven-file
+preservation and VM-off/release. Slice025 clearly distinguishes its presentation
+harness from the signed a7 installer. Fresh original-signed Windows packaging
+and focused installed/updater requalification remain required for these new
+source inputs; old signed receipts retain their scope. No delivery occurs.
+
 Tactical [286](../tactical/286-connected-companion-layout-review.md) qualifies
 the actual controlled connected page at390/1100 and its narrow filter drawer.
 An initial clipped image was captured during the drawer transition; settled

@@ -15,6 +15,12 @@ copy and independent store timing.
 
 ## Current finish-line tasks, 2026-10-09
 
+Tactical290 now corrects Windows installer artwork locally. Its actual native
+presentation harness passes, but it changes Windows packaging inputs after
+the frozen a7 build. Fresh original-signed Windows packaging and focused
+installed/updater checks remain required; existing a7 qualification is preserved
+as historical exact-byte evidence. All other package inputs stay unchanged.
+
 - [x] Complete branding and recovery-copy corrections, local web/extension
   checks, actual controlled API35 upgrades and narrow-window/drawer captures.
 - [x] Prepare AppImage-only website handoff in its owning repository at
@@ -100,14 +106,14 @@ they cannot satisfy production delivery. Keep private values out of public docs.
 
 ## Candidate Identity And Delivery
 
-- [x] **D-01 Desktop identity:** JSTorrent name/icons, `com.jstorrent.desktop`,
+- [ ] **D-01 Desktop identity:** JSTorrent name/icons, `com.jstorrent.desktop`,
   existing Tauri updater trust root and `updates.jstorrent.com` route. Candidate
   version exceeds every selected installed source. Beta route/key remain separate.
   Frozen a7 signed five-target0.3.0 metadata, actual Mac/Windows package names,
   both packaged Mac icons,2,040 display values/40 original assets, retained
   ID/key/route and selected legacy0.2.1 ordering qualify. Native installed,
   updater/launcher/pixel cohorts remain separate P gates.
-- [x] **D-02 Desktop signatures:** retained updater key verifies final signatures;
+- [ ] **D-02 Desktop signatures:** retained updater key verifies final signatures;
   wrong key fails. macOS Developer ID/team, notarization/stapling/Gatekeeper and
   Windows publisher/signature match the accepted production delivery lane.
   Exact a7 qualifies six retained-root signatures/six wrong-root refusals,
@@ -118,6 +124,7 @@ they cannot satisfy production delivery. Keep private values out of public docs.
   read-only metadata qualifies identity. Failed inspection-script assumptions
   stay recorded; corrected checks reconcile the retained native observations.
   Native source/redistribution review and installed acceptance remain R-05/P.
+  Reopened for tactical290’s new Windows packaging inputs; old a7 proofs stand.
 - [x] **D-03 Android identity:** `com.jstorrent.app`; versionCode exceeds all Play
   tracks, including closed/internal/testing, and selected GitHub APKs. Record
   upload certificate separately from the existing Play app-signing certificate.

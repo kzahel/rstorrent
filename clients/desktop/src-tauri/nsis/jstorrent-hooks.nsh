@@ -1,3 +1,7 @@
+; Preserve the native page heading on the left, with brand artwork on
+; the right. The pinned Tauri template includes this before MUI pages.
+!define MUI_HEADERIMAGE_RIGHT
+
 ; Keep the JSTorrent file class private to this bundle and quote both the
 ; executable and the activated path. Tauri 2.11.5's generated APP_ASSOCIATE
 ; command quotes only %1, which breaks installations below a path containing
