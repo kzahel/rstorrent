@@ -2,6 +2,20 @@
 
 ## Current restart checkpoint, 2026-10-10
 
+Slice042 independently verifies all three VMs off/claims available and both
+physical Chromebooks at zero tabs/native Close controls. The private updater
+root/configuration are absent, five trial payloads return404 and eight ordinary
+responses remain unchanged. Managed owned rows/files/markers are removed;
+selected empty folder/grant remain deliberately. Reports/screenshots stay ignored.
+Remote main/latest successful signed build remain A7; the newly branded Windows
+candidate is not available. Consolidated push/nonpublishing-build, draft graphic
+replacement and official old-extension installation/access answers remain pending.
+The next executable stage is that prepared candidate/draft/mixed-pair work;
+no push, dispatch or publication follows from qualification. Actual managed
+positive background/hour/upload, selected grant/provider/reboot/old-store cohorts,
+guided cohort-A recovery, native source/notices/public policy and final owner
+shipment/publication decisions keep the broader release checklist open.
+
 Slice041 passes managed27 owned-folder unavailability/restoration with a
 verified1MiB paused payload. Normal Shutdown removes task/service before each
 marker/inventory-checked rename; the missing original path is not recreated.

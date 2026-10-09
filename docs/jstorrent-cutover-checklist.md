@@ -15,6 +15,14 @@ copy and independent store timing.
 
 ## Current finish-line tasks, 2026-10-10
 
+Next executable stage: the prepared source push/nonpublishing signed build,
+three draft screenshot replacements and official old-extension/managed27 test
+await their concrete consolidated answer. Remote main/latest signed build stay
+A7, so no newer Windows qualification is implied. Slices038–041 pass their
+bounded managed/DMG checks;042 verifies all VMs off/claims available, both physical
+workspaces empty and private updater absent with ordinary routes unchanged.
+The full delivery/lifecycle/source/policy/shipment rows below remain open.
+
 Tactical290 now corrects Windows installer artwork locally. Its actual native
 presentation harness passes, but it changes Windows packaging inputs after
 the frozen a7 build. Fresh original-signed Windows packaging and focused
