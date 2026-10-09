@@ -1,5 +1,15 @@
 # Product Surfaces And JSTorrent Migration
 
+Slice040 passes exact original-signed A7 x64 DMG standard copying on ARM
+with existing Rosetta: read-only source/copy strict/deep signatures and detach,
+independent thin-x64 app-archive/main hash comparison, eight migration assertions/
+nine refusal routes and native zero-exit/reopen with four records. Actual native
+statistics opt-out persists independently. Inherited scoped file/type/mode/size/
+hash trees restore; owned staging/captures/server are removed, VM off and claim
+released. No updater activation occurs. Physical Intel, Finder drag/drop and
+architecture crossover remain unrun. Actual screenshots retain JSTorrent
+branding; narrow Status/detail-tab clipping and OS overlays are recorded.
+
 Slice038 passes actual Play-managed code27 partial4MiB recovery on B.
 Independent64KiB prefix survives task/service-absent force-stop and source-paused
 cold Live reopen; restoring the controlled source completes the whole expected

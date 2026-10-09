@@ -90,6 +90,11 @@ as historical exact-byte evidence. All other package inputs stay unchanged.
   ten assertions/nine refusals, four records, native Quit/reopen, independent
   privacy persistence and exact restoration/off/release/trial removal pass.
   Physical Intel hardware and DMG installation remain separate.
+- [x] Qualify exact A7 x64 DMG read-only standard app copying under existing
+  Rosetta: strict/deep signatures, independent thin-x64 archive/main match,
+  migration/refusals and native Quit/reopen. Exact restoration, staging/capture/
+  server cleanup and VM-off/release pass. Physical Intel/Finder drag-drop stay
+  unrun; these receipts do not qualify rebuilt bytes or a different architecture.
 - [x] Save/reload four conservative local-data categories in the unsubmitted
   store draft: resettable identifier, authentication, activity and content.
   Five other categories and existing three certifications remain unchanged.
