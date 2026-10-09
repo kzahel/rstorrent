@@ -39,6 +39,11 @@ as historical exact-byte evidence. All other package inputs stay unchanged.
   persisted folder grant retained. Exact owned row/file/marker cleanup passes;
   the selected empty test folder remains. Removed-detail navigation polish is
   recorded; background/hour/reboot and populated old-store migration stay open.
+- [x] Qualify managed27 real partial4MiB force-stop/source-paused cold recovery,
+  full independent SHA-256 and three completed paused force-stop/cold restarts.
+  Package identity/grant identity remain; exact owned cleanup and zero tab/window
+  inventory pass. Notifications stay denied; background/hour/reboot/upload remain
+  separate. Original fixture failures and scoped cleanup are preserved.
 - [x] Verify actual extension inventories: B has none; A has unpacked1.1.1 and
   stale unpacked Beta0.4.0. Close tabs individually before windows on both
   Chromebooks; independent fresh launches restore only one new tab, then close
@@ -92,14 +97,14 @@ as historical exact-byte evidence. All other package inputs stay unchanged.
 - [x] Save and reload-verify accurate draft Web Store single-purpose/permission
   explanations and description; public version and certifications,
   policy URL and graphic assets remain unchanged. Submission stays separate.
-- [ ] Complete remaining selected native installed/updater/launcher cohorts;
-  Exact current isolated updater trial and15-file checksum support are prepared;
-  the maintainer has directed execution of the next slices, including the
-  prepared isolated updater trial and its cleanup. Linux extracted-native launch
-  probe remains partial/failed; its final scoped cleanup and VM-off verify.
-  review native security, notices and corresponding-source/relink delivery.
-  Both actual AppImages meet the reviewed Noble WebKit/OpenSSL build floors;
-  this does not close complete redistribution or installed acceptance.
+- [ ] Build the newly branded Windows installer with the original signing
+  root, then qualify its actual wizard, install and updater behavior. The
+  pending push/nonpublishing-build answer blocks this step. Earlier signed a7
+  Windows/Mac/Linux updater passes remain valid for their exact old bytes.
+- [ ] Finish native security/notices/source delivery for the selected final
+  packages. A7 Linux x64 Noble extract-and-run and actual Mac ARM DMG copying
+  now pass with cleanup. The prepared local source capsules are not published
+  delivery or complete relink acceptance; Linux support remains best effort.
 - [x] Upload the exact approved extension1.1.2 ZIP to the existing draft item.
   Actual package tables confirm draft1.1.2 and unchanged published1.1.1.
   Submission, certifications, publication and installed-store updates stay separate.

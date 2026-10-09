@@ -1,5 +1,17 @@
 # Product Surfaces And JSTorrent Migration
 
+Slice038 passes actual Play-managed code27 partial4MiB recovery on B.
+Independent64KiB prefix survives task/service-absent force-stop and source-paused
+cold Live reopen; restoring the controlled source completes the whole expected
+SHA-256. Three completed paused force-stop/cold Live reopen repetitions preserve
+file hash, package identity and persisted SAF grant identity/modes/time. Normal
+Keep data/Back, empty library, Shutdown, exact owned file/marker removal,
+reference/controller staging cleanup and zero tab/window inventory pass. The
+selected empty owned folder/grant remain; notifications remain denied. Earlier
+missing-app-start, LAN rate-policy and post-pause counter assumptions stay failed,
+with separate scoped cleanup. Pinned libtorrent local peer-class/counter semantics
+inform only the reference fixture. No background/hour/reboot/upload claim follows.
+
 Slice037 saves and reload-verifies four conservative Web Store draft data
 categories: local resettable identifier, authentication, usage activity and
 website content. Five other categories, remote-code choice, existing three
