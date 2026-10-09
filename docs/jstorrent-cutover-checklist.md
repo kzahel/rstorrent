@@ -36,6 +36,10 @@ copy and independent store timing.
   screenshots. Both pass eight assertions, stable four-row restart and preserved
   source/payload; scoped restoration, staging removal, VM-off and claim-release
   verify. These are manual replacement checks, not automatic-update acceptance.
+- [x] Qualify current signed MSI native manual-update guidance and tray
+  Quit/reopen. Cabinet binaries/notices match actual installation; independent
+  100-registry/nine-file restoration and off/release cleanup pass. Installer
+  wizard, legacy MSI migration and full associations remain separate.
 - [ ] Complete current installed Windows and remaining selected native cohorts;
   review native security, notices and corresponding-source/relink delivery.
   Both actual AppImages meet the reviewed Noble WebKit/OpenSSL build floors;

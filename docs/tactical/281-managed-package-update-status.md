@@ -4,6 +4,32 @@ Status: Complete locally, 2026-10-08. Native finish-line MSI finding under259.
 
 Topics: `web-ui-design`, `client-surfaces`, `beta-release-readiness`.
 
+## Current signed native MSI qualification, 2026-10-09
+
+Exact original-signed a7ee65ed MSI now passes quiet per-machine installation,
+actual native About & updates checks and ordinary tray Quit/reopen. Both
+initial and reopened screens show Windows MSI, Manual update required and Open
+release downloads, without automatic-check status or check/install controls.
+Three real captures are visually reviewed; build/package facts and JSTorrent
+window/header/shortcut branding are consistent. Owned synthetic empty session
+and version1/statistics-off fixtures do not change an inherited privacy choice.
+
+Independent cabinet extraction matches both actually installed first-party
+binary hashes and both notice hashes. NSIS/MSI main hashes correctly differ:
+after excluding PE checksum/certificate fields, only the expected locked Tauri
+bundle-type marker differs. No whole-binary equivalence is assumed. The initial
+comparison harness incorrectly expected equality, then three changed bytes;
+corrected evidence observes the two differing positions within NSS/MSI.
+
+Independent restoration matches100 registry scopes/nine file scopes. Owned
+MSI registration/staging/capture copies are removed; no unrelated firewall rule
+is removed. Windows is off and the claim released. The first native attempt's
+already-open-settings assumption and command-size cleanup failure stay failed;
+separate exact-owned cleanup confirms restoration and staging removal before
+the corrected repeat. This qualifies current native presentation/restart,
+not installer wizard, legacy MSI migration, full associations or automatic
+updater acceptance. Detailed receipts/screenshots remain ignored under259.
+
 ## Scope and stopping condition
 
 The exact signed source8c MSI installs and launches natively. About & updates
