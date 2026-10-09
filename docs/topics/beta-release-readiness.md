@@ -1,5 +1,14 @@
 # Beta Release Readiness
 
+Slice016 prepares a concrete10.95MB current outer-runtime review capsule:
+seven verified upstream source archives, original notices, pinned Alpine
+recipes/patches and the independently exercised x64 relink prototype. All43
+archive entries verify internal checksums; supplemental notices include the
+original mimalloc MIT copyright/license. Signed A7 bytes remain unchanged.
+It is local selected runtime material, not a complete public source offer;
+Ubuntu bundled-library sources/notices, distribution-ready instructions and
+architecture review remain open. No VM or public upload occurs.
+
 ## Current execution checkpoint: 2026-10-09
 
 The reviewed Android27 AAB is delivered to the existing internal track. Play

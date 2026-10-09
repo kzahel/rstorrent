@@ -1,5 +1,14 @@
 # Tactical 259: JSTorrent Finish-Line Checks
 
+Slice016 prepares a concrete10.95MB current outer-runtime review capsule:
+seven verified upstream source archives, original notices, pinned Alpine
+recipes/patches and the independently exercised x64 relink prototype. All43
+archive entries verify internal checksums; supplemental notices include the
+original mimalloc MIT copyright/license. Signed A7 bytes remain unchanged.
+It is local selected runtime material, not a complete public source offer;
+Ubuntu bundled-library sources/notices, distribution-ready instructions and
+architecture review remain open. No VM or public upload occurs.
+
 Slice010 passes exact A7 Linux x64 AppImage automatic delivery from released
 unmodified0.2.1 over the private HTTPS trial on Ubuntu24.04 extract-and-run.
 Ten assertions/installed refusals, four imported rows, native tray Quit/reopen,
