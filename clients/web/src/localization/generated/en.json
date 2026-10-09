@@ -74,7 +74,7 @@
   "android.companion.permission-denied": [
     {
       "type": 0,
-      "value": "Browser access to the Android service is not granted. Use Connect Android app in the extension popup to request access. No Android service was contacted."
+      "value": "Browser access to JSTorrent Android is not allowed. Select Connect Android app in the extension popup and allow access, then retry."
     }
   ],
   "android.companion.support-preview": [
@@ -98,7 +98,7 @@
   "android.companion.unreachable": [
     {
       "type": 0,
-      "value": "The Android service did not respond within 20 seconds. Open JSTorrent and confirm any ChromeOS launch prompt, then retry. Play availability, app installation and device policy are unknown."
+      "value": "JSTorrent Android did not respond. Open the Android app and confirm any ChromeOS launch prompt, then retry. If it still will not connect, open Setup and troubleshooting."
     }
   ],
   "android.companion.update-android": [
@@ -304,6 +304,12 @@
       "pluralType": "cardinal"
     }
   ],
+  "companion.open-extension-update": [
+    {
+      "type": 0,
+      "value": "Open JSTorrent in Chrome Web Store"
+    }
+  ],
   "desktop.companion.connecting": [
     {
       "type": 0,
@@ -331,13 +337,19 @@
   "desktop.companion.incompatible": [
     {
       "type": 0,
-      "value": "JSTorrent Desktop and this extension are incompatible. Update them, then retry the connection."
+      "value": "JSTorrent Desktop and this extension need compatible versions. Check for desktop app and extension updates, then retry. You can use the desktop app directly while updates arrive."
     }
   ],
   "desktop.companion.native-folder": [
     {
       "type": 0,
       "value": "Open the desktop window to choose or repair a download folder."
+    }
+  ],
+  "desktop.companion.open-update": [
+    {
+      "type": 0,
+      "value": "Get or update JSTorrent Desktop"
     }
   ],
   "desktop.companion.open-window": [
@@ -350,6 +362,12 @@
     {
       "type": 0,
       "value": "Retry connection"
+    }
+  ],
+  "desktop.companion.setup-required": [
+    {
+      "type": 0,
+      "value": "JSTorrent Desktop is not available to this extension. Install or update the desktop app, then open it once to finish setup."
     }
   ],
   "desktop.companion.start": [

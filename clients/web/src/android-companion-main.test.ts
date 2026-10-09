@@ -22,7 +22,7 @@ function connected() {
 describe("Android pre-connection recovery ownership", () => {
   beforeEach(() => {
     vi.useFakeTimers(); vi.resetAllMocks();
-    document.body.innerHTML = '<section id="companion-bootstrap"><p id="companion-status"></p><button id="companion-cancel"></button><a id="companion-update-android" hidden></a><button id="companion-preview"></button><textarea id="companion-context" hidden></textarea><p id="companion-context-privacy" hidden></p></section><header id="companion-identity" hidden></header><main id="app" hidden></main>';
+    document.body.innerHTML = '<section id="companion-bootstrap"><p id="companion-status"></p><button id="companion-cancel"></button><a id="companion-update-android" hidden></a><a id="companion-update-extension" hidden></a><button id="companion-preview"></button><textarea id="companion-context" hidden></textarea><p id="companion-context-privacy" hidden></p></section><header id="companion-identity" hidden></header><main id="app" hidden></main>';
     mock.permission.mockResolvedValue(true);
     vi.stubGlobal("chrome", { runtime: { getManifest: () => ({ version: "1.1.2" }) }, permissions: { contains: mock.permission } });
   });
@@ -116,8 +116,22 @@ describe("Android pre-connection recovery ownership", () => {
     mock.connect.mockRejectedValue(new AndroidCompanionUpdateRequired(component));
     await startAndroidCompanion();
     expect(document.getElementById("companion-update-android")!.hidden).toBe(component !== "android");
+    expect(document.getElementById("companion-update-extension")!.hidden).toBe(component !== "extension");
     await vi.advanceTimersByTimeAsync(300_000);
     expect(mock.connect).toHaveBeenCalledOnce();
+  });
+  it("clears update links before a retry whose connection outcome is unknown", async () => {
+    mock.connect.mockRejectedValueOnce(new AndroidCompanionUpdateRequired("extension"));
+    mock.connect.mockImplementation((_update, signal: AbortSignal) => new Promise((_, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    }));
+    await startAndroidCompanion();
+    button().click();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(document.getElementById("companion-update-extension")!.hidden).toBe(true);
+    expect(document.getElementById("companion-update-android")!.hidden).toBe(true);
+    button().click();
+    await vi.advanceTimersByTimeAsync(0);
   });
   it("previews closed context without copying raw errors or arbitrary versions", async () => {
     vi.stubGlobal("chrome", { runtime: { getManifest: () => ({ version: "secret/path" }) }, permissions: { contains: mock.permission } });

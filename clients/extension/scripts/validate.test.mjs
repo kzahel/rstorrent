@@ -73,6 +73,8 @@ test("companion accepts reviewed FormatJS diagnostic links and the ARC socket", 
 });
 
 for (const url of [
+  "https://jstorrent.com.attacker.example/",
+  "https://chromewebstore.google.com.attacker.example/detail/id",
   "https://unreviewed.example/resource",
   "https://formatjs.github.io.attacker.example/docs",
   "https://github.com.attacker.example/docs",

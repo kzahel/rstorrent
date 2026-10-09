@@ -1,5 +1,14 @@
 # Beta Release Readiness
 
+Tactical [283](../tactical/283-companion-update-recovery-guidance.md) adds
+component-specific recovery links and plain connection guidance in the
+packaged extension, preserving attach-only retries and existing discovery/
+pairing authority. The local source/render checkpoint remains separate from
+actual store delivery and installed mixed-version acceptance under259. The
+new production payload supersedes the prior source13dde build and source03e
+extension upload proposals for final qualification; historical evidence stays
+bound to its own bytes. No new build/store publication occurs.
+
 Linux first-release scope is narrowed by maintainer direction on 2026-10-09:
 best-effort AppImage desktop support, maintained bundled libraries, no older-
 distro WebKit backport campaign, and CLI/headless fallback. DEB/RPM retirement

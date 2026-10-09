@@ -221,6 +221,10 @@ export function validateCompanionBuild(companionRoot) {
     // FormatJS embeds these documentation links in diagnostic strings.
     // The manifest's exact ARC-only connect-src remains the network boundary.
     "https://formatjs.github.io",
+    // User-initiated product navigation links, not backend request origins.
+    // CSP/connect permissions remain unchanged.
+    "https://jstorrent.com",
+    "https://chromewebstore.google.com",
   ]);
   const unexpectedHosts = [...new Set(remoteHosts.filter((url) => !allowedHosts.has(url)))];
   if (unexpectedHosts.length > 0) {

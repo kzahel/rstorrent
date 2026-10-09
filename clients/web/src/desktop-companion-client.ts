@@ -20,6 +20,8 @@ interface ChromeRuntime {
   sendMessage(message: unknown): Promise<BootstrapResponse>;
 }
 
+export class DesktopCompanionUnavailable extends Error {}
+
 export function desktopRuntime(): ChromeRuntime {
   const runtime = (globalThis as unknown as { chrome?: { runtime?: ChromeRuntime } }).chrome?.runtime;
   if (!runtime) throw new Error(message("desktop.companion.extension-only"));
@@ -40,6 +42,9 @@ export function validateDesktopReady(value: unknown): Ready {
 }
 
 export function desktopBootstrapFailure(response: BootstrapResponse): Error {
+  if (response.error?.code === "native_host_unavailable") {
+    return new DesktopCompanionUnavailable(message("desktop.companion.setup-required"));
+  }
   if (["unsupported_protocol", "unsupported_operation", "invalid_native_response"].includes(response.error?.code ?? "")) {
     return new ApplicationViewError("invalid_version", message("desktop.companion.incompatible"));
   }

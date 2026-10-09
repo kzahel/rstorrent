@@ -18,7 +18,8 @@ body:has(#companion-bootstrap) {
 #companion-bootstrap h1 { margin: 1rem 0 0.75rem; font-size: 1.5rem; }
 #companion-status { color: var(--text-secondary); line-height: 1.6; overflow-wrap: anywhere; }
 #companion-bootstrap button,
-#companion-update-android {
+#companion-update-android,
+#companion-bootstrap .companion-action-link {
   display: block;
   width: 100%;
   margin-top: 1rem;
@@ -30,7 +31,12 @@ body:has(#companion-bootstrap) {
   font: inherit;
   text-align: center;
 }
-#companion-update-android { background: var(--accent-action); color: #fff; text-decoration: none; }
+#companion-bootstrap #companion-update-android,
+#companion-bootstrap .companion-action-link {
+  background: var(--accent-action);
+  color: #fff;
+  text-decoration: none;
+}
 #companion-bootstrap button:not(:disabled) { cursor: pointer; }
 #companion-bootstrap a, #companion-identity a { color: var(--accent-action); }
 #companion-context { box-sizing: border-box; width: 100%; resize: vertical; }

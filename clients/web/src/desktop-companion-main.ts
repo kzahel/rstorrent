@@ -1,6 +1,6 @@
 import { ApplicationViewError } from "./api/client";
 import { message } from "./localization/runtime";
-import { connectDesktopCompanion, desktopBootstrapFailure, desktopRuntime } from "./desktop-companion-client";
+import { connectDesktopCompanion, desktopBootstrapFailure, desktopRuntime, DesktopCompanionUnavailable } from "./desktop-companion-client";
 import { startCompanionInspection } from "./inspection/companion-bootstrap";
 
 export async function startDesktopCompanion(): Promise<void> {
@@ -11,6 +11,23 @@ export async function startDesktopCompanion(): Promise<void> {
   const start = document.getElementById("companion-cancel") as HTMLButtonElement;
   const identity = document.getElementById("companion-identity")!;
   const app = document.getElementById("app")!;
+  const recovery = document.createElement("div");
+  recovery.hidden = true;
+  const desktopUpdate = document.createElement("a");
+  desktopUpdate.className = "companion-action-link";
+  desktopUpdate.href = "https://jstorrent.com/";
+  desktopUpdate.target = "_blank";
+  desktopUpdate.rel = "noopener noreferrer";
+  desktopUpdate.textContent = message("desktop.companion.open-update");
+  const extensionUpdate = document.createElement("a");
+  extensionUpdate.href = "https://chromewebstore.google.com/detail/dbokmlpefliilbjldladbimlcfgbolhk";
+  extensionUpdate.target = "_blank";
+  extensionUpdate.rel = "noopener noreferrer";
+  extensionUpdate.textContent = message("companion.open-extension-update");
+  const extensionUpdateRow = document.createElement("p");
+  extensionUpdateRow.append(extensionUpdate);
+  recovery.append(desktopUpdate, extensionUpdateRow);
+  status.after(recovery);
   let abort = new AbortController();
   let pageActive = true;
   let pageGeneration = 0;
@@ -28,6 +45,9 @@ export async function startDesktopCompanion(): Promise<void> {
   identity.hidden = false;
   start.textContent = message("desktop.companion.start");
   function showFailure(error: unknown): void {
+    const mismatch = error instanceof ApplicationViewError && error.code === "invalid_version";
+    recovery.hidden = !mismatch && !(error instanceof DesktopCompanionUnavailable);
+    extensionUpdateRow.hidden = !mismatch;
     retryOnly = error instanceof ApplicationViewError && ["authentication_failed", "invalid_version"].includes(error.code);
     start.textContent = retryOnly ? message("desktop.companion.retry") : message("desktop.companion.start");
     status.textContent = error instanceof ApplicationViewError && error.code === "invalid_version"
@@ -68,6 +88,7 @@ export async function startDesktopCompanion(): Promise<void> {
     const departure = new Promise<void>(resolve => { departed = resolve; });
     abort.signal.addEventListener("abort", departed, { once: true });
     status.textContent = message("desktop.companion.connecting");
+    recovery.hidden = true;
     try {
       const connection = await connectDesktopCompanion(abort.signal);
       if (abort.signal.aborted) { await connection.client.close(); return; }

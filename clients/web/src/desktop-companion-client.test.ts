@@ -10,6 +10,13 @@ describe("protected desktop bootstrap response", () => {
 });
 
 describe("desktop bootstrap error disposition", () => {
+  it("names desktop setup when native registration is unavailable without blaming a version", async () => {
+    const { desktopBootstrapFailure, DesktopCompanionUnavailable } = await import("./desktop-companion-client");
+    const failure = desktopBootstrapFailure({ ok: false, error: { code: "native_host_unavailable", message: "raw diagnostic" } });
+    expect(failure).toBeInstanceOf(DesktopCompanionUnavailable);
+    expect(failure.message).toContain("Install or update the desktop app");
+    expect(failure.message).not.toContain("raw diagnostic");
+  });
   it.each(["unsupported_protocol", "unsupported_operation", "invalid_native_response"])("keeps %s terminal", async (code) => {
     const { desktopBootstrapFailure } = await import("./desktop-companion-client");
     const failure = desktopBootstrapFailure({ ok: false, error: { code, message: "raw diagnostic" } });

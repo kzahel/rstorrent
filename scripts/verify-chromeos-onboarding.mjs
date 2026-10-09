@@ -52,7 +52,7 @@ try {
         await page.waitForTimeout(2200);
         assert.equal(await page.evaluate(() => globalThis.__probes), probes);
         await retry.click();
-        await page.getByText("The Android service did not respond within 20 seconds.", { exact: false }).waitFor({ timeout: 25_000 });
+        await page.getByText("JSTorrent Android did not respond.", { exact: false }).waitFor({ timeout: 25_000 });
       }
       await retry.waitFor({ timeout: 5000 });
       await page.getByRole("button", { name: "Preview connection support context" }).click();

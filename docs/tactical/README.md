@@ -39,6 +39,8 @@ production and installed migration qualification remain separate.
 
 Latest release qualification work:
 
+- [`283-companion-update-recovery-guidance.md`](283-companion-update-recovery-guidance.md):
+  local source/render recovery pass; real installed/store scenarios remain259.
 - [`256-swarm-touch-ci-stabilization.md`](256-swarm-touch-ci-stabilization.md):
   complete; repair native-touch and asynchronous-intake CI races with all
   ten exact-source CI jobs and Website passing.

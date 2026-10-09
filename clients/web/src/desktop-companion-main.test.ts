@@ -116,6 +116,8 @@ describe("desktop companion connection ownership", () => {
     expect(document.getElementById("companion-status")!.textContent).toBe(
       code === "invalid_version" ? "desktop.companion.incompatible" : "desktop.companion.identity-changed",
     );
+    const recovery = document.querySelector<HTMLAnchorElement>("#companion-bootstrap a")!.parentElement!;
+    expect(recovery.hidden).toBe(code === "authentication_failed");
     await vi.advanceTimersByTimeAsync(90_000);
     expect(mock.connect).toHaveBeenCalledOnce();
     button.click();
@@ -139,6 +141,27 @@ describe("desktop companion connection ownership", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(mock.connect).toHaveBeenCalledTimes(2);
     expect(mock.send).toHaveBeenCalledExactlyOnceWith({ type: "nativeBootstrap", op: "start_control" });
+  });
+  it("offers both product links for a mismatch, then hides stale guidance while retrying", async () => {
+    mock.connect.mockRejectedValueOnce(new ApplicationViewError("invalid_version", "mismatch"));
+    mock.connect.mockImplementation((signal: AbortSignal) => new Promise((_, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    }));
+    await startDesktopCompanion();
+    const links = [...document.querySelectorAll<HTMLAnchorElement>("#companion-bootstrap a")];
+    expect(links.map(link => link.href)).toEqual([
+      "https://jstorrent.com/",
+      "https://chromewebstore.google.com/detail/dbokmlpefliilbjldladbimlcfgbolhk",
+    ]);
+    expect(links.every(link => link.target === "_blank" && link.rel === "noopener noreferrer")).toBe(true);
+    expect(links[0]!.parentElement!.hidden).toBe(false);
+    expect(links[1]!.parentElement!.hidden).toBe(false);
+    (document.getElementById("companion-cancel") as HTMLButtonElement).click();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(links[0]!.parentElement!.hidden).toBe(true);
+    expect(mock.send).not.toHaveBeenCalled();
+    window.dispatchEvent(new Event("pagehide"));
+    await vi.advanceTimersByTimeAsync(0);
   });
   it("unmounts a disconnected view before another attachment", async () => {
     let disconnect!: () => void;

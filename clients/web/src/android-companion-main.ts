@@ -100,6 +100,7 @@ export async function startAndroidCompanion(): Promise<void> {
     context.hidden = true;
     element("companion-context-privacy").hidden = true;
     element("companion-update-android").hidden = true;
+    element("companion-update-extension").hidden = true;
     retry.textContent = message("shell.companion.cancel");
     retry.disabled = true;
     status.textContent = message("shell.companion.loading");
@@ -145,6 +146,7 @@ export async function startAndroidCompanion(): Promise<void> {
         category = error.component === "android" ? "app_update_required" : "extension_update_required";
         versionStatus = category;
         element("companion-update-android").hidden = error.component !== "android";
+        element("companion-update-extension").hidden = error.component !== "extension";
         status.textContent = error.message;
       } else if (error instanceof AndroidCompanionPairingFailed) {
         category = `pairing_${error.outcome}`;
