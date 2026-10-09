@@ -1,5 +1,16 @@
 # Product Surfaces And JSTorrent Migration
 
+Slice024 passes exact a7 Intel-app ordinary GUI HTTPS updating under existing
+Rosetta on the ARM VM: ten assertions/nine refusals, four records, native
+Cmd-Q/reopen, independent privacy persistence and exact scoped restoration.
+Owned staging/captures/server and private trial are removed; VM off/released.
+Thin x64 old/new binaries are independently verified; physical Intel hardware
+and DMG installation are separate. Initial ARM-pin/pre-fixture cleanup failures
+remain preserved, with independent inherited-state and staging absence proof.
+Slices026/027 save and reload-verify only the Web Store draft explanation and
+description text. Existing privacy categories/certifications/screenshots and
+public versions are unchanged; final reconciliation/submission remain open.
+
 Tactical [290](../tactical/290-windows-installer-brand-artwork.md) corrects the
 actual Windows NSIS generic artwork with original JSTorrent icons and blue/navy
 welcome/header assets. Pinned schema/bitmap checks and26 release/trust cases pass;
@@ -67,7 +78,8 @@ Current checkpoint259 also qualifies the bounded live private updater selection
 and verified removal, with unchanged ordinary routes. Released Windows0.2.1
 automatically authenticates/installs exact A7 NSIS and passes native migration/
 restart/restoration/off/release. Signature-failure retry attempts preserve their
-runner failures and passing cleanup; complete retry remains pending.
+runner failures and passing cleanup; corrected signature/interruption retries
+now pass as recorded above.
 
 Current checkpoint259: frozen a7 original-signed desktop five-target build and
 main CI pass; bounded D-01/D-02/D-03 identity/signature contracts close. Actual

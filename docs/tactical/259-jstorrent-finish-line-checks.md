@@ -1,12 +1,26 @@
 # Tactical 259: JSTorrent Finish-Line Checks
 
+## Current restart checkpoint, 2026-10-09
+
+Ignored slices024–027 close bounded Intel-app ordinary GUI updating under
+existing Rosetta, local Windows installer artwork, and saved/reloaded Web Store
+draft permission/description copy. The Mac trial is removed, VM off/released
+and inherited scopes restored. Physical Intel hardware is unrun. Tactical290
+changes Windows packaging after frozen a7; fresh original-signed Windows build
+and focused native/updater requalification remain open. Exact a7 non-Windows
+bytes remain unchanged. Store privacy/categories, final screenshots, review/
+publication and physical Chromebook recovery/selected cohorts stay separate.
+A concrete push plus nonpublishing signed-candidate build request is pending;
+independent local checks continue. Earlier failed receipts remain unchanged.
+
 Slice021 prepares exact extension1.1.2 permission/privacy field replacements
 from a fresh authenticated read-only dashboard observation. Old raw-I/O and
-browser-progress explanations remain; all nine data categories are unchecked.
+browser-progress explanations were observed; all nine data categories are unchecked.
 The local proposal distinguishes pairing/session credentials, local counters/
 content and the disabled hosted identifier/counter fields. Google guidance
 includes local handling; category interpretation and certifications remain
-account-owner review. No draft save, checkbox edit, submission or deployment
+account-owner review. The initial slice made no edits; slice026 subsequently
+saves only the four explanation fields. No checkbox edit, submission or deployment
 occurs. Slice019 separately prepares three visibly labeled demo image candidates;
 actual installed connected/native screenshot selection remains open.
 
@@ -90,7 +104,7 @@ available on the ARM Mac VM; no Intel app acceptance is inferred. Its graceful
 shutdown required administrator authorization; explicit owned stop/release
 completes cleanup. Original failed receipts remain unchanged.
 
-## Current execution checkpoint: 2026-10-09
+## Earlier same-day execution checkpoint (superseded)
 
 Slice007 initially rejects the invalid signature without changing the old
 executable, then installs the valid retry. The final tray Quit fails beneath
@@ -98,7 +112,7 @@ an overlapping OneDrive popup; a second runner attempt fails on an incorrect
 root-window snapshot assumption. Both failed receipts remain unchanged; exact
 50-registry/seven-file restoration, owned cleanup, VM-off/release and service
 trial removal pass independently. Corrected observation uses the native window
-inventory and bounded fresh menu retries; complete repeat remains pending.
+inventory and bounded fresh menu retries; the corrected pass is recorded above.
 
 Slice004 qualifies the unchanged live HTTPS server's bounded private trial:
 three owned IDs select all five exact A7 payloads;23 selection cases plus channel

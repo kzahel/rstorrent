@@ -1,5 +1,16 @@
 # Desktop JSTorrent Replacement
 
+Slice024 passes exact a7 Intel-app ordinary GUI HTTPS updating under existing
+Rosetta on the ARM VM: ten assertions/nine refusals, four records, native
+Cmd-Q/reopen, independent privacy persistence and exact scoped restoration.
+Owned staging/captures/server and private trial are removed; VM off/released.
+Thin x64 old/new binaries are independently verified; physical Intel hardware
+and DMG installation are separate. Initial ARM-pin/pre-fixture cleanup failures
+remain preserved, with independent inherited-state and staging absence proof.
+Slices026/027 save and reload-verify only the Web Store draft explanation and
+description text. Existing privacy categories/certifications/screenshots and
+public versions are unchanged; final reconciliation/submission remain open.
+
 Tactical [290](../tactical/290-windows-installer-brand-artwork.md) corrects the
 actual Windows NSIS generic artwork with original JSTorrent icons and blue/navy
 welcome/header assets. Pinned schema/bitmap checks and26 release/trust cases pass;

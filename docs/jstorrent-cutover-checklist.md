@@ -72,6 +72,13 @@ as historical exact-byte evidence. All other package inputs stay unchanged.
   reopen, ten assertions/nine refusal routes and independent privacy persistence.
   Exact scoped restoration, capture/server cleanup, VM-off/release and private
   trial removal pass. Intel and DMG drag/drop remain separate.
+- [x] Qualify exact a7 Intel-app ordinary GUI updating under existing Rosetta:
+  ten assertions/nine refusals, four records, native Quit/reopen, independent
+  privacy persistence and exact restoration/off/release/trial removal pass.
+  Physical Intel hardware and DMG installation remain separate.
+- [x] Save and reload-verify accurate draft Web Store single-purpose/permission
+  explanations and description; public version, data categories/certifications,
+  policy URL and graphic assets remain unchanged. Submission stays separate.
 - [ ] Complete remaining selected native installed/updater/launcher cohorts;
   Exact current isolated updater trial and15-file checksum support are prepared;
   the maintainer has directed execution of the next slices, including the
@@ -154,8 +161,8 @@ select representative historical sources and browsers. Keep each unrun lane open
   NSIS replacement, AppImage path and macOS bundle path are exercised. Package
   manager lanes have their documented upgrade route. Bounded 252 evidence passes
   original 0.2.1-to-0.3.0 HTTPS automatic delivery on Linux x64, Windows x64
-  and macOS arm64, plus the ordinary Windows/macOS UI. Other architectures
-  and the Linux old-app UI remain open; the complete row is not satisfied.
+  and macOS arm64, plus the ordinary Windows/macOS UI. Mac x64 now also passes under existing Rosetta; physical Intel hardware,
+  Linux ARM and the Linux old-app UI remain open; the complete row is not satisfied.
 - [ ] **P-02 Legacy shutdown:** running desktop/old native hosts, open legacy
   extension pages and idle pre-handshake helpers cannot remain payload writers.
   Managed old registrations refuse the legacy protocol. Failure to fence or prove

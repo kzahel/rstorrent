@@ -1,5 +1,11 @@
 # Beta Release Readiness
 
+Tactical290 changes Windows installer artwork after the frozen a7 signed build.
+Its bounded local native preview passes; final Windows identity/signature gates
+reopen for fresh production packaging. Earlier a7/non-Windows proofs retain
+their exact-byte scope. Slice024 now passes x64 updating under existing Rosetta,
+with physical Intel hardware and DMG installation kept separate.
+
 Slice020 collects the final A7 AppImages' exact89 Ubuntu Noble source versions,
 every SHA-256-bound descriptor/source file and original128/129 notice files.
 A local529.8MB review capsule includes frozen first-party source, selected
@@ -15,7 +21,9 @@ archive entries verify internal checksums; supplemental notices include the
 original mimalloc MIT copyright/license. Signed A7 bytes remain unchanged.
 It is local selected runtime material, not a complete public source offer;
 Ubuntu bundled-library sources/notices, distribution-ready instructions and
-architecture review remain open. No VM or public upload occurs.
+architecture review remain open. No VM or public upload occurs. Slice020 now
+collects the exact Ubuntu sources; public delivery/per-package disposition
+remains separate.
 
 ## Current execution checkpoint: 2026-10-09
 
@@ -37,8 +45,9 @@ uninstall. A-01–08 data/lifecycle/mixed-store and production shipment remain o
 One retained physical Chromebook now updates26-to27 through the actual Play
 Update control without sideload, uninstall or clear. UID, first-install time,
 Play installer and exact URI grants remain unchanged; both owned observations
-clean up successfully. Its inherited unresolved disclosure is still visible,
-so managed Shutdown/reopen and payload-row acceptance remain pending. The other
+clean up successfully. Later slice002 saves actual statistics opt-out and
+qualifies normal Shutdown/task/service removal and Live reopen with exact
+grants retained. Populated-library/reboot acceptance remains open. The other
 device's documented ADB connection attempt refuses; no reboot, rootfs repair
 or power-policy change is performed. Private receipts/screenshots stay ignored.
 
