@@ -42,6 +42,23 @@ old candidate receipts historical; do not claim current signed/pixel evidence.
 
 ## Local execution and remaining work
 
+The authorized finish-line build exposed a remaining final-collector verifier
+that still required ten signatures. Before qualification, extend this tactical
+to require six production signatures while retaining ten preview signatures,
+the original cryptographic trust checks and product namespace checks. Validate
+missing/extra/wrong-product/excluded-package refusals and actual minisign
+wrong-root/tamper behavior. Stop after a local correction and replacement
+nonpublishing build; the superseded attempt remains cancelled, not passed.
+
+This follow-up passes 20 signature, collector, independent manifest and release
+input cases, including actual minisign wrong-root/tamper checks. The final
+CLI now requires six production signatures, refuses excluded DEB/RPM and
+foreign product names, and retains ten signatures under the current preview
+display name. Trust-root selection and cryptographic verification are unchanged.
+Authorized source fe30d273 attempt 37957327863 is cancelled before qualification
+and replaced after committing the verifier correction. Its original-root nonce
+probe passes; its cancellation does not qualify the package matrix.
+
 The workflow now selects AppImage-only bundles for production on both Ubuntu
 24.04 architectures, refuses stray DEB/RPM outputs, checks the reviewed WebKit
 floor and retains extracted notices/security inspection. Preview keeps its

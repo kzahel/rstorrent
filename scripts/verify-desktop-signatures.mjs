@@ -26,15 +26,27 @@ export function verifySignature(file, encodedSignature, encodedPublicKey) {
     execFileSync("minisign", ["-V", "-q", "-m", file, "-p", path.join(work, "public.key"), "-x", path.join(work, "signature")], { stdio: "pipe" });
   } finally { rmSync(work, {recursive:true, force:true}); }
 }
+export function signatureInventory(directory, product) {
+  assert(["JSTorrent", "RSTorrent"].includes(product), "unknown signing product");
+  const names = readdirSync(directory).filter(name => name.endsWith(".sig")).sort();
+  const expected = product === "JSTorrent" ? 6 : 10;
+  assert.equal(names.length, expected, `expected all ${expected} unique updater payload signatures`);
+  const prefix = product === "JSTorrent" ? product : "JSTorrent Preview";
+  for (const name of names) {
+    assert(name.startsWith(prefix + "_") || name.startsWith(prefix + "-"), "wrong signing product inventory");
+    if (product === "JSTorrent") {
+      assert(!/\.(?:deb|rpm)\.sig$/u.test(name), "production Linux release excludes DEB/RPM signatures");
+    }
+  }
+  return names;
+}
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const [directory, product] = process.argv.slice(2);
   assert(directory && ["JSTorrent", "RSTorrent"].includes(product), "usage: verify-desktop-signatures.mjs ASSET_DIRECTORY PRODUCT");
-  const names = readdirSync(directory).filter(name => name.endsWith(".sig"));
-  assert.equal(names.length, 10, "expected all ten unique updater payload signatures");
+  const names = signatureInventory(directory, product);
   const key = updaterPublicKey(product);
   for (const name of names) {
-    assert(name.startsWith(product + "_") || name.startsWith(product + "-"), "wrong signing product inventory");
     verifySignature(path.join(directory, name.slice(0, -4)), readFileSync(path.join(directory, name), "utf8"), key);
   }
-  console.log(`Verified all ten ${product} updater payloads against the retained public key`);
+  console.log(`Verified all ${names.length} ${product} updater payloads against the retained public key`);
 }

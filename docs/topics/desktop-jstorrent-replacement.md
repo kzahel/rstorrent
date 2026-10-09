@@ -1,5 +1,12 @@
 # Desktop JSTorrent Replacement
 
+Authorized source fe30d273 candidate attempt 37957327863 passes the original-root
+nonce probe, then is cancelled before package qualification: the final signature
+CLI still expected ten payloads. Tactical285 now requires six production/ten
+preview signatures with unchanged cryptographic roots and20 focused passing
+cases. A replacement nonpublishing signed build follows the tool-only commit;
+old signed inventories and installed receipts remain historical.
+
 Tactical [285](../tactical/285-production-linux-appimage-scope.md) locally
 applies the accepted first-release Linux policy: Ubuntu 24.04 production
 AppImages only, with 15 core assets/six signatures/11 updater selectors across

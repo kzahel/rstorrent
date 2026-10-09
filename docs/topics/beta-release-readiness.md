@@ -1,5 +1,15 @@
 # Beta Release Readiness
 
+The maintainer authorizes the reviewed next candidate actions on 2026-10-09:
+nonpublishing signed desktop build, exact production extension draft ZIP only,
+and unchanged Android 27 delivery only to existing internal testers. No production
+publication or sibling website deployment is included. Sourcefe30d273 is pushed;
+attempt 37957327863 proves the original updater root, then is cancelled when a
+remaining final signature CLI still expects ten payloads. Tactical285 corrects
+it to six production/ten preview with 20 passing focused cases; replacement
+qualification follows that tool-only commit. Store/installed acceptance remains
+separate; current Web Store account verification requires a passkey.
+
 Tactical [283](../tactical/283-companion-update-recovery-guidance.md) adds
 component-specific recovery links and plain connection guidance in the
 packaged extension, preserving attach-only retries and existing discovery/

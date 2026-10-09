@@ -612,9 +612,10 @@ production candidate after provisioning:
 gh workflow run desktop-release.yml --repo kzahel/rstorrent --ref main -f production_candidate=true
 ```
 
-The nonce proof and all ten updater payload signatures must verify against the
-original public root. A diagnostic artifact from a failed attempt does not
-qualify delivery. Publication remains gated by the cutover checklist.
+The nonce proof and all six production updater payload signatures must verify
+against the original public root. A diagnostic artifact from a failed
+attempt does not qualify delivery. Publication remains gated by the cutover
+checklist.
 
 ### Explicit production desktop publication
 

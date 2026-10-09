@@ -4,7 +4,40 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { verifySignature, signatureKeyId } from "./verify-desktop-signatures.mjs";
+import { verifySignature, signatureKeyId, signatureInventory } from "./verify-desktop-signatures.mjs";
+
+test("production signature inventory follows AppImage-only scope without shrinking preview", t => {
+  const work = mkdtempSync(path.join(tmpdir(), "desktop-signature-inventory-"));
+  t.after(() => rmSync(work, { recursive: true, force: true }));
+  const production = [
+    "JSTorrent_aarch64.app.tar.gz.sig", "JSTorrent_x64.app.tar.gz.sig",
+    "JSTorrent_0.3.0_amd64.AppImage.sig", "JSTorrent_0.3.0_aarch64.AppImage.sig",
+    "JSTorrent_0.3.0_x64-setup.exe.sig", "JSTorrent_0.3.0_x64_en-US.msi.sig",
+  ];
+  const populate = names => {
+    for (const name of signatureInventoryFiles) rmSync(path.join(work, name));
+    signatureInventoryFiles = names;
+    for (const name of names) writeFileSync(path.join(work, name), "inventory fixture only");
+  };
+  let signatureInventoryFiles = [];
+  populate(production);
+  assert.deepEqual(signatureInventory(work, "JSTorrent"), [...production].sort());
+  populate(production.slice(1));
+  assert.throws(() => signatureInventory(work, "JSTorrent"), /expected all 6/u);
+  populate([...production, "JSTorrent_0.3.0_amd64.deb.sig"]);
+  assert.throws(() => signatureInventory(work, "JSTorrent"), /expected all 6/u);
+  populate(["JSTorrent_0.3.0_amd64.deb.sig", ...production.slice(1)]);
+  assert.throws(() => signatureInventory(work, "JSTorrent"), /excludes DEB\/RPM/u);
+  populate(["JSTorrent Preview_aarch64.app.tar.gz.sig", ...production.slice(1)]);
+  assert.throws(() => signatureInventory(work, "JSTorrent"), /wrong signing product/u);
+  const preview = production.map(name => name.replace("JSTorrent", "JSTorrent Preview"));
+  populate(preview);
+  assert.throws(() => signatureInventory(work, "RSTorrent"), /expected all 10/u);
+  populate([...preview, "JSTorrent Preview_0.3.0_amd64.deb.sig", "JSTorrent Preview_0.3.0_arm64.deb.sig",
+    "JSTorrent Preview-0.3.0-1.x86_64.rpm.sig", "JSTorrent Preview-0.3.0-1.aarch64.rpm.sig"]);
+  assert.equal(signatureInventory(work, "RSTorrent").length, 10);
+  assert.throws(() => signatureInventory(work, "unknown"), /unknown signing product/u);
+});
 
 test("actual minisign signatures reject wrong roots and altered payloads", t => {
   const work=mkdtempSync(path.join(tmpdir(), "desktop-minisign-fixture-"));
