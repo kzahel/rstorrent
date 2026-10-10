@@ -2,7 +2,7 @@
 
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, copyFileSync, lstatSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const MAX_FILE_BYTES = 512 * 1024 * 1024;
@@ -259,7 +259,7 @@ export function verifyUploadedAssets(local, remote) {
   if (expected.size) fail(`missing uploaded release assets: ${[...expected.keys()].join(", ")}`);
 }
 
-export async function verifyProductionFinalDraft({ local, remote, checksumPath }) {
+export async function verifyProductionFinalDraft({ local, remote, checksumPath, sourcePath }) {
   const match = /^desktop-v(\d+\.\d+\.\d+)$/.exec(local.tagName ?? "");
   if (!match || local.isPrerelease !== false || local.isDraft !== true) {
     fail("final production draft requires a Stable candidate");
@@ -272,7 +272,19 @@ export async function verifyProductionFinalDraft({ local, remote, checksumPath }
   }
   const checksum = { name: "SHA256SUMS", size: checkedFile(checksumPath, MAX_METADATA_BYTES),
     digest: `sha256:${await digestFile(checksumPath)}` };
-  verifyUploadedAssets({ ...local, assets: [...local.assets, checksum] }, remote);
+  const extra = [];
+  if (sourcePath !== undefined) {
+    const name = `JSTorrent_${match[1]}_AppImage-sources-final.tar.gz`;
+    if (basename(sourcePath) !== name) fail("production source asset version/name mismatch");
+    extra.push({ name, size: checkedFile(sourcePath, 2 * 1024 * 1024 * 1024),
+      digest: `sha256:${await digestFile(sourcePath)}` });
+    const inventory = [...local.assets, ...extra].filter(asset => !asset.name.endsWith(".sig"))
+      .map(asset => `${asset.digest.slice(7)}  ${asset.name}`).sort().join("\n") + "\n";
+    if (readFileSync(checksumPath, "utf8") !== inventory) {
+      fail("production checksum inventory does not bind exact core and source bytes");
+    }
+  }
+  verifyUploadedAssets({ ...local, assets: [...local.assets, ...extra, checksum] }, remote);
 }
 
 function parseArgs(argv) {
@@ -313,8 +325,9 @@ async function main() {
       local: JSON.parse(readFileSync(resolve(args.local), "utf8")),
       remote: JSON.parse(readFileSync(resolve(args.remote), "utf8")),
       checksumPath: resolve(args.checksums),
+      sourcePath: args.sources ? resolve(args.sources) : undefined,
     });
-    console.log("Verified 15 production core assets and SHA256SUMS in the complete private draft");
+    console.log(`Verified 15 production core assets${args.sources ? ", AppImage sources" : ""} and SHA256SUMS in the complete private draft`);
   } else {
     fail(`unknown desktop release artifact command: ${command}`);
   }

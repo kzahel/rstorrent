@@ -73,8 +73,11 @@ ignored separate reports, rather than this summary.
   Repair preserves paused/running intent, whole hashes and both cold reopens
   in a fresh owned API35 emulator. Final14 frame/brand snapshots pass; four
   Shutdowns join and emulator/AVD cleanup passes. Initial failures stay recorded.
-- [ ] Deliver Android28 through an approved Play route and re-run managed repair.
-  Actual managed27 retains the paused-intent failure; fixture cleanup passes.
+- [x] Deliver Android28 through internal Play and re-run managed repair. Actual
+  Play27-to28 retains installation identity/grants and independently verified
+  managed signer. Paused/running repair, source-offline hashes, cold reopens and
+  joined Shutdowns pass; owned data removed and zero tabs/windows verified.
+  Historical managed27 retains its recorded failure.
   Physical sleep/network/reboot and
   populated old-store writers remain explicit. The other Chromebook stalls before app startup; guided recovery
   awaits confirmation of physical keyboard availability.
@@ -87,7 +90,10 @@ ignored separate reports, rather than this summary.
   TIFF and GPL-3 Ayatana through the tray library. MIT is retained:294's native
   rebuild removes those chains; both fresh signed packages pass extracted
   native/source gates. Corresponding-source delivery and installed checks remain.
-  ARM relink and complete native instructions remain open. Verify accurate public privacy and obtainable
+  Final exactff632 local carrier and usable instructions pass independent full
+  verification; original-r0 runtime source/relink executes on both architectures.
+  Exact signedff632 Linux x64 updater/restart now passes under071. Public source
+  bytes remain the delivery gate. Verify accurate public privacy and obtainable
   website/download metadata before cutover; prepared pages are not deployed.
 - [ ] Review the exact shipment, supported gaps, soak/stop criteria and recovery
   owner. Submit/publish only the explicitly approved store/feed/release/website

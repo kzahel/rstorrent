@@ -251,3 +251,42 @@ test("final production private draft requires every core byte and exact checksum
     await assert.rejects(verifyProductionFinalDraft({ local:preview,remote,checksumPath }),/15 JSTorrent core/u);
   } finally { rmSync(data.root, { recursive:true, force:true }); }
 });
+
+
+test("source-bearing promotion binds an exact versioned archive and checksum inventory", async () => {
+  const data = fixture("JSTorrent");
+  try {
+    await data.stage();
+    const { release } = await data.assemble({ channel:"stable", product:"JSTorrent", tag:`desktop-v${version}`, productionPublication:true });
+    const sourcePath = join(data.root, `JSTorrent_${version}_AppImage-sources-final.tar.gz`);
+    writeFileSync(sourcePath,"independent reviewed source fixture");
+    const sourceBytes = readFileSync(sourcePath);
+    const source = { name: `JSTorrent_${version}_AppImage-sources-final.tar.gz`, size: sourceBytes.length,
+      digest: `sha256:${createHash("sha256").update(sourceBytes).digest("hex")}` };
+    const checksumPath = join(data.root,"SHA256SUMS");
+    const inventory = [...release.assets, source].filter(asset => !asset.name.endsWith(".sig"))
+      .map(asset => `${asset.digest.slice(7)}  ${asset.name}`).sort().join("\n")+"\n";
+    writeFileSync(checksumPath,inventory);
+    const checksum = { name:"SHA256SUMS",size:Buffer.byteLength(inventory),
+      digest:`sha256:${createHash("sha256").update(inventory).digest("hex")}` };
+    const remote = { ...structuredClone(release), assets:[...release.assets,source,checksum] };
+    await verifyProductionFinalDraft({ local:release,remote,checksumPath,sourcePath });
+    for (const mutate of [
+      value => value.assets.splice(value.assets.findIndex(asset => asset.name === source.name),1),
+      value => value.assets.push(source),
+      value => value.assets.find(asset => asset.name === source.name).digest="sha256:"+"f".repeat(64),
+      value => value.assets.find(asset => asset.name === source.name).size+=1,
+    ]) {
+      const wrong = structuredClone(remote);mutate(wrong);
+      await assert.rejects(verifyProductionFinalDraft({ local:release,remote:wrong,checksumPath,sourcePath }));
+    }
+    await assert.rejects(verifyProductionFinalDraft({ local:release,remote,checksumPath }),/asset count/u);
+    const wrongName = join(data.root,"JSTorrent_0.0.1_AppImage-sources-final.tar.gz");
+    writeFileSync(wrongName,sourceBytes);
+    await assert.rejects(verifyProductionFinalDraft({ local:release,remote,checksumPath,sourcePath:wrongName }),/version\/name/u);
+    writeFileSync(checksumPath, inventory.split("\n").filter(line => !line.includes(source.name)).join("\n"));
+    await assert.rejects(verifyProductionFinalDraft({ local:release,remote,checksumPath,sourcePath }),/checksum inventory/u);
+    writeFileSync(checksumPath,inventory);writeFileSync(sourcePath,Buffer.concat([sourceBytes,Buffer.from("altered")]));
+    await assert.rejects(verifyProductionFinalDraft({ local:release,remote,checksumPath,sourcePath }),/checksum inventory/u);
+  } finally { rmSync(data.root,{recursive:true,force:true}); }
+});

@@ -1,5 +1,13 @@
 # Desktop JSTorrent Replacement
 
+Separate071 now qualifies exact signedff632 Linux x64 normal HTTPS updating from
+released0.2.1: ten checks/six refusals, four-record native Quit/reopen, preserved
+payload/source and persisted disclosure opt-out. Scoped restoration, VM-off/
+release and private-trial removal pass; ordinary routes remain unchanged.
+Separate072 prepares adjacent Linux source/rebuild links with30 website guards,
+frozen enabled/disabled builds and four responsive captures. Real metadata stays
+inactive pending actual public assets; publication remains a distinct gate.
+
 Current authorized finish-line scope includes staged publication. Separate068
 qualifies actual internal Play27-to28 delivery, preserved installation/grants and
 paused/running Repair with independent hashes, cold reopens, managed signer and

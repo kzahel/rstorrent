@@ -32,8 +32,12 @@ help pass. The initial independent verifier's marker-case error is corrected and
 retained. Owned units, roots/mounts and controller staging removed; VM off/released.
 This closes ARM headless relink evidence, not ARM product-window or FUSE evidence.
 
-Next: proportional actual signedff632 Linux x64 installed/updater qualification;
-verify source public delivery, accurate public policy and website source links,
+Separate071 passes exact signedff632 Linux x64 updater/migration, ten checks/six
+refusals, four-record native restart, independent privacy and exact restoration.
+VM off/released; private trial removed and ordinary routes unchanged. Separate072
+passes30 website source guards, frozen builds and narrow/wide source-link captures.
+
+Next: verify source public delivery, accurate public policy and website source links,
 then Web Store submission and staged publication/live routes. Store review and
 physical recovery remain observable external dependencies, not invented passes.
 
