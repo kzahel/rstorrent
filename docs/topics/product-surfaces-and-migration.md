@@ -572,6 +572,24 @@ This is foreground upload, not background upload/network loss/reboot/store
 update delivery.
 
 
+Slice052 completes exact draft1.1.2/Play-managed27 physical pairing: normal
+optional ARC permission deny/retry/allow and native reject/retry/approve pass.
+An independently verified1MiB native row appears in Chrome; browser Pause is
+observed natively. Normal Shutdown removes the service, and Retry remains
+attach-only. Normal app relaunch/retry retains approved pairing, paused row and
+whole hash with the source offline. Package, exact SAF grant and original denied
+notification permission remain; owned row/file/installation/staging are removed
+and all tabs/windows close. Normal companion opt-in/approved digest remain by
+design: there is no normal disable/unpair UI; no private reset/edit is used.
+First-use privacy below the fold, second Connect after Allow, inherited duplicate
+chooser labels and encoded uninstall title are recorded. The opt-out uninstall
+URL includes only version. Failed picker/capture/cross-surface driver assumptions
+are preserved; package-scoped native actions pass. Four390/1200px report checks
+pass and reap the browser/server. Tactical291 separately fixes the observed
+Shutdown instruction/link contrast in local1.1.3; its actual repeat/store update
+remain open. No store delivery, reboot/network loss or background upload claim.
+
+
 ## Production Candidates, 2026-10-01
 
 Tactical [250](../tactical/250-jstorrent-production-identity-candidates.md)

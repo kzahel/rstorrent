@@ -40,7 +40,11 @@ ignored separate reports, rather than this summary.
   failure retained; independent cleanup/settings/permission restoration pass.
 - [x] Managed foreground upload: independent4MiB whole hash with original source
   absent, exact package/grant continuity, normal cleanup and empty workspace.
-- [ ] Finish candidate extension/native pairing and retained-folder repair. Physical sleep/network/reboot and populated old-store writers remain
+- [x] Exact1.1.2 candidate/managed27 permission, pairing, shared Pause and
+  Shutdown/retained reconnect; scoped cleanup and zero tabs/windows pass.
+  Normal companion setup remains; the owned browser credential is removed.
+- [ ] Requalify local1.1.3 explicit Shutdown guidance/link contrast, then review
+  its exact replacement for uploaded draft1.1.2. Finish retained-folder repair. Physical sleep/network/reboot and populated old-store writers remain
   explicit. The other Chromebook stalls before app startup; guided recovery
   awaits confirmation of physical keyboard availability.
 - [x] Fresh Mac ARM GUI and Linux x64 automatic HTTPS updater/restart pass: ten
