@@ -10,8 +10,10 @@ keyboard/overflow/cleanup checks; transport/view dependencies are injected.
 Slice055 verifies actual managed27 Shutdown guidance/readable links, stopped
 service after Retry and normal app-launch retained reconnect. Exact package/
 grants/notification preference and scoped cleanup/zero tabs/windows pass; four
-report checks reap their browser/server. Store delivery remains under259. Uploaded
-1.1.2/public1.1.1 and signed desktop/Android source bindings remain unchanged.
+report checks reap their browser/server. Slice057 uploads the exact1.1.3 to the
+existing draft; native Reload verifies draft1.1.3/public1.1.1. Listing/screenshots/
+privacy remain. Submission and installed-store delivery remain under259; signed
+desktop/Android retain their source bindings.
 
 Tactical [290](../tactical/290-windows-installer-brand-artwork.md) corrects the
 actual Windows NSIS generic artwork with original JSTorrent icons and blue/navy

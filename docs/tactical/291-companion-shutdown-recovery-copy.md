@@ -64,3 +64,8 @@ installation/staging removal and zero tabs/windows pass. Four390/1200 report
 checks pass with browser/server reaped. Initial missing chooser and picker
 acceptance attempts remain explicit observations. Review the exact store-draft
 replacement next; no store submission/publication occurs.
+
+Slice057 uploads the exact1.1.3 replacement to the existing draft. Native Reload
+verifies draft1.1.3/public1.1.1; listing/screenshots/privacy remain. Four responsive
+report checks pass. Review submission, publication and installed-store update
+remain separate; no signed desktop or Android artifact is rebuilt/rebound.

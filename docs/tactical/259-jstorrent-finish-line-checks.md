@@ -2,6 +2,31 @@
 
 ## Current restart checkpoint, 2026-10-10
 
+Slice057 uploads exact400,520-byte1.1.3 ZIP with SHA-256
+432b6084afa12106ad38518d5120ad5a8952b157d480e3d7af7f4c01466eadc5
+to the existing production item through authenticated native Chrome UI. Normal
+Reload shows draft1.1.3 and unchanged published1.1.1. All non-version manifest
+fields match1.1.2. Existing844-character description, three reviewed screenshot
+slots, permission copy, remote-code answer, categories, certifications and old
+policy URL are inspected and untouched. No review submission/publication or
+actual installed-store update occurs. Native controls recover stale-index,
+file-picker and keyboard assumptions; no gallery scripting/bypass is used.
+Separate before/after report has four390/1200 checks with browser/server reaped.
+The public accurate policy route and final submission/delivery remain open.
+
+Slice056 prepares a managed27 retained-root picker check on the empty selected
+owned folder: normal controlled1MiB intake/whole hash, source removal, Pause and
+Shutdown; marker/inventory-checked rename with no automatic original-path
+recreation; normal Repair picker cancellation followed by selecting the relocated
+tree. Require the same paused row/hash, a single retained-root presentation and
+actual provider grant. Restore the original folder/path through normal repair,
+then normal owned removal/Shutdown and zero tabs/windows. Original grant modes
+and unrelated grants must remain; a normal retake may advance its creation time.
+Do not read/edit managed private state or claim an opaque root ID unavailable
+from public evidence. No app reset, grant revocation, second permanent tree,
+OS reboot, store delivery or production publication. Stop at verified recovery
+and cleanup or an explicit normal-picker refusal, preserving failed attempts.
+
 Slice055 completes actual production-key1.1.3 with Play-managed27: normal
 pairing approval connects; normal Shutdown removes the service and displays
 explicit Android-launch-before-Retry guidance with readable support links.
