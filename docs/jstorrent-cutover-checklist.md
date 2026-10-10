@@ -17,17 +17,18 @@ copy and independent store timing.
 
 The short [operational sequence](jstorrent-cutover-operations.md) records exact
 release bindings, staged delivery, ownership and stop/recovery defaults.
-Current execution: desktop0.3.0 and its source archive are public; all17 actual
-downloads pass hashes. The website is deployed and production updater is active
-with11 qualified selectors; preview offers remain unchanged. Extension1.1.3
-was last confirmed pending deferred review; public privacy is deployed. The
-final Web Store refresh requires physical passkey verification before checking
-current status.
-Android28 is submitted at5% with managed publishing on; Play shows Changes in
-review after completed quick checks. The default preserves the qualified
-ARM64/x86_64/API28+ build; affected older devices retain their old app. The final
-managed28 hour and independent three-reopen continuation pass. Store approval,
-public delivery,24-hour soak and unrun physical tests remain unchecked.
+Current execution: desktop 0.3.0 and its source archive are public; all 17
+actual downloads pass hashes. The website and production updater are live;
+11 qualified selectors preserve unchanged preview offers. Renewed Web Store
+sign-in confirms extension 1.1.3 still Pending review with publication deferred.
+Android 28 is approved and published at 5% on October 10 at 16:51 UTC; managed
+publishing remains on and release 23 remains available. Separate report 088
+records approval and the actual production rollout. The qualified
+ARM64/x86_64/API28+ build is unchanged; unsupported older devices retain the old
+app. The managed hour, verified upload and three-reopen continuation pass.
+Production-channel installed canaries, the real 24-hour observation and unrun
+physical tests remain unchecked. Earliest observation end: October 11 at
+16:51 UTC, subject to actual evidence before expansion.
 
 The detailed contracts below remain authoritative. This short list is the
 current work; dated attempts and exact evidence belong to Tactical259 and the
@@ -49,7 +50,8 @@ ignored separate reports, rather than this summary.
   standalone reviewer instructions, optional feedback Diagnostics declaration,
   actual signed phone captures and original-brand graphic saved. All29 text
   localizations audited; Hindi name corrected to JSTorrent. Play shows Changes
-  in review with managed publishing on under078/084; this is not approval.
+  in review with managed publishing on under078/084. Approval and actual 5%
+  publication are separately recorded under088; no installed canary is inferred.
 - [x] Actual managed28 source-absent foreground upload: an independent peer
   receives4,194,304 bytes and the expected whole hash after the initial source
   listener closes. Original incoming setting, installed identity and grants
@@ -288,9 +290,10 @@ order. These are qualification and product decisions, not publication authority:
 1. Continue actual store delivery under
    [297](tactical/297-staged-store-delivery-and-soak.md). Exact managed Android 28
    passes the detached hour, hidden completion, three normal reopens and
-   source-absent foreground upload. Production remains 23 pending review;
-   controlled acceptance does not establish public delivery or the full
-   retained-library/lifecycle matrix.
+   source-absent foreground upload. Production release 23 remains available;
+   controlled acceptance does not establish the production-channel installed
+   canary or the full retained-library/lifecycle matrix. Release 28 is now
+   published at 5% under088.
 2. Qualify companion/browser-local writers and the actual production extension
    ID updated in place, then repeat mixed-store pairings on both physical cohorts.
 3. Complete the two-tree/reboot/grant-loss and sleep/network-loss matrix; include

@@ -1,6 +1,6 @@
 # JSTorrent Cutover Operations
 
-Owner: Kyle Graehl. Current execution: [shipment295](tactical/295-qualified-candidate-shipment.md).
+Owner: Kyle Graehl. Current execution: [delivery297](tactical/297-staged-store-delivery-and-soak.md).
 Detailed acceptance: [cutover checklist](jstorrent-cutover-checklist.md).
 
 ## Release bindings
@@ -19,6 +19,12 @@ Detailed acceptance: [cutover checklist](jstorrent-cutover-checklist.md).
   Public privacy already matches the prepared implementation disclosures.
 
 ## Order and observation
+
+Current checkpoint: desktop 0.3.0 downloads and updater are live. Play approves
+and publishes Android 28 at 5% on October 10 at 16:51 UTC; managed publishing
+remains on. Web Store sign-in is restored, but extension 1.1.3 is still Pending
+review. Do not expand Android before the actual 24-hour observation and canary
+checks complete; the earliest time is October 11 at 16:51 UTC.
 
 1. Verify immutable tag, exact private draft, sources and signatures; finish
    applicable installed checks and hosted CI. Keep unrun rows explicit.

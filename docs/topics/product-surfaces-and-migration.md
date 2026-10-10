@@ -1,5 +1,22 @@
 # Product Surfaces And JSTorrent Migration
 
+## Current store delivery checkpoint, 2026-10-10
+
+Desktop 0.3.0 downloads, corresponding sources, website and production updater
+are live and verified under295. Play approves all 92 changes and publishes
+Android 28 at 5% at 16:51 UTC; managed publishing stays on and release 23
+remains available. Renewed Web Store authentication confirms extension 1.1.3
+still Pending review with publication deferred. Separate ignored report088
+records actual states and refreshed public Play listing copy/images/disclosure.
+The local update guide now explains gradual Android rollout; Astro check/build
+and styled phone/wide captures pass after correcting the capture server MIME
+type. Public deployment of this root Astro guide is not asserted.
+Production-channel canaries and real 24-hour observation
+continue under [297](../tactical/297-staged-store-delivery-and-soak.md); earliest
+observation end is October 11 at 16:51 UTC, not an automatic expansion time.
+Earlier prepared-draft checkpoints below remain historical.
+
+
 Hosted CI38056213798 passes every applicable job at37a09a68, including both
 Linux extracted native/MIT packaging gates and Windows. Workflow preparation
 corrects the earlier unsigned Linux failures without changing signedff632

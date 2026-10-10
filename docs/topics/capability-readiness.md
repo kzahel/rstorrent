@@ -8,11 +8,11 @@ Android 28 hour, hidden completion, three ordinary reopens and source-absent
 foreground upload pass with preserved grants/preferences and owned cleanup.
 All VMs are off; both Chromebook tab/window inventories are empty.
 
-Play 28 is in review at 5% with managed publishing on and quick checks completed.
-CWS 1.1.3 was last observed pending deferred review; final refresh requires
-physical passkey verification. Actual approvals, public store delivery,
-installed mixed-version canaries and 24-hour soak continue under
-[297](../tactical/297-staged-store-delivery-and-soak.md). The broader unrun
+Play approves and publishes Android 28 at 5% on October 10 at 16:51 UTC;
+managed publishing stays on. Renewed sign-in confirms CWS 1.1.3 still Pending
+review. Separate088 records the actual store states. Production-channel
+installed canaries, extension approval/publication and 24-hour observation
+continue under [297](../tactical/297-staged-store-delivery-and-soak.md). Unrun
 physical cases in 259 are not marked passed; iOS stays out of release scope.
 Earlier intermediate shipment/source proposals below remain historical.
 

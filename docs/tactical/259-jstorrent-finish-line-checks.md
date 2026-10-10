@@ -12,14 +12,13 @@ passes; skipped jobs remain skips. Reports079–083 are separate and ignored.
 Managed Android28 now passes the full3,602.88-second detached hour, hidden whole
 hash, stop-at-completion and independent three-reopen continuation under074.
 The original Pause lookup harness failure is preserved. Owned row/file/source
-cleanup and zero observed Chromebook tabs/windows pass. Play28 is submitted
-at5% with managed publishing on; quick checks have completed and Play/CWS1.1.3
-review remains asynchronous. The qualified64-bit/API28+ build is the stated default;
-older unsupported devices retain the old app. Separate078/084 record saved
+cleanup and zero observed Chromebook tabs/windows pass. On October 10,
+Play approves all 92 changes and publishes exact Android 28 at 5% at 16:51 UTC.
+Managed publishing stays on and release 23 remains available. Renewed Web Store
+sign-in confirms extension 1.1.3 still Pending review. Separate088 preserves
+actual approval/publication evidence. The qualified 64-bit/API28+ build is
+unchanged; older unsupported devices retain the old app. Separate078/084 record
 privacy/access/optional Diagnostics and listing changes, including29 languages.
-
-The final Web Store refresh requires physical passkey verification; Pending
-review is the last observed authenticated state, not a refreshed claim.
 
 Actual managed28 source-absent foreground upload also passes under087, with
 original incoming setting/identity/grants and scoped cleanup preserved. Under086

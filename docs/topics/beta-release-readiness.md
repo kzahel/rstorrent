@@ -1936,10 +1936,13 @@ Server46b3b35 activates production0.3.0 with11 exact URL/signature selectors,
 current/newer204, empty production Latest204 and unchanged preview hashes.
 Original updater roots are retained. Separate079–083 own ignored receipts.
 
-Extension1.1.3 was last observed pending deferred review; final refresh requires
-physical passkey verification before checking current status. Android28 is submitted at5%
-with managed publishing on; Play shows Changes in review after completed quick
-checks. The stated first-release default preserves ARM64/x86_64/API28+;
+Renewed Web Store sign-in confirms extension 1.1.3 still Pending review.
+Play approves all 92 changes and publishes Android 28 at 5% on October 10 at
+16:51 UTC, with managed publishing still on. Separate088 records actual
+approval and production rollout; production-channel installed canaries and the
+24-hour observation remain open. The earliest observation end is October 11
+at 16:51 UTC; unavailable Console metrics do not establish no failures.
+The stated first-release default preserves ARM64/x86_64/API28+;
 affected older devices retain their previous app. Exact managed28 detached hour,
 hidden whole hash and independent three-reopen continuation pass under074.
 The original text-only Pause harness failure and brief peer gap remain recorded.
@@ -1952,6 +1955,6 @@ stopping condition is complete; actual store delivery/soak continues under297.
 
 Saved privacy/access/optional feedback Diagnostics and actual signed listing
 assets are included under078/084. All29 text localizations are audited; Hindi
-name retains JSTorrent spelling. No async approval, actual public store delivery,
-24-hour soak, physical Intel, or unrun reboot/sleep/background-upload gate is
-inferred from desktop activation or a review submission.
+name retains JSTorrent spelling. Actual 5% publication is recorded under088;
+production-channel installed delivery, 24-hour observation, physical Intel and
+unrun reboot/sleep/background-upload gates remain unqualified.
