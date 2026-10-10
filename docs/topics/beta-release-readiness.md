@@ -1936,12 +1936,19 @@ Server46b3b35 activates production0.3.0 with11 exact URL/signature selectors,
 current/newer204, empty production Latest204 and unchanged preview hashes.
 Original updater roots are retained. Separate079–083 own ignored receipts.
 
-Extension1.1.3 remains pending deferred review. Android28 is submitted at5%
-with managed publishing on; Play shows Changes in review and automated checks
-running. The stated first-release default preserves ARM64/x86_64/API28+;
+Extension1.1.3 was last observed pending deferred review; final refresh requires
+physical passkey verification before checking current status. Android28 is submitted at5%
+with managed publishing on; Play shows Changes in review after completed quick
+checks. The stated first-release default preserves ARM64/x86_64/API28+;
 affected older devices retain their previous app. Exact managed28 detached hour,
 hidden whole hash and independent three-reopen continuation pass under074.
 The original text-only Pause harness failure and brief peer gap remain recorded.
+Managed28 source-absent foreground upload passes under087 with original
+listener setting, installed identity/grants and scoped cleanup. All VMs are off
+and both Chromebook inventories empty under086. Dependency alerts retain the
+existing source-verified GLib remediation and production rustls0.23.45; the
+unreleased iOS probe remains outside release scope. Shipment295's bounded
+stopping condition is complete; actual store delivery/soak continues under297.
 
 Saved privacy/access/optional feedback Diagnostics and actual signed listing
 assets are included under078/084. All29 text localizations are audited; Hindi

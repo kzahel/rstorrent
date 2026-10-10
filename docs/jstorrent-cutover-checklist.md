@@ -20,9 +20,11 @@ release bindings, staged delivery, ownership and stop/recovery defaults.
 Current execution: desktop0.3.0 and its source archive are public; all17 actual
 downloads pass hashes. The website is deployed and production updater is active
 with11 qualified selectors; preview offers remain unchanged. Extension1.1.3
-is pending deferred review; public privacy is deployed.
+was last confirmed pending deferred review; public privacy is deployed. The
+final Web Store refresh requires physical passkey verification before checking
+current status.
 Android28 is submitted at5% with managed publishing on; Play shows Changes in
-review and automated checks running. The default preserves the qualified
+review after completed quick checks. The default preserves the qualified
 ARM64/x86_64/API28+ build; affected older devices retain their old app. The final
 managed28 hour and independent three-reopen continuation pass. Store approval,
 public delivery,24-hour soak and unrun physical tests remain unchecked.
@@ -48,6 +50,11 @@ ignored separate reports, rather than this summary.
   actual signed phone captures and original-brand graphic saved. All29 text
   localizations audited; Hindi name corrected to JSTorrent. Play shows Changes
   in review with managed publishing on under078/084; this is not approval.
+- [x] Actual managed28 source-absent foreground upload: an independent peer
+  receives4,194,304 bytes and the expected whole hash after the initial source
+  listener closes. Original incoming setting, installed identity and grants
+  remain unchanged; owned forward/source/row/file and normal Shutdown cleanup
+  pass under087. All VMs off and both Chromebook inventories empty under086.
 - [x] Historical desktop candidate: source `2b83ed91`,
   [run38029276220](https://github.com/kzahel/rstorrent/actions/runs/38029276220),
   five signed lanes/collector,15 hashes, six original-root signatures/wrong-root
@@ -278,9 +285,12 @@ rows independently; those tests use disposable signing and owned emulators.
 After the current source/package gates, prioritize the remaining work in this
 order. These are qualification and product decisions, not publication authority:
 
-1. Finish preserved-install acceptance for Android27, now available to existing
-   internal Play testers. Production remains23; availability alone is not an
-   installed-library or lifecycle pass.
+1. Continue actual store delivery under
+   [297](tactical/297-staged-store-delivery-and-soak.md). Exact managed Android 28
+   passes the detached hour, hidden completion, three normal reopens and
+   source-absent foreground upload. Production remains 23 pending review;
+   controlled acceptance does not establish public delivery or the full
+   retained-library/lifecycle matrix.
 2. Qualify companion/browser-local writers and the actual production extension
    ID updated in place, then repeat mixed-store pairings on both physical cohorts.
 3. Complete the two-tree/reboot/grant-loss and sleep/network-loss matrix; include

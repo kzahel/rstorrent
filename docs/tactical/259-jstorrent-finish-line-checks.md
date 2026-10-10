@@ -13,14 +13,21 @@ Managed Android28 now passes the full3,602.88-second detached hour, hidden whole
 hash, stop-at-completion and independent three-reopen continuation under074.
 The original Pause lookup harness failure is preserved. Owned row/file/source
 cleanup and zero observed Chromebook tabs/windows pass. Play28 is submitted
-at5% with managed publishing on; automated checks/review and CWS1.1.3 review
-remain asynchronous. The qualified64-bit/API28+ build is the stated default;
+at5% with managed publishing on; quick checks have completed and Play/CWS1.1.3
+review remains asynchronous. The qualified64-bit/API28+ build is the stated default;
 older unsupported devices retain the old app. Separate078/084 record saved
 privacy/access/optional Diagnostics and listing changes, including29 languages.
 
-Next: verify automated store checks, actual approvals, store-installed update
-canaries and the24-hour staged soak. Unrun physical-device recovery, reboot,
-sleep and background-upload qualification remain explicit.
+The final Web Store refresh requires physical passkey verification; Pending
+review is the last observed authenticated state, not a refreshed claim.
+
+Actual managed28 source-absent foreground upload also passes under087, with
+original incoming setting/identity/grants and scoped cleanup preserved. Under086
+all VMs are off and both Chromebook tab/window inventories are empty.
+
+Next: [297](297-staged-store-delivery-and-soak.md) owns actual approvals,
+store-installed update canaries and the24-hour staged soak. Unrun physical-device
+recovery, reboot, sleep and background-upload qualification remain explicit.
 
 ## Earlier checkpoint: managed Play and final sources, 2026-10-10
 

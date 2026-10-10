@@ -1,5 +1,21 @@
 # Capability Readiness
 
+## Current shipment checkpoint, 2026-10-10
+
+Shipment 295 publishes exact ff632 desktop 0.3.0 and corresponding sources;
+website/download hashes and all 11 production updater selectors pass. Managed
+Android 28 hour, hidden completion, three ordinary reopens and source-absent
+foreground upload pass with preserved grants/preferences and owned cleanup.
+All VMs are off; both Chromebook tab/window inventories are empty.
+
+Play 28 is in review at 5% with managed publishing on and quick checks completed.
+CWS 1.1.3 was last observed pending deferred review; final refresh requires
+physical passkey verification. Actual approvals, public store delivery,
+installed mixed-version canaries and 24-hour soak continue under
+[297](../tactical/297-staged-store-delivery-and-soak.md). The broader unrun
+physical cases in 259 are not marked passed; iOS stays out of release scope.
+Earlier intermediate shipment/source proposals below remain historical.
+
 Tactical [283](../tactical/283-companion-update-recovery-guidance.md) adds
 component-specific recovery links and plain connection guidance in the
 packaged extension, preserving attach-only retries and existing discovery/

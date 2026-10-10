@@ -1,6 +1,7 @@
 # Tactical 295: Qualified Candidate Shipment
 
-Status: Active, 2026-10-10, beneath finish-line259.
+Status: Complete for bounded shipment, 2026-10-10, beneath finish-line 259.
+Actual store delivery and soak continue under 297; broad 259 remains open.
 Owners: beta-release-readiness and product-surfaces-and-migration.
 
 ## Scope and stopping condition
@@ -170,7 +171,28 @@ the official definition and provider/user-initiated exceptions behind the form
 answers separately; preparing this declaration is not an application change.
 
 Play saves exact28 at5%, approximately76 targeted installs, and shows Changes
-in review with managed publishing on and automated quick checks running. CWS
-still shows Pending review with publication deferred. Neither is public store
+in review with managed publishing on; automated quick checks completed. CWS
+was last observed Pending review with publication deferred. A final refresh
+expires the Google session; physical passkey verification is needed before
+checking current status. Neither receipt is public store
 delivery or approval. Canonical physical/reboot/sleep and staged-soak rows stay
 open rather than being replaced by controlled captures.
+
+Separate087 also passes actual managed28 source-absent foreground upload: an
+independent leecher receives4,194,304 bytes and the expected whole hash after
+the original source listener closes. Existing incoming setting, installed
+identity and exact grants remain unchanged; owned forward, source, row/file
+and window cleanup pass. This is not background seeding qualification.
+
+Separate086 confirms Windows/macOS/Linux off and both Chromebook inventories
+empty. The first normal tab-close attempts failed to affect minimized windows;
+observed native Close and independent inventory verification pass. Cohort-A
+boot-persistence/pending-reboot state is recorded without an invented repair.
+Push-time alerts are reconciled against exact source: production rustls0.23.45
+and source-verified GLib backport are present; the other rustls alert names only
+the unreleased iOS probe. No alerts are dismissed or new package bytes produced.
+
+The bounded stopping condition is met: exact public desktop/source/website/feed
+and real store submission states are recorded. Approvals, installed canaries,
+public store delivery and 24-hour observation continue in
+[297](297-staged-store-delivery-and-soak.md), under the existing authorization.
