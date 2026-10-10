@@ -21,9 +21,11 @@ Current execution: desktop0.3.0 and its source archive are public; all17 actual
 downloads pass hashes. The website is deployed and production updater is active
 with11 qualified selectors; preview offers remain unchanged. Extension1.1.3
 is pending deferred review; public privacy is deployed.
-Android28 production preparation has managed publishing enabled; compatibility
-scope for older32-bit devices is being reviewed. No pending approval or unrun
-physical test is checked off. The final managed28 background hour is running.
+Android28 is submitted at5% with managed publishing on; Play shows Changes in
+review and automated checks running. The default preserves the qualified
+ARM64/x86_64/API28+ build; affected older devices retain their old app. The final
+managed28 hour and independent three-reopen continuation pass. Store approval,
+public delivery,24-hour soak and unrun physical tests remain unchecked.
 
 The detailed contracts below remain authoritative. This short list is the
 current work; dated attempts and exact evidence belong to Tactical259 and the
@@ -35,6 +37,17 @@ ignored separate reports, rather than this summary.
   and wrong-root refusals,11 selectors, Mac trust/staples and native Windows
   NSIS/MSI signatures pass. Five extracted inventories and both Linux custom-source
   gates pass. Prior installed receipts stay historical; Windows VM off/released.
+- [x] Actual managed28 enabled-background hour:3,602.88 seconds/118 foreground
+  service samples, independently verified partial piece, hidden40-MiB whole hash
+  and stop-at-completion service absence. A brief peer/counter gap recovered.
+  Preserve the text-only Pause harness failure; independent label-based Pause,
+  three normal Shutdown/reopens, Keep data/hash and owned cleanup pass under074.
+  Notification denial restored, Power off and zero observed tabs/windows.
+- [x] Play submission preparation: exact28 bundle saved at5%; public privacy,
+  standalone reviewer instructions, optional feedback Diagnostics declaration,
+  actual signed phone captures and original-brand graphic saved. All29 text
+  localizations audited; Hindi name corrected to JSTorrent. Play shows Changes
+  in review with managed publishing on under078/084; this is not approval.
 - [x] Historical desktop candidate: source `2b83ed91`,
   [run38029276220](https://github.com/kzahel/rstorrent/actions/runs/38029276220),
   five signed lanes/collector,15 hashes, six original-root signatures/wrong-root

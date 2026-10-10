@@ -9,10 +9,18 @@ selectors pass, with original roots and byte-identical preview offers. Exact
 Mac ARM manual migration/reopen/restoration/off passes under079. Hosted CI37a
 passes; skipped jobs remain skips. Reports079–083 are separate and ignored.
 
-Next: finish the already running managed Android28 background hour and owned
-cleanup, resolve the recorded32-bit device scope, finish accurate Play listing
-and held review submission, then actual store approval/update canaries and the
-24-hour staged soak. Unrun physical-device recovery remains explicit.
+Managed Android28 now passes the full3,602.88-second detached hour, hidden whole
+hash, stop-at-completion and independent three-reopen continuation under074.
+The original Pause lookup harness failure is preserved. Owned row/file/source
+cleanup and zero observed Chromebook tabs/windows pass. Play28 is submitted
+at5% with managed publishing on; automated checks/review and CWS1.1.3 review
+remain asynchronous. The qualified64-bit/API28+ build is the stated default;
+older unsupported devices retain the old app. Separate078/084 record saved
+privacy/access/optional Diagnostics and listing changes, including29 languages.
+
+Next: verify automated store checks, actual approvals, store-installed update
+canaries and the24-hour staged soak. Unrun physical-device recovery, reboot,
+sleep and background-upload qualification remain explicit.
 
 ## Earlier checkpoint: managed Play and final sources, 2026-10-10
 

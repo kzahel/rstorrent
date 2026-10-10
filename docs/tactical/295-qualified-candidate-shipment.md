@@ -138,3 +138,39 @@ now explain standalone native review and optional updated extension pairing;
 saved access/privacy changes remain queued. Exact signed Android28 controlled
 example captures pass one whole hash, normal Shutdown and owned emulator/AVD
 cleanup. Separate084 owns current listing assets and the Files spacing note.
+
+## Managed Android submission checkpoint
+
+Separate074 records3,602.88 seconds and118 foreground-service samples on actual
+Play28. The source briefly loses its peer at1,081/1,112 seconds and recovers;
+do not claim uninterrupted throughput. A verified partial piece survives the
+hour, the complete hidden40-MiB hash passes, and the completion service stops.
+The driver then fails a text-only Pause lookup; preserve that receipt. The
+independent continuation uses the real accessibility label, passes three normal
+Shutdown/reopens with paused intent and whole hashes, Keep data and scoped
+cleanup. Original notification denial, Power off, selected empty folder/grant,
+source closure and zero observed tabs/windows are independently recorded.
+
+The stated default keeps the exact ARM64/x86_64/API28+ candidate. Play reports
+5,711 excluded older models, including27 Chromebook models/20 current installs.
+Those existing users retain the old app; they cannot receive this update, and
+new users on those models cannot install it. No32-bit support is inferred.
+
+Separate084 saves three unedited signed-APK screenshots and a code-composed
+original-brand graphic; obsolete desktop/phone listing images remain recoverable
+in the asset library. All29 text localizations contain no obsolete brand. Hindi
+app name now retains JSTorrent spelling; detailed new recovery/requirements
+copy is currently English. The graphic alone is conservatively AI-labeled.
+
+Public privacy, standalone reviewer instructions and optional Diagnostics for
+user-opened feedback are saved. The four existing environment fields travel
+over HTTPS; the richer identifier/counter gate stays disabled. No new telemetry,
+account, legal certification or automatic crash upload is introduced. Record
+the official definition and provider/user-initiated exceptions behind the form
+answers separately; preparing this declaration is not an application change.
+
+Play saves exact28 at5%, approximately76 targeted installs, and shows Changes
+in review with managed publishing on and automated quick checks running. CWS
+still shows Pending review with publication deferred. Neither is public store
+delivery or approval. Canonical physical/reboot/sleep and staged-soak rows stay
+open rather than being replaced by controlled captures.

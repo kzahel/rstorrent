@@ -1,5 +1,23 @@
 # Installation Product State And Feedback
 
+## Current store checkpoint, 2026-10-10
+
+Shipment295 saves the production Play privacy URL as
+https://jstorrent.com/privacy.html and submits the Android28 update with managed
+publishing on. The existing no-collection declaration is reconciled to optional
+Diagnostics for the four environment fields sent by the user-opened HTTPS
+feedback flow. The preview records non-ephemeral handling and Analytics purpose;
+the public policy explicitly explains recipient exposure before form submission.
+The provider/user-initiated transfer exemptions inform the no-shared-category
+answer. This is a source-aligned best-faith classification, not legal clearance.
+No account, automatic crash upload, new transmission or broader consent is added.
+Tactical208's hosted identifier/counter gate remains release-disabled.
+
+Separate078 owns actual saved/submission screenshots and official Play guidance;
+074 owns exact managed28 lifecycle evidence, and084 owns store presentation.
+The earlier proposal below is retained as dated history, not the current
+submission status. Asynchronous review is not approval or public delivery.
+
 Slice021 prepares exact extension1.1.2 permission/privacy field replacements
 from a fresh authenticated read-only dashboard observation. Old raw-I/O and
 browser-progress explanations remain; all nine data categories are unchecked.
