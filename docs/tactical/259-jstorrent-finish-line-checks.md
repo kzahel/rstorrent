@@ -2,6 +2,17 @@
 
 ## Current restart checkpoint, 2026-10-10
 
+Slice059 prepares Android1.0.28/code28 and repeats normal paused/running Repairs,
+independent source-offline whole hashes and cold reopens on its exact debug APK.
+All four Shutdowns join; the owned API35 emulator and temporary AVD are removed.
+Fresh UI reads remove old XML and the owned tree has a JSTorrent fixture name.
+Gradle build/122 JVM cases/lint,24 script cases, release-source check and notices
+pass. Debug identity/version is independently read. Original-signed APK/AAB
+build, managed delivery and actual managed28 Repair remain open. Local signing
+credentials are not configured; push/tag/release/store/publication are not run.
+Remote main remains2b83ed91. Prepare the exact source review before requesting
+push and the existing non-publishing hosted Android workflow.
+
 Slice058 completes Tactical292 locally: unchanged debug code27/API35 reproduces
 unwanted Resume after normal Repair. The bounded Kotlin correction preserves
 Paused and Seeding controls through separate repairs and cold reopens, with the

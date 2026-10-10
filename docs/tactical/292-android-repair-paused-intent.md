@@ -76,3 +76,10 @@ No full engine/workspace test or new signed/store qualification is claimed.
 Next: prepare a production code above27 containing this fix, qualify its exact
 signed artifacts and re-run managed repair after authorized delivery. Existing
 managed27/source68e and desktop2b83 receipts retain their original scope.
+
+Slice059 prepares1.0.28/code28 without tagging/pushing. Its exact debug APK
+repeats paused/running repair and cold reopen with identical bytes/source closed.
+Gradle/JVM/lint/script/release-source/notice checks and owned AVD cleanup pass.
+The harness now deletes stale XML before reads and uses its own JSTorrent tree.
+Non-publishing hosted original-key build is the next dependency; remote main
+is2b83ed91 and no local signing environment is configured.

@@ -1,5 +1,12 @@
 # Android Changelog
 
+## [1.0.28]
+
+- Preserve a torrent's paused or running choice when repairing its download
+  folder, including after closing and reopening Android.
+- Verify retained bytes through normal folder repair with the source offline.
+- Candidate preparation; signed artifacts and Play delivery remain pending.
+
 ## [1.0.27]
 
 - Close the Android task when Shutdown stops its engine, so a stopped engine

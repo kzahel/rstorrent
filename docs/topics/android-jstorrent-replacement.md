@@ -1,5 +1,12 @@
 # Android JSTorrent Replacement Readiness
 
+Finish-line059 prepares1.0.28/code28 containing Tactical292's paused-intent
+Repair correction. Exact debug/API35 normal paused/running repair, source-offline
+hashes and cold reopens pass; build/122 JVM/lint/script/notice checks and owned
+AVD cleanup pass. Original-signed hosted APK/AAB, managed delivery and repair
+remain open. Managed27 and frozen desktop2b83 receipts retain their bindings.
+No push, tag, store upload or production publication occurs.
+
 ## Current execution checkpoint: 2026-10-09
 
 The reviewed Android27 AAB is delivered to the existing internal track. Play

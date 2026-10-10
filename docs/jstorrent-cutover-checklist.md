@@ -49,7 +49,9 @@ ignored separate reports, rather than this summary.
   draft1.1.3/public1.1.1, reviewed listing/screenshots/privacy retained.
 - [x] Local retained-folder repair fix: unchanged API35 regression fails; fixed
   paused/running controls and cold reopens pass, with bytes/source cleanup.
-- [ ] Qualify a new signed Android candidate above27 and re-run managed repair.
+- [x] Prepare1.0.28/code28; its exact debug APK repeats repaired intent/bytes and
+  cold reopens, Android checks and owned AVD cleanup.
+- [ ] Run the original-signed Android28 build and re-run managed repair.
   Actual managed27 retains the paused-intent failure; fixture cleanup passes.
   Physical sleep/network/reboot and
   populated old-store writers remain explicit. The other Chromebook stalls before app startup; guided recovery

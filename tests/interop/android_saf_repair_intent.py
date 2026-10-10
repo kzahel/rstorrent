@@ -62,8 +62,12 @@ def main() -> int:
                 owned = OwnedHeadlessAvd.start(name, sdk / "platform-tools/adb", sdk / "emulator/emulator", work)
                 adb = ui.Adb(owned.adb, owned.serial)
 
+                def fresh_ui() -> ET.Element:
+                    adb.shell("rm", "-f", "/sdcard/rstorrent-window.xml")
+                    return ui.dump_ui(adb)
+
                 def snapshot(label: str) -> ET.Element:
-                    root = ui.dump_ui(adb)
+                    root = fresh_ui()
                     (args.output / f"{label}.xml").write_text(ET.tostring(root, encoding="unicode"))
                     adb.capture_screenshot(args.output / f"{label}.png")
                     report["stages"].append(label)
@@ -74,6 +78,7 @@ def main() -> int:
                     return {n.get("text", "") for n in root.iter()}
 
                 def tap(label: str, *, package: str | None = ui.PACKAGE) -> None:
+                    adb.shell("rm", "-f", "/sdcard/rstorrent-window.xml")
                     control = ui.find_control(adb, label)
                     if ui.bounds_area(control.get("bounds", "")) <= 0:
                         raise ScenarioFailure(f"No usable fresh control: {label}")
@@ -84,7 +89,7 @@ def main() -> int:
                 def wait_text(label: str, seconds=30):
                     deadline = time.monotonic() + seconds
                     while time.monotonic() < deadline:
-                        root = ui.dump_ui(adb)
+                        root = fresh_ui()
                         if label in text_values(root):
                             return root
                         time.sleep(.25)
@@ -111,7 +116,7 @@ def main() -> int:
                     entered = False
                     accepted = False
                     while time.monotonic() < deadline:
-                        root = ui.dump_ui(adb)
+                        root = fresh_ui()
                         nodes = list(root.iter())
                         documents = any("documentsui" in n.get("package", "") for n in nodes)
                         if accepted and not documents:
@@ -143,18 +148,21 @@ def main() -> int:
                     raise ScenarioFailure(f"Picker did not grant {folder}")
 
                 ui.install_and_start(adb, apk)
+                folder = "JSTorrentRepairIntent"
+                grant_path = "/sdcard/Download/" + folder
+                adb.shell("mv", ui.GRANT_PATH, grant_path)
                 snapshot("initial")
                 wait_text("Save and continue")
                 tap("Include pseudonymous usage statistics")
                 snapshot("usage-statistics-off")
                 tap("Save and continue")
                 wait_text("Choose a download folder")
-                root = ui.dump_ui(adb)
+                root = fresh_ui()
                 selection = ui.click_labeled(list(root.iter()), ui.STORAGE_SELECTION_LABELS)
                 if selection is None:
                     raise ScenarioFailure("No initial download folder control")
                 ui.tap_bounds(adb, selection.attrib["bounds"])
-                picker(ui.GRANT_FOLDER)
+                picker(folder)
                 snapshot("initial-folder-selected")
                 filename = "JSTorrentRepairIntent.bin"
                 payload = bytes((i * 17 + 31) % 256 for i in range(1024 * 1024))
@@ -175,7 +183,7 @@ def main() -> int:
                 wait_text("Download", 90)
                 snapshot("files-before-confirm")
                 tap("Download")
-                payload_path = ui.GRANT_PATH + "/" + filename
+                payload_path = grant_path + "/" + filename
 
                 def whole_hash(path):
                     value = adb.shell("sha256sum", path).stdout.split()[0]
@@ -205,8 +213,8 @@ def main() -> int:
                 wait_text("Paused")
                 snapshot("before-paused")
                 shutdown("before-outage")
-                relocated = ui.GRANT_PATH + "-relocated"
-                adb.shell("mv", ui.GRANT_PATH, relocated)
+                relocated = grant_path + "-relocated"
+                adb.shell("mv", grant_path, relocated)
                 launch()
                 snapshot("missing-library")
                 tap("More options")
@@ -214,7 +222,7 @@ def main() -> int:
                 tap("Storage")
                 snapshot("missing-storage")
                 tap("Repair")
-                picker(ui.GRANT_FOLDER + "-relocated")
+                picker(folder + "-relocated")
                 wait_text("Available")
                 snapshot("repaired-storage")
                 tap("Back")
@@ -233,13 +241,13 @@ def main() -> int:
                 wait_text("Seeding")
                 snapshot("before-running")
                 shutdown("before-running-outage")
-                adb.shell("mv", relocated, ui.GRANT_PATH)
+                adb.shell("mv", relocated, grant_path)
                 launch()
                 tap("More options")
                 tap("Settings")
                 tap("Storage")
                 tap("Repair")
-                picker(ui.GRANT_FOLDER)
+                picker(folder)
                 wait_text("Available")
                 tap("Back")
                 tap("Back")
