@@ -350,3 +350,13 @@ test("rejects old output target and bundle-only executable overrides", () => {
   overlay.releaseTauri.mainBinaryName = "rstorrent-desktop";
   assert.throws(() => validateDesktopReleaseConfiguration(overlay), /must not override/u);
 });
+
+
+test("rejects preview feed selection without its own package marker", () => {
+  const fixture = repositoryFixture();
+  delete fixture.product.channels.stable.requiredAsset;
+  assert.throws(() => validateDesktopReleaseConfiguration(fixture), /unexpected updater product config/);
+  const mixed = repositoryFixture();
+  mixed.product.channels.latest.requiredAsset = "JSTorrent_x64.app.tar.gz";
+  assert.throws(() => validateDesktopReleaseConfiguration(mixed), /unexpected updater product config/);
+});

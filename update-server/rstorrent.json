@@ -1,7 +1,9 @@
 {
   "id": "rstorrent",
   "displayName": "JSTorrent Preview",
-  "hostnames": ["updates.graehlarts.com"],
+  "hostnames": [
+    "updates.graehlarts.com"
+  ],
   "pathPrefix": "/rstorrent",
   "githubRepo": "kzahel/rstorrent",
   "tagPrefix": "desktop-v",
@@ -10,12 +12,14 @@
     "stable": {
       "displayName": "Stable",
       "tagPrefix": "desktop-v",
-      "releaseKind": "release"
+      "releaseKind": "release",
+      "requiredAsset": "RSTorrent_x64.app.tar.gz"
     },
     "latest": {
       "displayName": "Latest",
       "tagPrefix": "desktop-latest-v",
-      "releaseKind": "prerelease"
+      "releaseKind": "prerelease",
+      "requiredAsset": "RSTorrent_x64.app.tar.gz"
     }
   }
 }

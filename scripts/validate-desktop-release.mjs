@@ -346,11 +346,13 @@ export function validateDesktopReleaseConfiguration({
         displayName: "Stable",
         tagPrefix: "desktop-v",
         releaseKind: "release",
+        requiredAsset: "RSTorrent_x64.app.tar.gz",
       },
       latest: {
         displayName: "Latest",
         tagPrefix: "desktop-latest-v",
         releaseKind: "prerelease",
+        requiredAsset: "RSTorrent_x64.app.tar.gz",
       },
     },
   };

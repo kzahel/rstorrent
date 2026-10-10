@@ -1,5 +1,18 @@
 # Beta Release Readiness
 
+Tactical296 separates overlapping production/preview desktop tag prefixes with
+an exact package-family asset rule and isolated qualified caches/notes. Server
+c4ee693 passes92 tests/typecheck/build; repository27 release/candidate checks
+pass, including missing/wrong marker refusals. Live deployment/selector receipts
+remain separate; production routes are not changed by this preparation.
+
+Extension1.1.3 is submitted to the existing Web Store item with automatic
+publication disabled and is actually pending review. Public privacy bytes now
+match website52bfe325. Android28 is available internally and managed publishing
+is on; production remains23. The exact desktop0.3.0 private draft retains all17
+verified assets, including corresponding sources, and its tag pinsff632f45.
+No asynchronous review or public cutover is inferred from a prepared draft.
+
 Separate071 now qualifies exact signedff632 Linux x64 normal HTTPS updating from
 released0.2.1: ten checks/six refusals, four-record native Quit/reopen, preserved
 payload/source and persisted disclosure opt-out. Scoped restoration, VM-off/
