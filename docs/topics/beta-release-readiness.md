@@ -1,5 +1,16 @@
 # Beta Release Readiness
 
+Fresh production-identity candidate2b83ed91 now passes all five signed lanes and
+collector in run38029276220 with publication disabled. Independent15 asset
+hashes/sizes, six original JSTorrent-root signatures/six incubation-root refusals,
+11 selectors, both Mac strict signatures/Gatekeeper/app-and-DMG staples/ticket
+CDHash binding, and five extracted package/notice inventories pass. Exact source,
+proofs and corrected pre-staple/final-DMG verifier scope belong to Tactical259's
+separate Slice043 report. Actual fresh Windows wizard/install/updater work follows
+as separate qualification. Earlier A7 receipts remain exact-byte history;
+corresponding-source/relink, public delivery and complete installed acceptance
+remain open. No release, tag, feed, store review or publication occurs.
+
 Tactical290 changes Windows installer artwork after the frozen a7 signed build.
 Its bounded local native preview passes; final Windows identity/signature gates
 reopen for fresh production packaging. Earlier a7/non-Windows proofs retain

@@ -2,6 +2,30 @@
 
 ## Current restart checkpoint, 2026-10-10
 
+Slice047 qualifies only the fresh original-signed x64 NSIS package from run
+38029276220/source2b83ed91: native Authenticode, real welcome/location artwork,
+Cancel before location Next (which installs), then the existing populated
+old0.2.1 manual-replacement/migration/refusal/native Quit/reopen harness. Inspect
+the actual disclosure opt-out screenshot before saving. Preserve the inherited
+50-registry/seven-file scopes and remove only fixture-owned firewall/staging;
+shut down the initially off VM and release its bounded claim in finally.
+No legal agreement acceptance, automatic-updater claim or release publication.
+Stop at exact restored/off/released receipts and separate screenshots/report;
+retain recovery backups if restoration cannot be independently proved.
+
+Slice046 scopes the actual managed27 notifications-enabled background path on B:
+normal Enable/runtime notification choice and Power controls, a uniquely owned
+trackerless controlled transfer, verified partial bytes, ordinary Minimize and
+one full hour of service/peer/hash observation followed by hidden completion.
+Keep-seeding stays off for the stop-at-completion case. Restore normal Power
+preferences, remove only the owned row/file/marker, retain existing package and
+persisted grant identity, close individual tabs/windows and stop the reference
+session. No app reset/sideload, pending OS reboot, physical sleep/network-loss,
+legacy-cohort migration or release publication. Stop with exact receipts and
+screenshots, or record the concrete failure and safely clean the owned fixture.
+Doctor confirms current-session access but retains the known pending-update/
+automatic-SSH evidence failure; this does not qualify reboot persistence.
+
 Slice045 completes the approved replacement of only the three retired Web Store
 draft screenshots with reviewed019 light Torrents, Library and dark Torrents
 captures. Exact asset hashes match; actual native gallery confirms their order
@@ -24,6 +48,18 @@ original updater/platform signature verification and focused Windows installed/
 updater evidence for Tactical290's artwork. No release, tag, feed or publication
 is authorized by this build. Existing A7 receipts remain exact-byte history.
 
+Slice043's build now completes successfully: all five signed lanes, source
+checks/signing proof and collector. Independent downloaded metadata/bytes bind15
+assets, six original-root signatures/six incubation-root refusals and11 selectors.
+Both Mac architectures pass strict/deep signatures, original icons/team,
+Gatekeeper, app/DMG staples and accepted notarization-ticket CDHashes. The first
+runner incorrectly required pre-staple upload SHA to equal final stapled DMG;
+its failure remains, corrected using final leg hashes and ticket code-directory
+matching. Five application formats extract with valid notice/native inventories;
+all temporary extractions terminate/remove. Four390/1200px report/index checks
+pass; bundled browser/server terminate. Actual Windows installed/updater and
+native-source/public-offer reviews stay separate. Reports remain ignored.
+
 Slice044 resumes the actual published1.1.1 extension/managed Android27 test.
 The maintainer confirmed unattended control and local host permissions. Scope:
 normal official store installation on the previously empty B extension baseline,
@@ -39,8 +75,9 @@ the prior push/build/access-pending narrative below is historical.
 
 The maintainer pushed main through `2b83ed91`; fresh signed candidate
 [38029276220](https://github.com/kzahel/rstorrent/actions/runs/38029276220)
-builds that exact source with publication disabled. Original updater-root signing
-proof passes; final artifacts and Windows artwork install/updater checks remain.
+passes all five signed lanes/collector at that source with publication disabled.
+Exact artifact/root/signature/ticket/inventory checks pass under Slice043;
+actual fresh Windows installed/updater checks remain separate.
 Local loopback/Crostini host permissions are confirmed for extension testing.
 
 Slice044 installs the actual official1.1.1 extension against Play-managed27,

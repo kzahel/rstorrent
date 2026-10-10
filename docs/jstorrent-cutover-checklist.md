@@ -18,9 +18,12 @@ copy and independent store timing.
 The maintainer pushed main through `2b83ed91`, independently confirmed on
 2026-10-10. Fresh original-signed production-identity candidate
 [run38029276220](https://github.com/kzahel/rstorrent/actions/runs/38029276220)
-is in progress with candidate=true/publication=false. It includes Tactical290's
-Windows artwork; signature/artifact and focused installed/updater qualification
-remain pending. Existing A7 evidence stays bound to its original bytes.
+passes all five signed lanes, source checks, signing proof and collector with
+candidate=true/publication=false. Independent checks bind15 assets, six original-
+root signatures/six wrong-root refusals,11 selectors, both Mac trust/notary/staples
+and five package/notice inventories. It includes Tactical290's Windows artwork;
+focused actual Windows installed/updater checks remain. Existing A7 evidence stays
+bound to its original bytes.
 
 The maintainer confirmed unattended computer use and local extension host
 permissions. Slice044 records the actual published1.1.1/managed27 pair: generic old

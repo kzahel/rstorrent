@@ -12,8 +12,13 @@ bundled headless Chromium and report server terminate. Reports remain ignored.
 
 The maintainer pushed main through `2b83ed91`; fresh signed candidate
 [38029276220](https://github.com/kzahel/rstorrent/actions/runs/38029276220)
-builds that exact source with publication disabled. Original updater-root signing
-proof passes; final artifacts and Windows artwork install/updater checks remain.
+passes all five signed lanes and collector at that exact source with publication
+disabled. Independent final artifacts pass15 hashes/sizes, six original-root
+signatures/six wrong-root refusals and11 selectors. Both Mac architectures pass
+strict signatures/Gatekeeper, app/DMG staples and accepted ticket CDHash binding;
+five extracted formats pass notices/inventories. The initial verifier's pre-staple
+versus final-DMG hash assumption remains failed, corrected through ticket binding.
+Actual fresh Windows artwork/install/updater checks remain separate.
 Local loopback/Crostini host permissions are confirmed for extension testing.
 
 Slice044 installs the actual official1.1.1 extension against Play-managed27,
