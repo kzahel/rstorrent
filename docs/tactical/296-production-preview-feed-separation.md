@@ -1,6 +1,6 @@
 # Tactical 296: Production and Preview Feed Separation
 
-Status: Active, 2026-10-10. Beneath shipment295 and finish-line259.
+Status: Complete locally and deployed for preview separation, 2026-10-10. Beneath shipment295 and finish-line259.
 Owners: product-surfaces-and-migration and beta-release-readiness.
 
 ## Scope and stopping condition
@@ -34,3 +34,18 @@ config and service revision for rollback. Read actual public selectors before
 and after; preview remains0.1.4/0.2.801 and production remains legacy until the
 separate approved cutover. Stop when selectors are separated and live checks
 prove no production/preview cross-offer.
+
+
+## Actual deployment evidence
+
+Server6013309 passes92 tests, typecheck, build and focused lint. Both package
+families ignore unrelated malformed tags before semantic ordering; no matching
+production Latest candidate returns null. Repository27 release/candidate checks
+pass, including absent/wrong preview marker refusals. The initial strict expected
+config correctly fails until updated, and both results are retained.
+
+Committed server is pulled, rebuilt and restarted. Only the private preview
+config is changed; production remains byte-identical. Three actual public
+responses retain their prior hashes: preview0.1.4/0.2.801 and production0.2.1.
+Separate077 owns prior configuration and actual revision/selector receipts.
+Production descriptor activation follows actual public packages under295.

@@ -15,6 +15,14 @@ copy and independent store timing.
 
 ## Current finish-line tasks, 2026-10-10
 
+The short [operational sequence](jstorrent-cutover-operations.md) records exact
+release bindings, staged delivery, ownership and stop/recovery defaults.
+Current execution: source-bearing desktop draft verified; extension1.1.3 actually
+pending deferred review; public privacy deployed; preview feed separation deployed.
+Android28 production preparation has managed publishing enabled; compatibility
+scope for older32-bit devices is being reviewed. No pending approval or unrun
+physical test is checked off. The final managed28 background hour is running.
+
 The detailed contracts below remain authoritative. This short list is the
 current work; dated attempts and exact evidence belong to Tactical259 and the
 ignored separate reports, rather than this summary.
@@ -35,7 +43,7 @@ ignored separate reports, rather than this summary.
 - [x] Actual Play26-to27 retained installation, disclosure opt-out, populated
   Shutdown/cold recovery, verified download, notification-denied Minimize and
   owned-folder outage/restoration. These are bounded managed27 checks.
-- [x] Existing Web Store draft1.1.2: exact ZIP, accurate description/permission
+- [x] Historical Web Store draft1.1.2: exact ZIP, accurate description/permission
   copy, reviewed data categories and all three current screenshots saved and
   reload-verified. Published1.1.1 remains unchanged; no review submission.
 - [x] Fresh AppImage source review packet:89 descriptor-bound source versions,
@@ -51,8 +59,9 @@ ignored separate reports, rather than this summary.
   Normal companion setup remains; the owned browser credential is removed.
 - [x] Exact1.1.3 actual managed Shutdown guidance/readable links, stopped Retry,
   normal launch/retained reconnect and scoped cleanup/zero tabs/windows pass.
-- [x] Exact1.1.3 replaces the uploaded Web Store draft; native Reload verifies
-  draft1.1.3/public1.1.1, reviewed listing/screenshots/privacy retained.
+- [x] Exact1.1.3 replaces the uploaded Web Store draft; reviewed listing,
+  screenshots/privacy retained. It is now Pending review with automatic
+  publication disabled; public1.1.1 remains unchanged.
 - [x] Local retained-folder repair fix: unchanged API35 regression fails; fixed
   paused/running controls and cold reopens pass, with bytes/source cleanup.
 - [x] Prepare1.0.28/code28; its exact debug APK repeats repaired intent/bytes and
@@ -94,7 +103,8 @@ ignored separate reports, rather than this summary.
   verification; original-r0 runtime source/relink executes on both architectures.
   Exact signedff632 Linux x64 updater/restart now passes under071. Public source
   bytes remain the delivery gate. Verify accurate public privacy and obtainable
-  website/download metadata before cutover; prepared pages are not deployed.
+  website/download metadata before cutover; public privacy is deployed and exact
+  bytes verified. Replacement download activation remains separate.
 - [ ] Review the exact shipment, supported gaps, soak/stop criteria and recovery
   owner. Submit/publish only the explicitly approved store/feed/release/website
   scope; actual store-update canaries follow approved delivery.

@@ -66,3 +66,38 @@ reviewed preparation into both native Ubuntu lanes and require the extracted
 MIT native gate. This changes CI orchestration, not already signed product bytes.
 Validate workflow lint, focused native refusal tests and an actual hosted rerun;
 retain the original failures instead of describing them as green.
+
+
+## Submission and deployment checkpoint
+
+Separate073 verifies actual public privacy bytes and390/1200 geometry after
+website52bfe325 deployment. Separate075 records actual Web Store1.1.3 Pending
+review with automatic publication unchecked; public1.1.1 remains unchanged.
+Separate076 records the exact17-asset private desktop draft andff632 tag.
+API creation/edit failures are retained; browser draft save and CLI asset upload
+succeed without expanding credentials. Source guard and six original roots pass.
+
+Tactical296/server6013309 now separates preview and production package families
+before public shipment. Separate077 proves deployed preview0.1.4/0.2.801 and
+unchanged production0.2.1 responses. This closes a real same-prefix collision,
+not a new signing or rollout architecture.
+
+Separate078 enables Play managed publishing and prepares the existing28 bundle
+for production with complete replacement/recovery notes. The5% form remains
+unpublished; compatibility diagnostics identify27 Chromebook models/20 current
+installs requiring an unsupported ABI. Exact candidate ABIs are ARM64/x86_64;
+older32-bit scope is raised explicitly. No production review or acceptance is
+inferred. A first UI warning expansion used a stale indexed second locator;
+fresh state resolved it without changing product data.
+
+The short cutover operations document records ownership,24-hour initial soak,
+stop criteria and offer restoration. Full managed28 background acceptance is
+still executing; publication and remaining physical/store rows are separate.
+
+
+The actual hosted rerun38056213798 now succeeds at37a09a68 across Rust/interop,
+web, extension, Android, all three desktop CI platforms/both Linux architectures
+and the existing iOS lane. iOS remains outside product cutover scope. Push-only
+dependency-review/matrix skips are retained as skips, not asserted passes.
+Separate081 records this exact source and all hosted steps. The original frozen
+candidate remainsff632f45; no product package is rebound to the CI head.

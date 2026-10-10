@@ -1,10 +1,15 @@
 # Product Surfaces And JSTorrent Migration
 
+Hosted CI38056213798 passes every applicable job at37a09a68, including both
+Linux extracted native/MIT packaging gates and Windows. Workflow preparation
+corrects the earlier unsigned Linux failures without changing signedff632
+candidate bytes. Separate081 preserves the actual hosted result.
+
 Tactical296 separates overlapping production/preview desktop tag prefixes with
 an exact package-family asset rule and isolated qualified caches/notes. Server
-c4ee693 passes92 tests/typecheck/build; repository27 release/candidate checks
-pass, including missing/wrong marker refusals. Live deployment/selector receipts
-remain separate; production routes are not changed by this preparation.
+6013309 passes92 tests/typecheck/build; repository27 release/candidate checks
+pass, including missing/wrong marker refusals. Actual rebuilt/restarted deployment retains
+preview0.1.4/0.2.801 and byte-identical production0.2.1 offers under077.
 
 Extension1.1.3 is submitted to the existing Web Store item with automatic
 publication disabled and is actually pending review. Public privacy bytes now
