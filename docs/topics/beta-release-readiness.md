@@ -1,13 +1,28 @@
 # Beta Release Readiness
 
+Fresh2b83 Windows qualification now passes actual signed NSIS wizard/cancel,
+populated manual replacement and released0.2.1 ordinary HTTPS updater retry
+after an interrupted download. Eleven updater assertions/eight refusals and
+four-record native Quit/reopen pass; exact restoration/off/release and private
+trial removal verify. Read-only native fresh MSI Authenticode also passes in
+the same owned session; MSI installation/associations remain separate.
+
+Slice048 binds the fresh AppImages to all89 exact Ubuntu source versions,
+descriptor/archive/patch hashes and129/128 original notices. A new local
+530,073,600-byte exact2b83 review packet independently verifies736 members.
+Both outer runtimes match previously inspected pinned8f39b89 bytes except their
+named payload digest. Historical packets stay intact. Per-package disposition,
+shipped-r0/ARM relink qualification and a real public source delivery route
+remain open; no source packet is published. Tactical259 owns exact evidence.
+
 Fresh production-identity candidate2b83ed91 now passes all five signed lanes and
 collector in run38029276220 with publication disabled. Independent15 asset
 hashes/sizes, six original JSTorrent-root signatures/six incubation-root refusals,
 11 selectors, both Mac strict signatures/Gatekeeper/app-and-DMG staples/ticket
 CDHash binding, and five extracted package/notice inventories pass. Exact source,
 proofs and corrected pre-staple/final-DMG verifier scope belong to Tactical259's
-separate Slice043 report. Actual fresh Windows wizard/install/updater work follows
-as separate qualification. Earlier A7 receipts remain exact-byte history;
+separate Slice043 report. Fresh Windows wizard/install/updater evidence is now
+recorded in separate047/049 reports. Earlier A7 receipts remain exact-byte history;
 corresponding-source/relink, public delivery and complete installed acceptance
 remain open. No release, tag, feed, store review or publication occurs.
 

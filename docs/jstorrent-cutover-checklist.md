@@ -22,16 +22,25 @@ passes all five signed lanes, source checks, signing proof and collector with
 candidate=true/publication=false. Independent checks bind15 assets, six original-
 root signatures/six wrong-root refusals,11 selectors, both Mac trust/notary/staples
 and five package/notice inventories. It includes Tactical290's Windows artwork;
-focused actual Windows installed/updater checks remain. Existing A7 evidence stays
+focused actual Windows installed/updater checks now pass below. Existing A7 evidence stays
 bound to its original bytes.
 
 Slice047 now passes fresh signed NSIS Authenticode, actual welcome/location
 artwork and preinstall Cancel preservation, then eight populated manual migration
 checks/eight refusals and four-record native Quit/reopen with privacy off.
 Independent50-registry/seven-file restoration and VM-off/release pass. Ordinary
-HTTPS updating follows separately in049; recorded clipping/technical setup-error
+HTTPS updating passes separately in049; recorded clipping/technical setup-error
 copy remain design notes. Broader delivery/associations/source/policy gates stay
 open.
+
+Slice049 passes fresh Windows interrupted-download preservation, ordinary GUI
+HTTPS retry, eleven checks/eight refusals and four-record Quit/reopen. Exact
+restoration, VM-off/release, private trial removal, five payload404s and eight
+unchanged ordinary responses verify. Read-only fresh MSI Authenticode also
+passes; MSI installation/associations remain separate. Slice048 verifies all736
+members of the new exact2b83 local source packet covering89 source versions;
+per-package disposition, shipped-r0/ARM relink and public source delivery remain
+open. Neither slice publishes anything.
 
 The maintainer confirmed unattended computer use and local extension host
 permissions. Slice044 records the actual published1.1.1/managed27 pair: generic old
@@ -50,7 +59,7 @@ remain open.
 Tactical290 now corrects Windows installer artwork locally. Its actual native
 presentation harness passes, but it changes Windows packaging inputs after
 the frozen a7 build. Fresh original-signed Windows packaging and focused
-installed/updater checks remain required; existing a7 qualification is preserved
+installed/updater checks now pass; existing a7 qualification is preserved
 as historical exact-byte evidence. All other package inputs stay unchanged.
 
 - [x] Complete branding and recovery-copy corrections, local web/extension

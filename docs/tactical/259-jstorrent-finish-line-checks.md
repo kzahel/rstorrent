@@ -2,6 +2,36 @@
 
 ## Current restart checkpoint, 2026-10-10
 
+Slice049 completes the fresh Windows HTTPS updater scope: interrupted payload
+transfer preserves the released0.2.1 executable, ordinary Install & Restart
+retry installs exact2b83 NSIS, and eleven assertions/eight refusals plus
+four-record native Quit/reopen pass. Statistics opt-out persists independently.
+Fifty registry/seven file scopes restore exactly; owned firewall/staging are
+removed, VM off and claim released. Finally removes the separate private trial;
+five payload404s and eight unchanged ordinary responses verify. The first
+manifest used a string attempt: the server refused before VM boot, cleanup
+passed, and that failure remains. Correct numeric metadata passes the pinned
+validator and retry. Actual screenshots retain Status/detail clipping notes;
+the negative desktop capture is supported by the old-executable hash proof.
+Four390/1200px report/index checks pass and reap their browser/server. Separate
+report/receipts remain ignored; no production publication occurs.
+
+Slice048 completes its local exact-source review packet: both final AppImages'
+89 source/version pairs match all descriptor-bound archives/patches. Original
+129/128 notices and exact2b83 first-party build/source snapshot are included.
+Both outer ELF runtimes match pinned8f39b89 material except the named16-byte
+payload digest. The530,073,600-byte packet independently verifies736 members;
+owned extraction is removed and historical A7 packets remain unchanged.
+SHA-256: `ad7c607bce9853db22766ed54331f7f29304458065d9614b4b48143e069bf9aa`.
+Four390/1200px report/index checks pass and reap their browser/server. No VM
+launch or public upload; per-package disposition, shipped-r0/ARM relink proof
+and actual public source delivery remain separate, unqualified requirements.
+
+During049's already owned Windows session, read-only native MSI verification
+also validates the fresh exact MSI retained Kyle Graehl publisher and Microsoft
+timestamp; exact temporary MSI staging is removed. This does not claim MSI
+installation/property-table/associations evidence or additional VM ownership.
+
 Slice049 qualifies the fresh exact Windows NSIS through the released0.2.1
 ordinary HTTPS updater with interrupted-download refusal and GUI valid retry,
 populated migration, privacy opt-out and native Quit/reopen. A separate owned

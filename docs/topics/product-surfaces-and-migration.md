@@ -1,5 +1,16 @@
 # Product Surfaces And JSTorrent Migration
 
+Slice049 now passes the fresh exact Windows signed successor through the
+released0.2.1 ordinary HTTPS updater: interrupted download preserves the old
+installation, normal GUI retry imports four records, and native Quit/reopen
+retains them. Eleven checks/eight refusals and privacy opt-out pass. Independent
+50-registry/seven-file restoration, owned staging/firewall cleanup, VM-off and
+claim-release verify. The private fixed-fixture trial is removed; five payloads
+return404 and eight ordinary routes remain unchanged. An initial malformed
+attempt value was refused before VM boot and is preserved as failed evidence.
+Separate actual screenshots/report retain clipping notes. No public feed/store
+submission/release occurs; complete delivery/cohort acceptance remains open.
+
 Slice047 independently qualifies fresh2b83 signed Windows NSIS Authenticode and
 actual branded welcome/location pages. Normal Cancel before installing Next
 preserves inherited scopes. Populated old0.2.1 manual replacement passes eight
@@ -8,7 +19,7 @@ opt-out persists. Exact50-registry/seven-file restoration, owned firewall/stagin
 cleanup, VM-off and claim-release pass. Separate actual screenshots/report
 retain Status/detail-tab clipping and technical registration-error copy as design
 notes. Four390/1200px report/index checks pass and terminate their browser/server.
-Fresh ordinary HTTPS updating remains a separate Slice049; no publication.
+Fresh ordinary HTTPS updating now qualifies separately in049; no publication.
 
 Slice045 saves and reload-verifies the three reviewed current-UI screenshots in
 the existing Web Store item's draft: light Torrents, light Library, dark Torrents.
