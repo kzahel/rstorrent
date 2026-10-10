@@ -1,6 +1,6 @@
 # Tactical 294: MIT-compatible Linux packaging
 
-Status: Active, 2026-10-10. User-directed beneath finish-line259/293.
+Status: Complete (bounded native packaging slice), 2026-10-10. User-directed beneath finish-line259/293.
 Owners: product-direction, beta-release-readiness and desktop-jstorrent-replacement.
 
 ## Scope and stopping condition
@@ -72,7 +72,26 @@ Historical signed packages remain untouched. Four new refusal/parser checks,
 26 distribution checks and existing release-tool checks run locally. Owned
 units/roots/mounts are removed, the VM is off and claims are released.
 
-Next: actual native x64 Show/background/Quit and window/tray captures against
-owned profiles using the rebuilt libraries. ARM and original-signed scope remain
-explicit. The MIT decision resolves the
+Separate064 now passes actual x64 before/after native window, background lifetime,
+Show and normal Quit with owned empty/offline/statistics-off profiles. The product
+process maps the rebuilt appindicator and no identified GPL library. Native
+window/tray pixels preserve JSTorrent branding and presentation. The initial
+harness incorrectly disabled background mode; its expected normal-exit failure
+and cleanup are retained. Existing empty-detail copy and right-edge table clipping
+remain design notes, not new packaging regressions.
+
+Separate065 passes the same final recipe on native Ubuntu ARM64:130 TIFF tests,
+41/199 original exports and versions, relocations, codecs, original loader,
+offscreen GTK and source/notice/package gates. Its copied AppDir has171 selected
+components and539 inspected entries; original bytes are refused. Five additional
+real-output provenance/architecture/source/recipe mutations refuse locally. All
+seven pinned files freshly download over HTTPS and verify against reviewed
+sizes/hashes; owned download and mutable local staging roots are removed.
+
+All owned units/processes/roots/mounts/captures are removed after export. Both VMs
+are off and claims released. The bounded implementation stopping condition is met.
+Next under259/293: obtain fresh original-signed Linux/Android candidates after
+explicit push authorization, rebind source delivery to those packages and repeat
+proportional installed qualification. ARM product UI and outer-runtime ARM relink
+remain separate; native ARM build evidence does not clear them. The MIT decision resolves the
 license-choice question; it does not authorize push or publication.

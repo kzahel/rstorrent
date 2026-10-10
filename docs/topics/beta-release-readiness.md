@@ -1,12 +1,15 @@
 # Beta Release Readiness
 
-Tactical294 now qualifies the final native x64 recipe locally:130 TIFF tests,
-all240 original exported symbols/versions, relocation/codec/original-loader and
-offscreen GTK checks pass. The copied AppDir's source/notice/MIT gate passes;
-unchanged frozen bytes are refused. Both Linux lanes now build and attribute
-custom sources before signing and repeat the package gate. Separate063 owns
-exact evidence; owned roots/units/mounts are removed, VM off/released. Actual
-product tray, ARM and fresh original-signed packages remain open.
+Tactical294 completes its bounded native packaging slice. Both native x64 and
+ARM source builds pass130 TIFF tests/all240 original exports, relocation,
+codec/original-loader, offscreen GTK and source/notice/MIT package gates.
+Separate064 also passes actual x64 window, background, Show, normal Quit and
+loaded-library observations with reviewed unchanged branding;065 owns ARM
+native evidence. Original frozen packages are refused by the new gate. Both
+Linux lanes prepare custom libraries before signing and repeat extracted checks.
+Owned units/processes/roots/mounts/captures are removed, both VMs off/released.
+Fresh original-signed candidates/source delivery, ARM product UI and ARM outer
+runtime relink remain separate. No push or publication occurs.
 
 The maintainer explicitly retains MIT on2026-10-10. Tactical294 supersedes the
 pending combined-GPL proposal with bounded native GPL-only dependency removal
@@ -18,13 +21,11 @@ Tactical [293](../tactical/293-appimage-source-delivery.md) adds a verified loca
 frozen2b83 application source supplement:733 Cargo inputs,27 exact npm
 distributions and14 preferred archives/16 bindings. Offline metadata for both
 Linux targets and frozen web build/CSP pass; owned mutable staging is removed.
-Actual TIFF dependencies in both images confirm GPL-2+ JBIG. Combined-binary
-terms versus rebuilding without that codec awaits a maintainer decision.
+Actual TIFF dependencies in both images confirm GPL-2+ JBIG. The maintainer has selected dependency removal under294.
 Separate062 also confirms GPL-3 Ayatana indicator through the tray library;
 the full174/173 component hashes and173/172 ELF inventories pass. The frozen
-loader source verifies. Removing JBIG alone is insufficient; the updated
-pending choice is full sources/GPL-3 Linux binary terms versus removing all
-GPL library dependencies. Owned extraction is removed; no license changes.
+loader source verifies. Removing JBIG alone is insufficient; 294 removes both identified library chains; the earlier combined-GPL
+proposal is superseded. Owned extraction is removed; no license changes.
 Original-r0 x64 source-build/relink executes successfully with24 exports/seven
 static libraries verified; rebuilt bytes differ from the shipped runtime beyond
 its named digest. VM off/release and owned cleanup pass. ARM, final per-package

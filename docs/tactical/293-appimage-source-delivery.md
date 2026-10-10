@@ -68,9 +68,9 @@ remain open under the cutover checklist.
 The exact225 package copyright rows verify against both frozen native manifests
 and89 source/version pairs. Independent bounded ELF reads prove both bundled
 TIFF libraries require libjbig.so.0; its original notice says GPL-2+. Do not clear
-this actual component as an upstream-only tool or LGPL. The maintainer is asked
-to choose corresponding sources/appropriate GPL combined-binary terms or a TIFF
-rebuild without JBIG; no first-party license or signed binary has changed.
+this actual component as an upstream-only tool or LGPL. The maintainer has
+selected dependency removal under294; no first-party license or original signed
+binary has changed.
 The [GNU library guidance](https://www.gnu.org/licenses/gpl-faq.en.html#IfLibraryIsGPL)
 requires assessing the combined work separately from compatible module licenses.
 
@@ -80,13 +80,12 @@ appindicator also requires libayatana-indicator3, whose actual library sources
 declare GPL-3. Frozen libappindicator-sys0.9.0 source verifies its Cargo checksum
 and loads the Ayatana appindicator library first. No new execution/dlopen trace
 is inferred. Both temporary extractions are removed without VM use.
-The earlier JBIG-only alternative is insufficient; the updated pending choice
-is full sources/appropriate GPL-3 combined Linux binary terms versus removing
-all GPL library dependencies and requalifying packages. GPL-2-or-later permits
-GPL-3 under [GNU version guidance](https://www.gnu.org/licenses/quick-guide-gplv3.html);
-this does not clear every remaining file's compatibility. GPL-3's
-[source definition and delivery terms](https://www.gnu.org/licenses/gpl-3.0.html)
-own that source route. No license disposition has been selected or implemented.
+The earlier JBIG-only alternative is insufficient. The maintainer has selected
+retaining MIT and removing both identified GPL-only library chains under294.
+Its bounded native builds, package guards and actual x64 tray checks are now
+complete in separate063-065. Existing frozen packages/source packets remain
+historical bindings; new signed candidate source delivery must be reconciled.
+Remaining LGPL obligations retain their own source/notice/relink requirements.
 
 Frozen2b83 Cargo vendoring supplies733 packages/38,217 files. Empty-Cargo-home,
 locked offline metadata succeeds for both Linux targets; the portable relative

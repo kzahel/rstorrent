@@ -1,12 +1,15 @@
 # Desktop JSTorrent Replacement
 
-Tactical294 now qualifies the final native x64 recipe locally:130 TIFF tests,
-all240 original exported symbols/versions, relocation/codec/original-loader and
-offscreen GTK checks pass. The copied AppDir's source/notice/MIT gate passes;
-unchanged frozen bytes are refused. Both Linux lanes now build and attribute
-custom sources before signing and repeat the package gate. Separate063 owns
-exact evidence; owned roots/units/mounts are removed, VM off/released. Actual
-product tray, ARM and fresh original-signed packages remain open.
+Tactical294 completes its bounded native packaging slice. Both native x64 and
+ARM source builds pass130 TIFF tests/all240 original exports, relocation,
+codec/original-loader, offscreen GTK and source/notice/MIT package gates.
+Separate064 also passes actual x64 window, background, Show, normal Quit and
+loaded-library observations with reviewed unchanged branding;065 owns ARM
+native evidence. Original frozen packages are refused by the new gate. Both
+Linux lanes prepare custom libraries before signing and repeat extracted checks.
+Owned units/processes/roots/mounts/captures are removed, both VMs off/released.
+Fresh original-signed candidates/source delivery, ARM product UI and ARM outer
+runtime relink remain separate. No push or publication occurs.
 
 Maintainer direction on2026-10-10 retains MIT. Tactical294 owns removing the
 GPL-only JBIG/tray dependencies rather than adopting combined-GPL Linux terms.
@@ -19,7 +22,7 @@ local exact2b83 application source inputs and original-r0 x64 runtime source
 build/relink. The rebuilt runtime differs from shipped bytes; no reproducibility
 or signature equivalence is claimed. Owned source staging and headless VM roots
 are removed, VM off/released. Actual bundled TIFF requires GPL-2+ JBIG in both
-images. Combined-binary terms versus a codec rebuild awaits a maintainer choice;
+images. The maintainer has selected dependency removal under294;
 no source license or signed binary changes. Final per-package disposition,
 complete native instructions, ARM execution and public delivery remain open.
 Best-effort Linux scope remains AppImage/headless without older-distro work.

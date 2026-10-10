@@ -8,6 +8,16 @@ Owner: [beta-release-readiness](topics/beta-release-readiness.md).
 Execution and remaining work: [Tactical293](tactical/293-appimage-source-delivery.md).
 Linux remains best effort; iOS is excluded.
 
+The reviewed [native recipe](../distribution/linux-native/README.md) now builds
+custom TIFF and GTK3 appindicator libraries, retaining original security patches,
+archives, copyrights and exact patch/configuration/compiler provenance. The new
+pre-signing AppImage hook embeds those source materials and rejects the two
+identified GPL-only runtime chains. Local x64/ARM ABI/codec/offscreen tray/package
+checks and actual x64 product window/tray pass under294. Fresh signed candidates
+and remaining source delivery are tracked in259/293; ARM product UI and outer
+runtime relink remain separate.
+This does not convert the historical frozen packet into a new public source offer.
+
 The source binding is frozen desktop commit
 `2b83ed9137fc3b779fabcb3f20b421e59035fec9`, version0.3.0. Android28 and
 extension1.1.3 are separate candidates, not substitutions for this binding.

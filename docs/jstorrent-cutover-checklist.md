@@ -54,11 +54,12 @@ ignored separate reports, rather than this summary.
 - [x] Verify frozen desktop application source inputs: exact offline Cargo/web
   sources and local carrier. Original-r0 x64 runtime source-build/relink passes;
   rebuilt bytes differ from shipped bytes. Owned staging removed, VM off/released.
-- [x] Linux native x64 source prototype:130 TIFF tests/all240 exported ABI
-  symbols, ordinary codecs/original loader and offscreen tray pass. Copied AppDir
-  source/notice/MIT guard passes; original package refused. Release build/hooks
-  and regression gates added; VM off/released. Actual tray, ARM and new signed
-  Linux package qualification remain open.
+- [x] Linux native packaging: x64 and ARM source/ABI/codec/offscreen/package
+  gates pass (130 TIFF tests/all240 exports each). Actual x64 window/background/
+  Show/Quit and loaded-library checks preserve branding and remove the identified
+  GPL-only libraries. Build/hooks and extracted refusal gates added; both VMs
+  off/released. Fresh signed Linux qualification/source delivery remain open;
+  ARM product UI and outer-runtime relink are separate.
 - [ ] Run the original-signed Android28 build and re-run managed repair.
   Actual managed27 retains the paused-intent failure; fixture cleanup passes.
   Physical sleep/network/reboot and

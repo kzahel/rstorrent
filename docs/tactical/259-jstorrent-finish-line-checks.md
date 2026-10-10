@@ -1,14 +1,16 @@
 # Tactical 259: JSTorrent Finish-Line Checks
 
-Separate063 completes Tactical294's native x64 build/ABI/package prototype:
-130 TIFF tests,41 tray/199 TIFF exported symbols and versions, relocation,
-ordinary codecs/original loader and offscreen GTK checks pass. Both identified
-GPL-only dependency families are absent from the copied unsigned AppDir; its
-custom source/notice inventory and new MIT gate pass. Original frozen image is
-refused by that new gate. Source recipe/pre-signing replacement and both Linux
-workflow lanes are prepared locally. Owned units/roots/mounts removed, VM off
-and claims released. Actual native product tray, ARM and freshly signed Linux
-packages remain separate; no push or publication occurs.
+Separate063-065 complete Tactical294's bounded native packaging slice. Native
+x64/ARM source builds pass130 TIFF tests/all240 original exports each, codec,
+loader, relocation, offscreen GTK and copied AppDir source/notice/MIT gates;
+unchanged frozen bytes are refused. Actual x64 Show/background/normal Quit,
+loaded-library maps and before/after window/tray pixels pass. The initial
+background-toggle harness error and cleanup are retained. Five additional
+real-output provenance/architecture/source/recipe mutations refuse. Both Linux
+workflow lanes prepare custom sources before signing and repeat extracted gates.
+Owned units/processes/roots/mounts/captures removed; both VMs off/released.
+Fresh original-signed candidates/source delivery, ARM product UI and ARM outer
+runtime relink remain separate. No push or publication occurs.
 
 ## Current restart checkpoint, 2026-10-10
 
