@@ -51,6 +51,9 @@ ignored separate reports, rather than this summary.
   paused/running controls and cold reopens pass, with bytes/source cleanup.
 - [x] Prepare1.0.28/code28; its exact debug APK repeats repaired intent/bytes and
   cold reopens, Android checks and owned AVD cleanup.
+- [x] Verify frozen desktop application source inputs: exact offline Cargo/web
+  sources and local carrier. Original-r0 x64 runtime source-build/relink passes;
+  rebuilt bytes differ from shipped bytes. Owned staging removed, VM off/released.
 - [ ] Run the original-signed Android28 build and re-run managed repair.
   Actual managed27 retains the paused-intent failure; fixture cleanup passes.
   Physical sleep/network/reboot and
@@ -61,7 +64,9 @@ ignored separate reports, rather than this summary.
   private trial removal. Historical A7 x64-under-Rosetta receipts retain their
   exact scope; physical Intel/Linux ARM/FUSE remain unrun.
 - [ ] Complete selected native redistribution/source/relink disposition and a
-  real source-delivery route. Verify accurate public privacy and obtainable
+  real source-delivery route. Both AppImages actually link GPL JBIG through
+  TIFF; combined-binary terms versus a codec rebuild needs a maintainer choice.
+  ARM relink and complete native instructions remain open. Verify accurate public privacy and obtainable
   website/download metadata before cutover; prepared pages are not deployed.
 - [ ] Review the exact shipment, supported gaps, soak/stop criteria and recovery
   owner. Submit/publish only the explicitly approved store/feed/release/website

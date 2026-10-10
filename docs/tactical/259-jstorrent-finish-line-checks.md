@@ -2,6 +2,21 @@
 
 ## Current restart checkpoint, 2026-10-10
 
+Slices060/061 advance Tactical293's local AppImage source inputs. All225 native
+package notices bind to89 exact source/version pairs; actual ELF dependencies
+confirm GPL-2+ JBIG through TIFF in both AppImages. The maintainer's combined
+binary-terms versus codec-rebuild choice remains pending; no license changes.
+A335,562,671-byte application source supplement verifies38,268 members,733
+Cargo inputs,27 npm distributions and14 preferred archives/16 source bindings.
+Empty-Cargo-home offline metadata for both targets, frozen web build/CSP and
+all1663 tracked hashes pass. Owned mutable source/build staging is removed.
+The separate original-r0 x64 runtime source build and relink execute successfully;
+24 exports/seven static libraries verify. Rebuilt bytes differ from shipped
+bytes beyond the named payload digest, so no reproducibility/signature claim.
+The single headless Linux VM is off/released; owned units/roots/mounts and
+controller staging are removed. ARM execution, final per-package disposition,
+complete native instructions and actual public source delivery remain open.
+
 Slice059 prepares Android1.0.28/code28 and repeats normal paused/running Repairs,
 independent source-offline whole hashes and cold reopens on its exact debug APK.
 All four Shutdowns join; the owned API35 emulator and temporary AVD are removed.
@@ -10,8 +25,8 @@ Gradle build/122 JVM cases/lint,24 script cases, release-source check and notice
 pass. Debug identity/version is independently read. Original-signed APK/AAB
 build, managed delivery and actual managed28 Repair remain open. Local signing
 credentials are not configured; push/tag/release/store/publication are not run.
-Remote main remains2b83ed91. Prepare the exact source review before requesting
-push and the existing non-publishing hosted Android workflow.
+Remote main remains2b83ed91. Push through prepared commitb2548290 and the existing
+non-publishing hosted Android workflow are awaiting explicit authorization.
 
 Slice058 completes Tactical292 locally: unchanged debug code27/API35 reproduces
 unwanted Resume after normal Repair. The bounded Kotlin correction preserves

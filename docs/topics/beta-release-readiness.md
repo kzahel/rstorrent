@@ -1,5 +1,16 @@
 # Beta Release Readiness
 
+Tactical [293](../tactical/293-appimage-source-delivery.md) adds a verified local
+frozen2b83 application source supplement:733 Cargo inputs,27 exact npm
+distributions and14 preferred archives/16 bindings. Offline metadata for both
+Linux targets and frozen web build/CSP pass; owned mutable staging is removed.
+Actual TIFF dependencies in both images confirm GPL-2+ JBIG. Combined-binary
+terms versus rebuilding without that codec awaits a maintainer decision.
+Original-r0 x64 source-build/relink executes successfully with24 exports/seven
+static libraries verified; rebuilt bytes differ from the shipped runtime beyond
+its named digest. VM off/release and owned cleanup pass. ARM, final per-package
+disposition, complete native instructions and public source delivery stay open.
+
 Finish-line059 prepares1.0.28/code28 containing Tactical292's paused-intent
 Repair correction. Exact debug/API35 normal paused/running repair, source-offline
 hashes and cold reopens pass; build/122 JVM/lint/script/notice checks and owned
@@ -26,7 +37,7 @@ descriptor/archive/patch hashes and129/128 original notices. A new local
 530,073,600-byte exact2b83 review packet independently verifies736 members.
 Both outer runtimes match previously inspected pinned8f39b89 bytes except their
 named payload digest. Historical packets stay intact. Per-package disposition,
-shipped-r0/ARM relink qualification and a real public source delivery route
+ARM relink qualification and a real public source delivery route
 remain open; no source packet is published. Tactical259 owns exact evidence.
 
 Fresh production-identity candidate2b83ed91 now passes all five signed lanes and

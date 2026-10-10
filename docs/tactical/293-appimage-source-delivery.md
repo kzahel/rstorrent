@@ -1,0 +1,108 @@
+# Tactical 293: AppImage Source Delivery
+
+Status: Active, 2026-10-10, beneath finish-line259.
+
+Owners: beta-release-readiness, desktop-jstorrent-replacement and
+product-surfaces-and-migration. Preserve accepted best-effort Linux scope.
+
+## Scope and stopping condition
+
+Prepare a concrete source-delivery candidate for the exact frozen2b83 AppImages.
+Index every original native notice and corresponding source pair; inspect the
+actual packaged component licenses rather than inferring a library's terms from
+all files in its upstream project. Extend the existing review packet with locked
+application dependency sources and usable rebuild/relink instructions. Preserve
+all original source archives, patches, notices and checksum bindings.
+
+The intended delivery is a versioned source archive beside the AppImages in the
+same GitHub release, with an adjacent website link. This is a prepared route;
+upload/public availability requires explicit publication authorization. Stop at
+independently verified local materials and a concrete remaining-gap disposition,
+without calling a review packet complete while required inputs are absent.
+
+Non-goals: Linux compatibility/backports, DEB/RPM, new engine behavior, replacing
+signed runtime bytes, byte reproducibility, signing keys, iOS or publication.
+
+## Reference and invariants
+
+The retained first-party source is MIT. LGPL2.1 section6(a) permits supplying
+the application in source and/or object form alongside the corresponding library
+source so users can modify and relink; section4 describes equivalent source
+access from the same download location. Read the original bundled license and
+the [SPDX license text](https://spdx.org/licenses/LGPL-2.1.html). This motivates
+the complete-source route; it does not waive individual package obligations or
+establish that all inputs have already been delivered.
+
+Existing048 binds89 Ubuntu Noble source/version pairs to113/112 binary packages,
+original129/128 notices and both exact AppImages. The outer runtimes match
+type2-runtime8f39b89 except their named payload digest. Existing x64 relinking
+uses newer zlib-r1; do not relabel it as original-r0 or ARM evidence. Preserve
+the original-r0 recipe/source and architecture distinctions in new instructions.
+
+Only owned temporary source directories and local artifacts may be mutated.
+Use the frozen source, locked dependencies and original source checksums; never
+copy private configuration, credentials, machine inventories or untracked files.
+Library replacement/rebuilding must not require the production signing key.
+Keep implementation in repository release tooling; Machine Control owns any
+testbed lifecycle. If needed, prepare the test before boot, bound it, clean only
+owned paths, shut down and release claims on every exit.
+
+## Validation and next executable action
+
+First inspect the exact native component/notice inventory and bundled GPL/LGPL
+terms. Vendor Cargo inputs from an owned frozen source tree and verify locked
+offline metadata; inspect the actual web runtime source requirements. Verify
+all source-carrier members and hashes, and record honest scope and any remaining
+build/delivery gaps in a separate short report. Publication and shipment approval
+remain open under the cutover checklist.
+
+## Current local checkpoint
+
+The exact225 package copyright rows verify against both frozen native manifests
+and89 source/version pairs. Independent bounded ELF reads prove both bundled
+TIFF libraries require libjbig.so.0; its original notice says GPL-2+. Do not clear
+this actual component as an upstream-only tool or LGPL. The maintainer is asked
+to choose corresponding sources/appropriate GPL combined-binary terms or a TIFF
+rebuild without JBIG; no first-party license or signed binary has changed.
+The [GNU library guidance](https://www.gnu.org/licenses/gpl-faq.en.html#IfLibraryIsGPL)
+requires assessing the combined work separately from compatible module licenses.
+
+Frozen2b83 Cargo vendoring supplies733 packages/38,217 files. Empty-Cargo-home,
+locked offline metadata succeeds for both Linux targets; the portable relative
+config is also verified. The source graph includes build/test/unused-platform
+inputs rather than claiming733 shipped dependencies. Offline frozen web install,
+actual build/CSP and all1663 tracked source hashes pass without mutation.
+
+All27 production-lock npm distribution archives match their integrity fields.
+Sixteen preferred-source bindings use fourteen unique upstream archives,
+publisher gitHead or exact resolved release tags with package-version checks.
+The first Tauri framework tag had
+API2.11.0 instead of2.11.1 and is rejected; the correct API tag passes. A128MiB
+bound refuses the old number-library full repository; its integrity-verified
+package already includes all preferred TypeScript files. No unverified revision
+or source form is invented. Original failed source receipts remain.
+
+The final local source-input supplement is335,562,671 bytes, SHA-256
+`a0f771fb4c43263f5799fa202d31a5fe59de6157cfff50a98d85c2805a68a906`.
+All38,268 regular members verify, including733 Cargo inputs,27 exact npm
+distributions and14 preferred-source archives/16 bindings. Portable headers
+contain no machine paths or identities. This supplements the unchanged048
+native/runtime packet rather than constituting a standalone complete source
+offer. An initial duplicate-member carrier is rejected and its failed receipt
+retained. Owned mutable source/vendor/node_modules/build staging is removed.
+
+Separate061 closes the x64 original-zlib-r0 source-build/relink prototype gap:
+the exact unpatched1.3.2 source, original-r0 flags and explicit source-built
+static library feed both runtime links. Zlib checks and executed runtime
+version/help pass;24 exported members/seven static libraries verify. Installed
+r1 build tools remain intact and are not claimed as original-r0 packages.
+The rebuilt runtime differs from shipped bytes even after normalizing the named
+16-byte payload digest; neither reproducibility nor signed equivalence is
+claimed. This is headless x64 evidence, not ARM, FUSE or mounted product UI.
+Machine Control cleanup removes only owned roots/mounts and stops the owned
+unit; VM off, claim release and controller-root removal independently pass.
+
+Next: finish per-package native disposition and a usable native rebuild guide,
+then continue the selected licensing route after the maintainer's answer.
+Public delivery and ARM relink execution remain open. No source packet is
+uploaded, signed binary changed or signing material copied.

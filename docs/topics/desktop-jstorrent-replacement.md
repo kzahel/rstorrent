@@ -1,5 +1,15 @@
 # Desktop JSTorrent Replacement
 
+Tactical [293](../tactical/293-appimage-source-delivery.md), beneath259, verifies
+local exact2b83 application source inputs and original-r0 x64 runtime source
+build/relink. The rebuilt runtime differs from shipped bytes; no reproducibility
+or signature equivalence is claimed. Owned source staging and headless VM roots
+are removed, VM off/released. Actual bundled TIFF requires GPL-2+ JBIG in both
+images. Combined-binary terms versus a codec rebuild awaits a maintainer choice;
+no source license or signed binary changes. Final per-package disposition,
+complete native instructions, ARM execution and public delivery remain open.
+Best-effort Linux scope remains AppImage/headless without older-distro work.
+
 Slice024 passes exact a7 Intel-app ordinary GUI HTTPS updating under existing
 Rosetta on the ARM VM: ten assertions/nine refusals, four records, native
 Cmd-Q/reopen, independent privacy persistence and exact scoped restoration.
