@@ -47,7 +47,9 @@ ignored separate reports, rather than this summary.
   normal launch/retained reconnect and scoped cleanup/zero tabs/windows pass.
 - [x] Exact1.1.3 replaces the uploaded Web Store draft; native Reload verifies
   draft1.1.3/public1.1.1, reviewed listing/screenshots/privacy retained.
-- [ ] Finish retained-folder picker repair. Physical sleep/network/reboot and
+- [ ] Fix and requalify retained-folder picker repair: managed27 unexpectedly
+  resumes a paused torrent (Tactical292); independent fixture cleanup passes.
+  Physical sleep/network/reboot and
   populated old-store writers remain explicit. The other Chromebook stalls before app startup; guided recovery
   awaits confirmation of physical keyboard availability.
 - [x] Fresh Mac ARM GUI and Linux x64 automatic HTTPS updater/restart pass: ten

@@ -1,5 +1,13 @@
 # Android SAF Storage
 
+Finish-line slice056 (2026-10-10) finds managed27 normal retained-folder Repair
+changing a Paused complete torrent to Seeding, while independently verified bytes
+remain intact. Cancel and normal original-path restoration/cleanup pass separately.
+[Tactical292](../tactical/292-android-repair-paused-intent.md) owns a bounded
+Android stale-view Resume correction and isolated before/after validation. Existing
+health/replacement evidence does not qualify paused intent for this candidate.
+
+
 Topic: `android-saf-storage`
 
 Tactical259 now adds actual Play-managed code27 owned-folder outage/restoration

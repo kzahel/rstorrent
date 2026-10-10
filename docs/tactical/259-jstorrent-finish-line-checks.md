@@ -14,18 +14,18 @@ file-picker and keyboard assumptions; no gallery scripting/bypass is used.
 Separate before/after report has four390/1200 checks with browser/server reaped.
 The public accurate policy route and final submission/delivery remain open.
 
-Slice056 prepares a managed27 retained-root picker check on the empty selected
-owned folder: normal controlled1MiB intake/whole hash, source removal, Pause and
-Shutdown; marker/inventory-checked rename with no automatic original-path
-recreation; normal Repair picker cancellation followed by selecting the relocated
-tree. Require the same paused row/hash, a single retained-root presentation and
-actual provider grant. Restore the original folder/path through normal repair,
-then normal owned removal/Shutdown and zero tabs/windows. Original grant modes
-and unrelated grants must remain; a normal retake may advance its creation time.
-Do not read/edit managed private state or claim an opaque root ID unavailable
-from public evidence. No app reset, grant revocation, second permanent tree,
-OS reboot, store delivery or production publication. Stop at verified recovery
-and cleanup or an explicit normal-picker refusal, preserving failed attempts.
+Slice056 fails the managed27 retained-folder repair contract: a complete Paused
+row becomes Seeding after normal relocated-tree Repair. Independent whole1MiB
+hash remains identical with its original source closed. Cancel retains grants
+and bytes; normal Landscape exposes the clipped Portrait picker confirmation.
+Original-path restoration and normal Repair reproduce the unwanted Resume.
+Independent cleanup passes: normal Pause/Keep-data removal/Shutdown, exact owned
+file/marker removal, empty library/folder, alias grant released, unrelated grants,
+managed package and denied notification retained, Portrait restored and zero
+tabs/windows. Original URI/modes return with a normal retake's newer creation
+time. Original failed attempts stay failed. Tactical292 owns the bounded
+stale-presentation Resume correction and before/after API35 regression. Managed27
+is not relabeled as fixed; a new production candidate must exceed code27.
 
 Slice055 completes actual production-key1.1.3 with Play-managed27: normal
 pairing approval connects; normal Shutdown removes the service and displays
