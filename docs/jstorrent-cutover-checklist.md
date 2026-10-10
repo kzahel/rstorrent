@@ -27,7 +27,10 @@ permissions. Slice044 records the actual published1.1.1/managed27 pair: generic 
 extension Offline/launch-to-Play fallback, usable native shelf return, normal
 Shutdown, owned extension removal, identity/grant retention and zero workspace.
 Imported-cohort update guidance and complete scenario acceptance remain open.
-Three prepared draft screenshot replacements are still outstanding. Slices038–041
+Slice045 replaces all three retired draft screenshots with the reviewed light
+Torrents, Library and dark Torrents images; save and reload verify their order.
+Original icon/copy/category/language/privacy remain; draft1.1.2 and published1.1.1
+are unchanged. No submission or publication. Slices038–041
 pass their bounded managed/DMG checks;042 verified all VMs off/claims available,
 both physical workspaces empty and the private updater absent with ordinary
 routes unchanged. The full delivery/lifecycle/source/policy/shipment rows below

@@ -1,5 +1,15 @@
 # Product Surfaces And JSTorrent Migration
 
+Slice045 saves and reload-verifies the three reviewed current-UI screenshots in
+the existing Web Store item's draft: light Torrents, light Library, dark Torrents.
+Their exact opaque RGB1280×800 hashes match Slice019; DEMO DATA/adapter labels
+remain truthful. Actual before/after dashboard captures show the replacement and
+order. Original icon, title,844-character description, category/language and
+privacy categories/certifications/remote-code/policy URL remain. Draft1.1.2 and
+published1.1.1 are unchanged. No review submission/publication or live-pairing
+claim follows. The separate report passes390/1200px image/overflow/runtime checks;
+bundled headless Chromium and report server terminate. Reports remain ignored.
+
 The maintainer pushed main through `2b83ed91`; fresh signed candidate
 [38029276220](https://github.com/kzahel/rstorrent/actions/runs/38029276220)
 builds that exact source with publication disabled. Original updater-root signing

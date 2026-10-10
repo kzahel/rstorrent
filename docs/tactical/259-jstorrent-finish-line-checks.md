@@ -2,6 +2,19 @@
 
 ## Current restart checkpoint, 2026-10-10
 
+Slice045 completes the approved replacement of only the three retired Web Store
+draft screenshots with reviewed019 light Torrents, Library and dark Torrents
+captures. Exact asset hashes match; actual native gallery confirms their order
+after Item saved and reload. Title/icon/844-character description/category/language
+and privacy values remain; draft1.1.2/published1.1.1 stay unchanged. DEMO DATA and
+adapter labels remain; no live-pairing claim or review submission/publication.
+The native picker clipboard shortcut timed out before upload; slash Go to Folder
+and exact selected filenames succeeded. Original local report assertion counted
+Remove image controls too; corrected image-role assertion verifies three actual
+images. Four report/index checks at390/1200px pass with no overflow, broken
+images or runtime errors; bundled browser/server terminate. Actual dashboard
+before/after, native evidence and exact uploaded hashes remain ignored.
+
 The maintainer's push through `2b83ed91` is independently confirmed.
 Slice043 starts the fresh signed production-identity candidate workflow
 [38029276220](https://github.com/kzahel/rstorrent/actions/runs/38029276220),
