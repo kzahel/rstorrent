@@ -1,6 +1,43 @@
 # Tactical 259: JSTorrent Finish-Line Checks
 
-## Current restart checkpoint: signed rebuilds, 2026-10-10
+## Current restart checkpoint: managed Play and final sources, 2026-10-10
+
+The maintainer now authorizes proceeding through the described final checks and
+staged store/release/website cutover, beyond the earlier artifact-only boundary.
+Preserve exact-source and original-trust gates; do not relabel historical runs.
+Commit each completed slice. Reports and images remain ignored.
+
+Separate068 publishes original-upload-signed Android28 to the existing internal
+Play track only. Actual Play27-to28 update on the available physical Chromebook
+retains UID, first-install time, installer, payload and persisted SAF grants.
+Independent installed APK verification matches the existing Play app-signing
+certificate. Normal paused/running Repair, source-offline whole hashes, both
+cold reopens and six joined Shutdowns pass. Owned row/payload removed; original
+empty selected folder retained; all observed tabs/application windows closed.
+Production Play is unchanged. Broader old-writer/reboot/grant-loss and unavailable
+second-device cases retain their recorded scope.
+
+Separate069 prepares the final847,197,977-byte source carrier bound to both
+signedff632f45 AppImages. SHA256
+`124233d3f2aad395fa2bff07be4d2ae03aafdedaef2f6ab181574251583c1e5e`.
+All38,866 members verify independently;85 source pairs cover217 package/arch
+rows. Exact application, locked dependency sources, custom native modifications,
+original notices/runtime sources and usable rebuild/relink guide are included.
+Empty-Cargo-home offline metadata passes both targets; full offline compilation
+and binary reproducibility are not claimed. Four adversarial packer tests pass.
+
+Separate070 executes the original-r0 source/runtime build and separate relink on
+native ARM64. All24 exported hashes and three AArch64 ELF outputs verify; version/
+help pass. The initial independent verifier's marker-case error is corrected and
+retained. Owned units, roots/mounts and controller staging removed; VM off/released.
+This closes ARM headless relink evidence, not ARM product-window or FUSE evidence.
+
+Next: proportional actual signedff632 Linux x64 installed/updater qualification;
+verify source public delivery, accurate public policy and website source links,
+then Web Store submission and staged publication/live routes. Store review and
+physical recovery remain observable external dependencies, not invented passes.
+
+## Earlier checkpoint: signed rebuilds, 2026-10-10
 
 The maintainer authorizes pushing the prepared commits to main and running
 the existing artifact-only signed workflows. Source `ff632f45` is pushed;

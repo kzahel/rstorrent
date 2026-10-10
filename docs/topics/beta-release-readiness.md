@@ -1,5 +1,15 @@
 # Beta Release Readiness
 
+Current authorized finish-line scope includes staged publication. Separate068
+qualifies actual internal Play27-to28 delivery, preserved installation/grants and
+paused/running Repair with independent hashes, cold reopens, managed signer and
+clean Chromebook workspace. Production Play remains unchanged. Separate069 binds
+a complete local source carrier to signedff632 AppImages;38,866 members and both
+offline metadata graphs verify. Original-r0 ARM runtime build/relink now executes
+under070, complementing x64;24 exports/AArch64 checks and VM-off/release pass.
+Public source delivery, proportional new Linux installed evidence and live
+cutover remain next. Historical paragraphs below retain their original scope.
+
 Explicitly authorized main push and artifact-only signed rebuilds now pass at
 `ff632f45`: Android run38050769738 and desktop run38050770001. Independent
 Android28 APK/AAB identity/original-upload certificate, dual ABI,16-KiB and notice

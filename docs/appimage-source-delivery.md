@@ -1,88 +1,71 @@
-# AppImage source delivery preparation
+# AppImage source delivery
 
-Status: local preparation, not a published or complete source offer.
-Maintainer decision: retain MIT; rebuild Linux packaging to remove GPL-only
-runtime dependencies under Tactical294. Frozen assets below are historical
-bindings and must be reconciled with that new package before shipping.
+Status: final local carrier independently verified, 2026-10-10. Public download
+and adjacent website links remain a shipment gate.
 Owner: [beta-release-readiness](topics/beta-release-readiness.md).
-Execution and remaining work: [Tactical293](tactical/293-appimage-source-delivery.md).
-Linux remains best effort; iOS is excluded.
+Execution: [Tactical293](tactical/293-appimage-source-delivery.md).
+Linux remains best effort; iOS is excluded. First-party source remains MIT;
+third-party sources retain their original terms.
 
-The reviewed [native recipe](../distribution/linux-native/README.md) now builds
-custom TIFF and GTK3 appindicator libraries, retaining original security patches,
-archives, copyrights and exact patch/configuration/compiler provenance. The new
-pre-signing AppImage hook embeds those source materials and rejects the two
-identified GPL-only runtime chains. Local x64/ARM ABI/codec/offscreen tray/package
-checks and actual x64 product window/tray pass under294. Fresh signed source
-`ff632f45`/run38050770001 now passes independent extracted custom-source/native
-gates on both architectures under259. Remaining source delivery is tracked in293;
-ARM product UI and outer
-runtime relink remain separate.
-This does not convert the historical frozen packet into a new public source offer.
+## Final signed binding
 
-The source binding is frozen desktop commit
-`2b83ed9137fc3b779fabcb3f20b421e59035fec9`, version0.3.0. Android28 and
-extension1.1.3 are separate candidates, not substitutions for this binding.
+The carrier matches desktop source
+`ff632f4588a474d7b169de3cea228bd406e6982d`, version0.3.0, signed candidate
+run38050770001. It replaces the historical2b83 source packets for shipment.
+Those earlier receipts remain historical and are not new-package qualification.
 
-## Prepared materials
+| Asset | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `JSTorrent_0.3.0_amd64.AppImage` | 101231096 | `88abbeac098954313493dcdc33e2741754d16a534e273309ac51f435b9bd19e4` |
+| `JSTorrent_0.3.0_aarch64.AppImage` | 99404296 | `c90800c587da5eb4d8881f2e912fb6726fa83e1371d75b53d9848e474a1242e7` |
+| `JSTorrent_0.3.0_AppImage-sources-final.tar.gz` | 847197977 | `124233d3f2aad395fa2bff07be4d2ae03aafdedaef2f6ab181574251583c1e5e` |
 
-| Local asset | Contents | SHA-256 |
-| --- | --- | --- |
-| `JSTorrent_0.3.0_AppImage-source-review-materials.tar` | Exact first-party source,89 original Ubuntu source/version pairs, original notices and selected runtime source/recipes | `ad7c607bce9853db22766ed54331f7f29304458065d9614b4b48143e069bf9aa` |
-| `JSTorrent_0.3.0_application-source-inputs.tar.gz` | Locked Cargo inputs, exact npm distributions, preferred web sources and provenance | `a0f771fb4c43263f5799fa202d31a5fe59de6157cfff50a98d85c2805a68a906` |
+The portable source archive includes38,866 independently checksum-verified
+regular members: exact application source,733 locked Cargo inputs,27 npm
+archives,14 preferred upstream archives,85 exact Ubuntu source/version pairs
+covering217 binary-package/architecture rows, original notices, both custom
+native rebuild inputs, original AppRun and outer-runtime sources/recipes/patches,
+and an architecture-aware separate relink script. `source-index.json` binds
+172 x64/171 ARM selected native components and original outer-runtime bytes.
+Source-file license labels do not classify every compiled file by unrelated
+build tools or tests in the same upstream repository.
 
-Both archives contain internal checksum inventories. Extract into a new owned
-directory, enter each archive's top-level directory, and run:
+The custom TIFF/appindicator source recipes preserve original security patches,
+copyrights and provenance. Exact signed extracted checks confirm that the
+reviewed GPL-only runtime chains are absent. Remaining library source, notice
+and modification materials retain their own requirements; this is not a blanket
+legal or reproducibility clearance.
 
-```bash
-sha256sum --check SHA256SUMS
-```
+## Extraction and rebuilding
 
-The application supplement includes `first-party-2b83ed91.tar`. Extract that
-into `source/` beside `cargo-vendor/`. Copy its supplied relative Cargo config
-into `source/.cargo/config.toml`. Run `cargo metadata --locked --offline` with
-the selected Linux target before building. Empty-Cargo-home metadata has been
-checked for both targets; this is not a full offline compilation claim.
+Extract into a new owned directory and run `sha256sum --check SHA256SUMS`.
+Follow the archive's `README.md`, also maintained as
+[the rebuild guide](../distribution/linux-native/source-rebuild.md).
+It describes exact-source application rebuilding, relative Cargo vendoring,
+original Ubuntu descriptors, custom native-library changes, manual AppDir
+replacement, AppRun and original-r0 outer-runtime rebuilding/relinking. It uses
+ordinary development tools and no original signing keys.
 
-Use the frozen source's `DEVELOPMENT.md` and desktop release workflow for Rust,
-Node, native dependencies, GLib patch, web build, sidecar and Tauri packaging
-commands. A modified local build uses no production signing key. Preserve all
-notices; do not distribute a modified binary under an original signature.
+Independent empty-Cargo-home locked offline metadata passes for both targets:
+586 x64 and584 ARM resolved packages. This does not claim a complete offline
+compilation or sealed npm build environment. Original descriptor signatures are
+retained without asserting independent OpenPGP authentication. Every selected
+package source is supplied; all85 upstream package builds have not been run.
 
-## Native rebuild and runtime
+Original unpatched-zlib-r0 runtime source builds and separate object/seven-archive
+relinks execute successfully on both x64 and ARM. Version/help and exported
+hashes pass; ARM exports independently verify AArch64 ELF. Rebuilt bytes differ
+from official bytes, so no reproducibility or signed-equivalence claim is made.
+The carrier guide predates the ARM execution receipt; Tactical293 records it.
+Neither relink execution qualifies mounted FUSE or the ARM product window.
 
-Each native source directory includes its original `.dsc`, upstream archive
-and Debian changes. For example, in a new owned Ubuntu24.04 build environment:
+## Shipment
 
-```bash
-dpkg-source -x ubuntu/libayatana-indicator_0.9.4-1build1/libayatana-indicator_0.9.4-1build1.dsc indicator-source
-cd indicator-source
-dpkg-checkbuilddeps
-dpkg-buildpackage -b -us -uc
-```
-
-Install the descriptor's declared build dependencies in that environment first.
-Its packaging and upstream sources own the actual build instructions. All89
-package builds have not been executed. The `.dsc` checksums bind source files;
-OpenPGP signatures are retained but not independently authenticated here.
-
-The native packet's nested runtime archive supplies original source/recipes,
-patches and notices. Its old x64 relink prototype uses zlib-r1. Separate061
-now verifies original unpatched-r0 source building and a separate relink using
-the explicit r0 static library, with successful version/help execution. Rebuilt
-bytes differ from shipped bytes. ARM relink and mounted AppImage/FUSE execution
-remain unrun; none of these receipts establishes binary reproducibility.
-
-## Remaining shipment work
-
-The frozen2b83 images bundle GPL-2+ JBIG through TIFF and GPL-3 Ayatana indicator through
-the tray library. The maintainer has selected retaining MIT and removing these
-GPL-only runtime dependencies under Tactical294, followed by new qualification.
-Existing first-party MIT source terms remain unchanged. Remaining LGPL libraries
-still require their notices and source/modification/relink materials.
-The final per-package disposition and distribution-ready instructions are open.
-
-The proposed delivery is versioned sources beside the AppImages, linked adjacent
-to downloads on the website. Publication, real downloadable URLs and shipment
-terms must be verified before that route can count as delivered. No release,
-website, feed or store activation is authorized by this preparation.
+Publish this exact versioned source archive beside the matching AppImages,
+retain original notices and link it adjacent to both Linux downloads. Verify
+actual public bytes and SHA-256, not just the locator or upload status. If any
+AppImage is rebuilt, rebind the carrier to the new exact binaries first.
+`scripts/package-appimage-sources.py` performs offline guarded preparation; it
+refuses mismatched source/version, dependency locks, source hashes or assets.
+Its four adversarial tests cover integrity, membership, duplicates and unsafe
+paths. It neither fetches, signs nor publishes.

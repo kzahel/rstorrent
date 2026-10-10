@@ -1,5 +1,15 @@
 # Desktop JSTorrent Replacement
 
+Current authorized finish-line scope includes staged publication. Separate068
+qualifies actual internal Play27-to28 delivery, preserved installation/grants and
+paused/running Repair with independent hashes, cold reopens, managed signer and
+clean Chromebook workspace. Production Play remains unchanged. Separate069 binds
+a complete local source carrier to signedff632 AppImages;38,866 members and both
+offline metadata graphs verify. Original-r0 ARM runtime build/relink now executes
+under070, complementing x64;24 exports/AArch64 checks and VM-off/release pass.
+Public source delivery, proportional new Linux installed evidence and live
+cutover remain next. Historical paragraphs below retain their original scope.
+
 Authorized source `ff632f45` now passes artifact-only run38050770001: all five
 signed lanes/collector,15 independent hashes, six original-root signatures and
 wrong-root refusals,11 selectors, both Mac trust/notary/staples and native Windows

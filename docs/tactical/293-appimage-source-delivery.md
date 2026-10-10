@@ -55,6 +55,18 @@ Keep implementation in repository release tooling; Machine Control owns any
 testbed lifecycle. If needed, prepare the test before boot, bound it, clean only
 owned paths, shut down and release claims on every exit.
 
+## Authorized completion slice, 2026-10-10
+
+The maintainer now directs proceeding through the remaining release work.
+Rebind the complete local source carrier to signed source ff632f45. Reuse
+verified dependency inputs only after exact Cargo/npm lock equivalence; replace
+the first-party snapshot and every AppImage manifest/notice/runtime binding.
+Include every selected Ubuntu descriptor/source, both embedded custom builds,
+original outer-runtime sources and an architecture-neutral relink recipe.
+Produce a per-package component/source/notice delivery index and checksum the
+whole archive independently. Preserve historical packets and honest execution
+limits; source availability is distinct from a full offline rebuild.
+
 ## Validation and next executable action
 
 First inspect the exact native component/notice inventory and bundled GPL/LGPL
@@ -139,3 +151,30 @@ the two unchanged asset hashes, extraction/checksum contract, relative Cargo
 layout and a concrete exact native descriptor example. It preserves which
 commands have actually executed and does not call preparatory instructions or
 unpublished assets a complete corresponding-source offer.
+
+## Final local completion, 2026-10-10
+
+Separate069 supersedes the historical2b83 shipment binding with one final carrier
+for both exact signedff632 AppImages. Its847,197,977 bytes hash to
+`124233d3f2aad395fa2bff07be4d2ae03aafdedaef2f6ab181574251583c1e5e`.
+Independent verification covers38,866 portable regular members,85 exact Ubuntu
+source/version pairs and217 package/architecture rows,172/171 native components,
+733 locked Cargo inputs,27 npm distributions and14 preferred-source archives.
+Original notices, both custom native source trees, AppRun and outer-runtime
+sources/recipes/patches, architecture-aware relinking and the usable guide are
+included. Offline locked metadata resolves586 x64/584 ARM packages with an empty
+Cargo home; complete offline compilation is not inferred. Owned extraction removed.
+The deterministic packer refuses changed source/version/dependency locks, reviewed
+inputs or binary bytes. Four independent adversarial archive tests pass.
+
+Separate070 executes original-r0 source building and separate relinking on native
+ARM64. Zlib tests and runtime version/help pass;24 export hashes and all three
+AArch64 ELF outputs independently verify. Initial verifier marker-case failure is
+retained and corrected. Bytes differ from official output; no reproducibility or
+signed-equivalence claim. Owned roots, mounts/unit and controller staging removed;
+VM off and claim released. ARM mounted FUSE/product-window remain separate.
+
+The maintainer's latest instruction authorizes continuing through staged shipment.
+Next: publish the exact matching source asset with equivalent adjacent access,
+verify public bytes/checksum and website links. Preparation is complete; public
+delivery remains open and keeps this tactical Active.
