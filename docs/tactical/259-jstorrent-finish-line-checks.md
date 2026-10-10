@@ -1,5 +1,45 @@
 # Tactical 259: JSTorrent Finish-Line Checks
 
+## Current restart checkpoint: signed rebuilds, 2026-10-10
+
+The maintainer authorizes pushing the prepared commits to main and running
+the existing artifact-only signed workflows. Source `ff632f45` is pushed;
+Android run38050769738 and desktop run38050770001 are dispatched on main.
+Desktop candidate=true/publication=false; Android's tag-only publisher is
+excluded. Store submissions, tags, releases, feeds and production websites
+remain outside this authorization.
+
+Stop this slice at successful hosted checks and independently verified exact
+downloaded artifacts, preserving failures rather than relabeling old receipts.
+Verify Android28 identity, original upload signature, dual ABI, 16-KiB alignment
+and notices, then repeat normal paused/running Repair in a fresh owned API35
+emulator using that release APK. Extend the existing harness with an explicit
+production-package selector; no diagnostic receiver or private-state access.
+Require source-offline whole hashes, cold reopens and joined emulator/AVD cleanup.
+This cannot qualify Play-managed delivery or the separate Play app-signing key.
+Verify all five desktop legs, original updater signatures, selectors, Mac trust
+and extracted package inventories, including the new Linux native/source gates.
+Separate ignored reports066/067 retain hashes, observations and cleanup.
+
+Completed: both hosted runs succeed with publishing skipped/disabled. Independent
+Android APK SHA256 `12d1189f7208410ea89806b6175ce286110a8fbd512f3f2dfbac3fcde41cd1d6`
+and AAB `35898d5f11f3fe6e8cff7092f3c517f031d79a1d9959fc71d68bb3772abf5c18`
+bind original-upload certificate/identity, both ABIs, alignment and notices.
+Final owned API35 release run passes paused/running Repair, source-offline whole
+hashes, both cold reopens, four joined Shutdowns and14 stable-frame/brand checks.
+Emulator/AVD removed. First verifier Path/string setup failure and first ADB-offline
+attempt remain; second functional pass remains separately scoped. An apparent
+blank duplicate in the image tool is corrected by exact PNG byte comparison.
+
+Desktop passes15 exact asset hashes, five legs, six original-root signatures and
+wrong-root refusals,11 selectors, both Mac trust/notary/staples, native Windows
+NSIS/MSI trust and five independent inventories. Linux ARM/x64 have171/172 selected
+native components with matching custom sources and absent reviewed GPL chains.
+Owned extraction/staging/server removed, all VMs off and Windows claim released.
+Two short reports pass six390/1200 checks with their bundled browser/server reaped.
+Next: rebind source delivery under293 and qualify approved managed Android28
+delivery/repair; installed/publication gates are unchanged by artifact-only builds.
+
 Separate063-065 complete Tactical294's bounded native packaging slice. Native
 x64/ARM source builds pass130 TIFF tests/all240 original exports each, codec,
 loader, relocation, offscreen GTK and copied AppDir source/notice/MIT gates;
@@ -12,7 +52,7 @@ Owned units/processes/roots/mounts/captures removed; both VMs off/released.
 Fresh original-signed candidates/source delivery, ARM product UI and ARM outer
 runtime relink remain separate. No push or publication occurs.
 
-## Current restart checkpoint, 2026-10-10
+## Earlier checkpoint before signed rebuilds, 2026-10-10
 
 The maintainer selects retaining MIT and rejects the proposed GPL-3 combined
 Linux binary route. Tactical294 owns bounded GPL-only runtime dependency

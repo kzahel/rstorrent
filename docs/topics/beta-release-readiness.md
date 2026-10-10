@@ -1,5 +1,18 @@
 # Beta Release Readiness
 
+Explicitly authorized main push and artifact-only signed rebuilds now pass at
+`ff632f45`: Android run38050769738 and desktop run38050770001. Independent
+Android28 APK/AAB identity/original-upload certificate, dual ABI,16-KiB and notice
+checks pass. Normal release-APK Repair/whole hashes/cold reopens pass in an owned
+API35 emulator; final14 frame/brand captures and emulator/AVD cleanup pass.
+The failed ADB attempt and corrected verifier setup remain recorded. All five desktop
+lanes/collector,15 hashes, six original-root signatures/wrong-root refusals,
+11 selectors, both Mac trust/staples and native Windows NSIS/MSI trust pass.
+Five independent inventories include both Linux custom-source/native guards.
+Windows staging/server is removed, VM off and claim released. Separate066/067
+own exact evidence. Store delivery, source offer, installed qualification and
+publication retain their separate gates; no tag/release/feed/store is activated.
+
 Tactical294 completes its bounded native packaging slice. Both native x64 and
 ARM source builds pass130 TIFF tests/all240 original exports, relocation,
 codec/original-loader, offscreen GTK and source/notice/MIT package gates.

@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import platform
 import shlex
+import struct
 import subprocess
 import tempfile
 import time
@@ -33,10 +34,17 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apk", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--package", choices=("org.rstorrent.bootstrap", "com.jstorrent.app"),
+                        default="org.rstorrent.bootstrap",
+                        help="Installed identity in the fresh owned emulator; never an existing device")
     args = parser.parse_args()
+    ui.PACKAGE = args.package
+    ui.ACTIVITY = ("com.jstorrent.app/com.jstorrent.app.MainActivity"
+                   if args.package == "com.jstorrent.app" else f"{args.package}/.MainActivity")
     args.output.mkdir(parents=True, exist_ok=False)
     report = {"result": "fail", "stages": [], "api": 35,
-              "scope": "Disposable debug installation; normal intake and SAF picker repair, not store delivery"}
+              "package": args.package,
+              "scope": "Fresh owned emulator installation; normal intake and SAF picker repair, not store delivery"}
     sdk = android_sdk_root()
     abi = {"arm64": "arm64-v8a", "aarch64": "arm64-v8a", "x86_64": "x86_64"}[platform.machine()]
     apk = args.apk.resolve()
@@ -68,9 +76,50 @@ def main() -> int:
 
                 def snapshot(label: str) -> ET.Element:
                     root = fresh_ui()
+                    # Format reference: Android15 cmds/screencap/screencap.cpp,
+                    # frameworks/base tag android-15.0.0_r1 (no source copied).
+                    # It emits four uint32 values followed
+                    # by tightly packed rows. Observe two nonblank stable frames
+                    # before saving the unchanged PNG; accessibility can lead draw.
+                    deadline = time.monotonic() + 15
+                    previous = None
+                    frames = 0
+                    while time.monotonic() < deadline:
+                        captured = subprocess.run([*adb.command, "exec-out", "screencap"],
+                                                  capture_output=True, check=True, timeout=5).stdout
+                        if len(captured) < 16:
+                            raise ScenarioFailure("Truncated raw screenshot")
+                        width, height, format_, _ = struct.unpack_from("<IIII", captured)
+                        if (format_ != 1 or not 100 <= width <= 4096 or not 100 <= height <= 4096
+                                or len(captured) != 16 + width * height * 4):
+                            raise ScenarioFailure("Unexpected raw screenshot format")
+                        start, end = height // 20, height * 19 // 20
+                        pixels = captured[16 + start * width * 4:16 + end * width * 4]
+                        colors = {pixels[index:index + 4]
+                                  for row in range(0, end - start, 16)
+                                  for column in range(0, width, 16)
+                                  for index in [(row * width + column) * 4]}
+                        digest = hashlib.sha256(pixels).hexdigest()
+                        frames += 1
+                        if len(colors) > 8 and previous == digest:
+                            report.setdefault("renderedFrameChecks", []).append(
+                                {"stage": label, "frames": frames, "sampledColors": len(colors),
+                                 "centralPixelsSha256": digest})
+                            break
+                        previous = digest if len(colors) > 8 else None
+                        time.sleep(.3)
+                    else:
+                        raise ScenarioFailure(f"No stable nonblank rendered frame at {label}")
+                    root = fresh_ui()
                     (args.output / f"{label}.xml").write_text(ET.tostring(root, encoding="unicode"))
                     adb.capture_screenshot(args.output / f"{label}.png")
                     report["stages"].append(label)
+                    leaks = [value for node in root.iter()
+                             for key in ("text", "content-desc")
+                             if "rstorrent" in (value := node.get(key, "")).casefold()]
+                    report.setdefault("visibleBrandChecks", []).append({"stage": label, "leaks": leaks})
+                    if leaks:
+                        raise ScenarioFailure(f"Visible old branding at {label}: {leaks}")
                     print(label, flush=True)
                     return root
 
@@ -275,6 +324,11 @@ def main() -> int:
                     session = None
                     gc.collect()
                 if owned is not None:
+                    report["emulatorExitBeforeCleanup"] = owned.process.poll()
+                    if owned.log_path.exists():
+                        data = owned.log_path.read_bytes()
+                        report["emulatorLogTruncated"] = len(data) > 2 * 1024**2
+                        (args.output / "headless-avd.log").write_bytes(data[-2 * 1024**2:])
                     owned.close()
                     owned = None
                     report["ownedEmulatorReaped"] = True

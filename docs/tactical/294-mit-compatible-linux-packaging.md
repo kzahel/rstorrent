@@ -3,6 +3,12 @@
 Status: Complete (bounded native packaging slice), 2026-10-10. User-directed beneath finish-line259/293.
 Owners: product-direction, beta-release-readiness and desktop-jstorrent-replacement.
 
+Subsequent259 qualification: authorized source `ff632f45`/run38050770001 passes
+all signed lanes and collector. Independent exact ARM/x64 AppImages pass the
+embedded custom-source/notice and reviewed GPL-chain gates with171/172 selected
+components. Separate067 owns signatures/package receipts. Source delivery and
+installed/runtime acceptance remain separate from this completed native slice.
+
 ## Scope and stopping condition
 
 Retain MIT and remove the GPL-only runtime library dependencies confirmed in

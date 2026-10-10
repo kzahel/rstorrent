@@ -13,8 +13,10 @@ custom TIFF and GTK3 appindicator libraries, retaining original security patches
 archives, copyrights and exact patch/configuration/compiler provenance. The new
 pre-signing AppImage hook embeds those source materials and rejects the two
 identified GPL-only runtime chains. Local x64/ARM ABI/codec/offscreen tray/package
-checks and actual x64 product window/tray pass under294. Fresh signed candidates
-and remaining source delivery are tracked in259/293; ARM product UI and outer
+checks and actual x64 product window/tray pass under294. Fresh signed source
+`ff632f45`/run38050770001 now passes independent extracted custom-source/native
+gates on both architectures under259. Remaining source delivery is tracked in293;
+ARM product UI and outer
 runtime relink remain separate.
 This does not convert the historical frozen packet into a new public source offer.
 
@@ -73,7 +75,7 @@ remain unrun; none of these receipts establishes binary reproducibility.
 
 ## Remaining shipment work
 
-Both images bundle GPL-2+ JBIG through TIFF and GPL-3 Ayatana indicator through
+The frozen2b83 images bundle GPL-2+ JBIG through TIFF and GPL-3 Ayatana indicator through
 the tray library. The maintainer has selected retaining MIT and removing these
 GPL-only runtime dependencies under Tactical294, followed by new qualification.
 Existing first-party MIT source terms remain unchanged. Remaining LGPL libraries

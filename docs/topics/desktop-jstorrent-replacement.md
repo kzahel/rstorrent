@@ -1,5 +1,14 @@
 # Desktop JSTorrent Replacement
 
+Authorized source `ff632f45` now passes artifact-only run38050770001: all five
+signed lanes/collector,15 independent hashes, six original-root signatures and
+wrong-root refusals,11 selectors, both Mac trust/notary/staples and native Windows
+NSIS/MSI Authenticode. Five extracted inventories include both Linux custom-source
+and reviewed GPL-chain refusal gates. Separate067 binds the exact new bytes;
+prior installed/update receipts remain historical. Owned extracts/Windows staging
+and server are removed; all VMs are off and the Windows claim released.
+Source delivery, proportional installed qualification and publication remain.
+
 Tactical294 completes its bounded native packaging slice. Both native x64 and
 ARM source builds pass130 TIFF tests/all240 original exports, relocation,
 codec/original-loader, offscreen GTK and source/notice/MIT package gates.

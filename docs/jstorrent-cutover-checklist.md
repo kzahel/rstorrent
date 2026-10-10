@@ -19,7 +19,13 @@ The detailed contracts below remain authoritative. This short list is the
 current work; dated attempts and exact evidence belong to Tactical259 and the
 ignored separate reports, rather than this summary.
 
-- [x] Fresh desktop candidate: source `2b83ed91`,
+- [x] Fresh MIT-compatible desktop candidate: source `ff632f45`,
+  [run38050770001](https://github.com/kzahel/rstorrent/actions/runs/38050770001),
+  five signed lanes/collector,15 independent hashes, six original-root signatures
+  and wrong-root refusals,11 selectors, Mac trust/staples and native Windows
+  NSIS/MSI signatures pass. Five extracted inventories and both Linux custom-source
+  gates pass. Prior installed receipts stay historical; Windows VM off/released.
+- [x] Historical desktop candidate: source `2b83ed91`,
   [run38029276220](https://github.com/kzahel/rstorrent/actions/runs/38029276220),
   five signed lanes/collector,15 hashes, six original-root signatures/wrong-root
   refusals,11 selectors, both Mac trust/notary/staples and five package inventories.
@@ -60,7 +66,14 @@ ignored separate reports, rather than this summary.
   GPL-only libraries. Build/hooks and extracted refusal gates added; both VMs
   off/released. Fresh signed Linux qualification/source delivery remain open;
   ARM product UI and outer-runtime relink are separate.
-- [ ] Run the original-signed Android28 build and re-run managed repair.
+- [x] Original-upload-signed Android28 APK/AAB: source `ff632f45`,
+  [run38050769738](https://github.com/kzahel/rstorrent/actions/runs/38050769738),
+  original upload certificate, production identity, both ABIs,16-KiB alignment,
+  bundle validation and exact notices pass independently. Normal release-APK
+  Repair preserves paused/running intent, whole hashes and both cold reopens
+  in a fresh owned API35 emulator. Final14 frame/brand snapshots pass; four
+  Shutdowns join and emulator/AVD cleanup passes. Initial failures stay recorded.
+- [ ] Deliver Android28 through an approved Play route and re-run managed repair.
   Actual managed27 retains the paused-intent failure; fixture cleanup passes.
   Physical sleep/network/reboot and
   populated old-store writers remain explicit. The other Chromebook stalls before app startup; guided recovery
@@ -70,9 +83,10 @@ ignored separate reports, rather than this summary.
   private trial removal. Historical A7 x64-under-Rosetta receipts retain their
   exact scope; physical Intel/Linux ARM/FUSE remain unrun.
 - [ ] Complete selected native redistribution/source/relink disposition and a
-  real source-delivery route. Both AppImages bundle GPL JBIG through TIFF and
-  GPL-3 Ayatana through the tray library. MIT is retained:294 owns removal of
-  those GPL-only runtime dependencies and fresh Linux package qualification.
+  real source-delivery route. Historical2b83 AppImages bundle GPL JBIG through
+  TIFF and GPL-3 Ayatana through the tray library. MIT is retained:294's native
+  rebuild removes those chains; both fresh signed packages pass extracted
+  native/source gates. Corresponding-source delivery and installed checks remain.
   ARM relink and complete native instructions remain open. Verify accurate public privacy and obtainable
   website/download metadata before cutover; prepared pages are not deployed.
 - [ ] Review the exact shipment, supported gaps, soak/stop criteria and recovery

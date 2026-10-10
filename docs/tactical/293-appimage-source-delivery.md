@@ -14,7 +14,8 @@ product-surfaces-and-migration. Preserve accepted best-effort Linux scope.
 
 ## Scope and stopping condition
 
-Prepare a concrete source-delivery candidate for the exact frozen2b83 AppImages.
+Prepare a concrete source-delivery candidate for the exact signedff632f45
+AppImages, preserving frozen2b83 materials as historical inputs.
 Index every original native notice and corresponding source pair; inspect the
 actual packaged component licenses rather than inferring a library's terms from
 all files in its upstream project. Extend the existing review packet with locked
@@ -122,7 +123,13 @@ claimed. This is headless x64 evidence, not ARM, FUSE or mounted product UI.
 Machine Control cleanup removes only owned roots/mounts and stops the owned
 unit; VM off, claim release and controller-root removal independently pass.
 
-Next: carry294's MIT-compatible native rebuild inputs into a new source binding,
+New source `ff632f45` now has successful artifact-only signed candidates in
+run38050770001. Independent extracted gates verify171 ARM/172 x64 selected
+components and both embedded custom-source builds; the reviewed GPL-only chains
+are absent. Original-root signatures and full package inventories pass under067.
+These are new bytes, not the frozen packets above; no public source offer follows.
+
+Next: carry294's MIT-compatible native rebuild inputs into that new source binding,
 finish per-package native disposition and the native rebuild guide.
 Public delivery and ARM relink execution remain open. No source packet is
 uploaded, signed binary changed or signing material copied.
