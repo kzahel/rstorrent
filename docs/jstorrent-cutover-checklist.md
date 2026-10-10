@@ -17,8 +17,10 @@ copy and independent store timing.
 
 The short [operational sequence](jstorrent-cutover-operations.md) records exact
 release bindings, staged delivery, ownership and stop/recovery defaults.
-Current execution: source-bearing desktop draft verified; extension1.1.3 actually
-pending deferred review; public privacy deployed; preview feed separation deployed.
+Current execution: desktop0.3.0 and its source archive are public; all17 actual
+downloads pass hashes. The website is deployed and production updater is active
+with11 qualified selectors; preview offers remain unchanged. Extension1.1.3
+is pending deferred review; public privacy is deployed.
 Android28 production preparation has managed publishing enabled; compatibility
 scope for older32-bit devices is being reviewed. No pending approval or unrun
 physical test is checked off. The final managed28 background hour is running.
@@ -94,17 +96,17 @@ ignored separate reports, rather than this summary.
   checks each, four-record native Quit/reopen, restoration/off/release and shared
   private trial removal. Historical A7 x64-under-Rosetta receipts retain their
   exact scope; physical Intel/Linux ARM/FUSE remain unrun.
-- [ ] Complete selected native redistribution/source/relink disposition and a
+- [x] Complete selected native redistribution/source/relink disposition and a
   real source-delivery route. Historical2b83 AppImages bundle GPL JBIG through
   TIFF and GPL-3 Ayatana through the tray library. MIT is retained:294's native
   rebuild removes those chains; both fresh signed packages pass extracted
-  native/source gates. Corresponding-source delivery and installed checks remain.
+  native/source gates. Exactff632 Linux x64 and Mac ARM installed checks pass.
   Final exactff632 local carrier and usable instructions pass independent full
   verification; original-r0 runtime source/relink executes on both architectures.
-  Exact signedff632 Linux x64 updater/restart now passes under071. Public source
-  bytes remain the delivery gate. Verify accurate public privacy and obtainable
-  website/download metadata before cutover; public privacy is deployed and exact
-  bytes verified. Replacement download activation remains separate.
+  Exact signedff632 Linux x64 updater/restart now passes under071. All17 public
+  downloads, including final sources, pass independent hashes under080. Actual
+  public website82 and all11 production updater selectors83 pass; original roots
+  and preview channels remain unchanged.
 - [ ] Review the exact shipment, supported gaps, soak/stop criteria and recovery
   owner. Submit/publish only the explicitly approved store/feed/release/website
   scope; actual store-update canaries follow approved delivery.
@@ -158,10 +160,13 @@ they cannot satisfy production delivery. Keep private values out of public docs.
   version exceeds every published track. Review permission/CSP/launch-route changes
   and store disclosure. Existing browser profile receives an actual extension
   update; a second unpacked ID is insufficient.
-- [ ] **D-05 Update services:** inspect candidate response/signature, OS/arch
+- [x] **D-05 Update services:** inspect candidate response/signature, OS/arch
   selection, version ordering and retained channel behavior. Check rollback/stop
   route before offering the candidate. Changes to GitHub asset ownership or the
-  update server's product descriptor are explicit, reviewed operations.
+  update server's product descriptor are explicit, reviewed operations. Actual
+  production0.3.0 activation passes under083:11 selectors, current/newer204,
+  empty production Latest204 and unchanged preview response hashes. Exact prior
+  descriptor is saved for stop/offer restoration.
 
 ## Desktop Installed Matrix
 

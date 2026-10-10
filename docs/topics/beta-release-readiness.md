@@ -1923,3 +1923,21 @@ into a version-specific release candidate record with the exact commit,
 versions, artifacts, checksums, CI runs, installed/update evidence, known
 issues, and final publication decision. This living topic remains the backlog;
 it is not itself a release attestation.
+
+
+## Qualified production desktop activation, 2026-10-10
+
+Shipment295 publishes exact signedff632 desktop0.3.0 with independently
+verified corresponding sources. All17 actual public downloads pass whole-file
+hashes. Exact candidate Linux x64 updater and Mac ARM manual populated
+replacement/reopen checks pass, with state restoration and VMs off/released.
+Websitee0cb8a3c deploy38059186510 and actual phone/wide public links pass.
+Server46b3b35 activates production0.3.0 with11 exact URL/signature selectors,
+current/newer204, empty production Latest204 and unchanged preview hashes.
+Original updater roots are retained. Separate079–083 own ignored receipts.
+
+Extension1.1.3 remains pending deferred review; Android28 managed publishing
+is on but production compatibility scope and full background-hour result
+remain open. Saved public privacy URL is queued for Play review. No async
+approval, actual store delivery, physical Intel, or unrun reboot/sleep gate
+is inferred from desktop activation.

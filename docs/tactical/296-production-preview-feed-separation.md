@@ -1,6 +1,6 @@
 # Tactical 296: Production and Preview Feed Separation
 
-Status: Complete locally and deployed for preview separation, 2026-10-10. Beneath shipment295 and finish-line259.
+Status: Complete and deployed for both package families, 2026-10-10. Beneath shipment295 and finish-line259.
 Owners: product-surfaces-and-migration and beta-release-readiness.
 
 ## Scope and stopping condition
@@ -49,3 +49,10 @@ config is changed; production remains byte-identical. Three actual public
 responses retain their prior hashes: preview0.1.4/0.2.801 and production0.2.1.
 Separate077 owns prior configuration and actual revision/selector receipts.
 Production descriptor activation follows actual public packages under295.
+
+
+Production activation under295 now passes separate083. Server46b3b35 adds
+bounded successful-empty caching and returns204 for an empty marked Tauri
+channel, without hiding upstream failures;95 tests/typecheck/build/lint pass.
+Production0.3.0 retains its original root and all11 selectors. Current/newer
+204 checks and unchanged preview Stable/Latest hashes verify actual separation.

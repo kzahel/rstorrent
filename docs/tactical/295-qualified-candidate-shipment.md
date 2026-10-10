@@ -101,3 +101,31 @@ and the existing iOS lane. iOS remains outside product cutover scope. Push-only
 dependency-review/matrix skips are retained as skips, not asserted passes.
 Separate081 records this exact source and all hosted steps. The original frozen
 candidate remainsff632f45; no product package is rebound to the CI head.
+
+
+## Public desktop cutover
+
+Separate079 qualifies exact signedff632 Mac ARM manual replacement with four
+imported records, refusal gates, preserved bytes and native Quit/reopen. Original
+state is independently restored, owned staging/captures removed, VM off and claim
+released. It does not claim HTTPS delivery or physical Intel qualification.
+The existing OS Intel-app notification remains in captures from the old launch;
+its presence is not evidence of a new ARM candidate architecture defect.
+
+Separate080 records public desktop-v0.3.0 at immutableff632 source. All17 actual
+public downloads pass whole-file hashes, totaling1,165,219,495 bytes. Original
+candidate package/signature bytes and exact corresponding sources are retained.
+Websitee0cb8a3c deploy38059186510 succeeds; separate082 independently checks
+actual public Windows, both Mac and both Linux/source links at390/1200 with no
+overflow, broken images, script exceptions or visible obsolete brand.
+
+Server46b3b35 passes95 tests/typecheck/build/focused lint. Successful empty
+marked-package fetches yield204; real upstream failures stay errors. Separate083
+activates the scoped production descriptor after public byte/website checks,
+preserving exact old configuration. All11 platform selectors offer0.3.0 with
+qualified URLs/signatures; current/newer versions return204, empty production
+Latest returns204, and preview Stable/Latest response hashes remain unchanged.
+
+Play privacy URL is saved as https://jstorrent.com/privacy.html and is ready
+to send for review; this saved change is not public delivery. Android28
+compatibility choice and final background hour remain separate open checks.
