@@ -2,6 +2,38 @@
 
 ## Current restart checkpoint, 2026-10-10
 
+Slice051 prepares actual managed27 foreground upload evidence after046 fully
+cleans up: one uniquely owned4MiB trackerless download, whole independent hash,
+reference source removal, actual Network listener observation and an independent
+bounded leecher through the owned ADB/SSH forward. Native complete row must
+serve all bytes with the original source absent. Observe normal settings first,
+restore only any changed Incoming connections preference; no background/seeding
+permission change or debug/private-state access. Preserve package/grant identity,
+remove only its owned row/file/marker, normal Shutdown and zero tabs/windows.
+Stop at actual upload/hash and cleanup receipts or preserve the concrete failure.
+This is foreground managed upload, not an enabled-seeding hour or network loss.
+
+Slice050 completes the bounded access observation: normal Play launch remains
+at Starting Play Store on the fresh final native tree; canonical ADB refuses
+with Connection refused/disconnected. Current-session native control works but
+pending OS update/automatic-SSH startup evidence remains degraded. No reboot,
+rootfs transition, app reset/removal or sideload. Individual tabs then the owned
+application window close; independent inventories verify zero pages/Close
+controls. Inherited incubation installation labels remain historical testbed
+state, preserved rather than claimed as current production branding. Separate
+actual screenshot/refusal/cleanup report remains ignored; four390/1200px checks
+pass and terminate their browser/server. Installed/store/boot acceptance stays
+blocked until guided physical-recovery availability is established.
+
+Slice050 rechecks cohort A's current normal Play/Android onboarding access while
+B's owned hour runs independently. Read-only doctor/native inventories first;
+normal launcher/Play controls and screenshots only, bounded wait for actual
+readiness. Preserve installed applications, profiles, grants and power policy.
+No app reset/removal, sideload, terms acceptance, rootfs transition or pending
+OS reboot. Stop at an actual ready surface or concrete current refusal with
+separate evidence, then close individual tabs and all owned application windows.
+This cannot qualify boot persistence or bypass the physical-recovery boundary.
+
 Slice049 completes the fresh Windows HTTPS updater scope: interrupted payload
 transfer preserves the released0.2.1 executable, ordinary Install & Restart
 retry installs exact2b83 NSIS, and eleven assertions/eight refusals plus

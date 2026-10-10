@@ -1,5 +1,12 @@
 # Product Surfaces And JSTorrent Migration
 
+Slice050 freshly confirms the other Chromebook still stalls at the OS Play
+startup screen and canonical ADB refuses. Installed acceptance on that cohort
+remains blocked; no product failure is inferred. No pending-update reboot, app
+reset or sideload occurs. Individual tabs/windows close to independently empty
+inventories. Guided physical-recovery availability remains separate; actual
+screenshot/refusal/cleanup evidence stays in the ignored separate report.
+
 Slice049 now passes the fresh exact Windows signed successor through the
 released0.2.1 ordinary HTTPS updater: interrupted download preserves the old
 installation, normal GUI retry imports four records, and native Quit/reopen
