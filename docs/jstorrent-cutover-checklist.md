@@ -35,9 +35,11 @@ ignored separate reports, rather than this summary.
 - [x] Fresh AppImage source review packet:89 descriptor-bound source versions,
   original notices and unchanged outer-runtime binding; all736 members verify.
   The packet remains local and does not clear the requirements below.
-- [ ] Finish actual managed27 enabled-background hour/hidden completion and
-  independent upload; candidate extension/native pairing and retained-folder
-  repair. Physical sleep/network/reboot and populated old-store writers remain
+- [x] Actual managed27 enabled-background hour:3,601.75 seconds/118 samples,
+  hidden40MiB whole hash, service stop and normal return. Original harness
+  failure retained; independent cleanup/settings/permission restoration pass.
+- [ ] Finish managed foreground upload, candidate extension/native pairing and
+  retained-folder repair. Physical sleep/network/reboot and populated old-store writers remain
   explicit. The other Chromebook stalls before app startup; guided recovery
   awaits confirmation of physical keyboard availability.
 - [x] Fresh Mac ARM GUI and Linux x64 automatic HTTPS updater/restart pass: ten

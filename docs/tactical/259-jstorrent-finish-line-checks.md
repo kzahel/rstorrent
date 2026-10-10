@@ -2,6 +2,19 @@
 
 ## Current restart checkpoint, 2026-10-10
 
+Slice046 completes actual Play-managed27 background evidence: ordinary OS
+Minimize keeps the controlled partial transfer detached for3,601.75 seconds;
+all118 samples retain the foreground service/peer and advancing payload. The
+whole40MiB file independently hashes while hidden; stop-at-completion removes
+the service, and normal foreground return shows the complete row. Original
+post-hour runner failure (Pause content-description missed by text-only lookup)
+remains failed; independent normal Pause/Keep data/removal, Power restoration,
+Shutdown and scoped files clean up. Normal OS UI restores the original denied
+notification permission. Exact persisted grant/empty selected root remain;
+zero tabs/windows verify. Separate report preserves both failed assumptions
+and scoped passes. Physical sleep/network loss/reboot/background upload/store
+delivery remain unrun. Four390/1200px report checks pass and reap their browser.
+
 Slices053/054 complete fresh exact2b83 HTTPS installed qualification: Mac ARM
 ordinary GUI Install & Restart and Ubuntu24.04.5 Linux x64 extract-and-run
 automatic update each pass ten checks, nine/six refusal routes and four-record
