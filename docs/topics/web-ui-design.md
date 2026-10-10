@@ -1,5 +1,15 @@
 # Web UI Design
 
+Tactical [291](../tactical/291-companion-shutdown-recovery-copy.md) locally
+clarifies normal Android launch before attach-only Retry after Shutdown and
+fixes dim companion troubleshooting links with the existing foreground token.
+Full web typecheck/481 cases,56 extension cases, localization, companion/CSP
+build and exact local production1.1.3 packaging pass. Six320/390/1100 source
+renderer captures reproduce before contrast and pass after accessibility,
+keyboard/overflow/cleanup checks; transport/view dependencies are injected.
+Actual revised managed screens and store delivery remain under259. Uploaded
+1.1.2/public1.1.1 and signed desktop/Android source bindings remain unchanged.
+
 Tactical [290](../tactical/290-windows-installer-brand-artwork.md) corrects the
 actual Windows NSIS generic artwork with original JSTorrent icons and blue/navy
 welcome/header assets. Pinned schema/bitmap checks and26 release/trust cases pass;

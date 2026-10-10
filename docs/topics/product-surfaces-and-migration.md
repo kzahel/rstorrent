@@ -1,5 +1,15 @@
 # Product Surfaces And JSTorrent Migration
 
+Tactical [291](../tactical/291-companion-shutdown-recovery-copy.md) locally
+clarifies normal Android launch before attach-only Retry after Shutdown and
+fixes dim companion troubleshooting links with the existing foreground token.
+Full web typecheck/481 cases,56 extension cases, localization, companion/CSP
+build and exact local production1.1.3 packaging pass. Six320/390/1100 source
+renderer captures reproduce before contrast and pass after accessibility,
+keyboard/overflow/cleanup checks; transport/view dependencies are injected.
+Actual revised managed screens and store delivery remain under259. Uploaded
+1.1.2/public1.1.1 and signed desktop/Android source bindings remain unchanged.
+
 Fresh exact2b83 Mac ARM GUI and Linux x64 automatic HTTPS updating now pass
 under053/054: ten checks, nine/six refusals, four-record import/native Quit/reopen
 and independently persisted statistics off. Inherited source/payload/scopes

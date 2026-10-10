@@ -5074,7 +5074,7 @@
     "description": "ChromeOS companion connection cancellation status"
   },
   "shell.companion.disconnected": {
-    "defaultMessage": "Android disconnected. Select Retry to reconnect.",
+    "defaultMessage": "Android disconnected. Open JSTorrent for Android, then select Retry to reconnect. Your torrents stay in the Android app.",
     "description": "ChromeOS companion disconnection status"
   },
   "shell.companion.loading": {

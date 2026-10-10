@@ -1,5 +1,15 @@
 # Localization
 
+Tactical [291](../tactical/291-companion-shutdown-recovery-copy.md) locally
+clarifies normal Android launch before attach-only Retry after Shutdown and
+fixes dim companion troubleshooting links with the existing foreground token.
+Full web typecheck/481 cases,56 extension cases, localization, companion/CSP
+build and exact local production1.1.3 packaging pass. Six320/390/1100 source
+renderer captures reproduce before contrast and pass after accessibility,
+keyboard/overflow/cleanup checks; transport/view dependencies are injected.
+Actual revised managed screens and store delivery remain under259. Uploaded
+1.1.2/public1.1.1 and signed desktop/Android source bindings remain unchanged.
+
 Tactical [283](../tactical/283-companion-update-recovery-guidance.md) adds
 component-specific recovery links and plain connection guidance in the
 packaged extension, preserving attach-only retries and existing discovery/

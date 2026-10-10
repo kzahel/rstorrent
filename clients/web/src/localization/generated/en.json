@@ -8083,7 +8083,7 @@
   "shell.companion.disconnected": [
     {
       "type": 0,
-      "value": "Android disconnected. Select Retry to reconnect."
+      "value": "Android disconnected. Open JSTorrent for Android, then select Retry to reconnect. Your torrents stay in the Android app."
     }
   ],
   "shell.companion.loading": [
