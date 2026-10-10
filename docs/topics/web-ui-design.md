@@ -7,7 +7,10 @@ Full web typecheck/481 cases,56 extension cases, localization, companion/CSP
 build and exact local production1.1.3 packaging pass. Six320/390/1100 source
 renderer captures reproduce before contrast and pass after accessibility,
 keyboard/overflow/cleanup checks; transport/view dependencies are injected.
-Actual revised managed screens and store delivery remain under259. Uploaded
+Slice055 verifies actual managed27 Shutdown guidance/readable links, stopped
+service after Retry and normal app-launch retained reconnect. Exact package/
+grants/notification preference and scoped cleanup/zero tabs/windows pass; four
+report checks reap their browser/server. Store delivery remains under259. Uploaded
 1.1.2/public1.1.1 and signed desktop/Android source bindings remain unchanged.
 
 Tactical [290](../tactical/290-windows-installer-brand-artwork.md) corrects the

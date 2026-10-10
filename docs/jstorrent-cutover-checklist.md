@@ -43,9 +43,11 @@ ignored separate reports, rather than this summary.
 - [x] Exact1.1.2 candidate/managed27 permission, pairing, shared Pause and
   Shutdown/retained reconnect; scoped cleanup and zero tabs/windows pass.
   Normal companion setup remains; the owned browser credential is removed.
-- [ ] Requalify local1.1.3 explicit Shutdown guidance/link contrast, then review
-  its exact replacement for uploaded draft1.1.2. Finish retained-folder repair. Physical sleep/network/reboot and populated old-store writers remain
-  explicit. The other Chromebook stalls before app startup; guided recovery
+- [x] Exact1.1.3 actual managed Shutdown guidance/readable links, stopped Retry,
+  normal launch/retained reconnect and scoped cleanup/zero tabs/windows pass.
+- [ ] Review exact1.1.3 replacement for uploaded draft1.1.2; finish retained-folder
+  picker repair. Physical sleep/network/reboot and populated old-store writers
+  remain explicit. The other Chromebook stalls before app startup; guided recovery
   awaits confirmation of physical keyboard availability.
 - [x] Fresh Mac ARM GUI and Linux x64 automatic HTTPS updater/restart pass: ten
   checks each, four-record native Quit/reopen, restoration/off/release and shared

@@ -2,6 +2,24 @@
 
 ## Current restart checkpoint, 2026-10-10
 
+Slice055 completes actual production-key1.1.3 with Play-managed27: normal
+pairing approval connects; normal Shutdown removes the service and displays
+explicit Android-launch-before-Retry guidance with readable support links.
+Retry leaves the service stopped; normal public app launch lets its pending
+retry reconnect using retained pairing. Package identity, exact persisted grants
+and denied notification permission remain. Empty library/folder, normal Shutdown,
+owned installation/staging/marker removal and zero tabs/windows all verify.
+Initial launch did not present a chooser/start Android; the normal launch
+fallback is recorded rather than a chooser pass. First picker Enter left the
+dialog open; normal Open loads the exact19-file candidate. Separate report
+keeps actual before/after plus six injected320/390/1100 source captures;
+four390/1200 report/index checks pass and reap the browser/server. Exact ZIP
+SHA-256 is432b6084afa12106ad38518d5120ad5a8952b157d480e3d7af7f4c01466eadc5.
+Uploaded draft1.1.2/public1.1.1 and signed desktop/Android remain unchanged.
+Normal companion opt-in/approved native digest remain; no normal disable/unpair
+UI exists. Store delivery, populated migration and physical lifecycle remain
+separate. Next: managed retained-folder picker repair and exact draft replacement.
+
 Slice052 completes exact draft1.1.2/Play-managed27 physical pairing: normal
 optional ARC permission deny/retry/allow and native reject/retry/approve pass.
 An independently verified1MiB native row appears in Chrome; browser Pause is
@@ -16,8 +34,8 @@ chooser labels and encoded uninstall title are recorded. The opt-out uninstall
 URL includes only version. Failed picker/capture/cross-surface driver assumptions
 are preserved; package-scoped native actions pass. Four390/1200px report checks
 pass and reap the browser/server. Tactical291 separately fixes the observed
-Shutdown instruction/link contrast in local1.1.3; its actual repeat/store update
-remain open. No store delivery, reboot/network loss or background upload claim.
+Shutdown instruction/link contrast in1.1.3; slice055 repeats the actual device
+flow. Store update remains open. No store delivery, reboot/network loss or background upload claim.
 
 Slice051 completes managed27 foreground upload: an owned4MiB trackerless
 fixture independently hashes, its original source/listener closes, and a

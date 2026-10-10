@@ -1,6 +1,6 @@
 # Tactical 291: Companion Shutdown Recovery Copy
 
-Status: Locally complete; revised physical/package delivery remains open,
+Status: Complete locally and on managed physical Android; store delivery open,
 2026-10-10, beneath finish-line Tactical259.
 
 Owners: client-surfaces, web-ui-design, localization and
@@ -57,6 +57,10 @@ Local production candidate1.1.3 is400,520 bytes with SHA-256
 Its production ID/key, hosts, permissions, CSP and pairing authority remain.
 The uploaded draft1.1.2/public1.1.1 remain untouched. Exact desktop/Android
 artifacts retain their existing source bindings; no rebuilt signed artifact
-or old receipt is relabeled. Next: actual managed normal Shutdown with this
-new unpacked ZIP, scoped cleanup and separate055 report, then review the exact
-store-draft replacement before any submission/publication.
+or old receipt is relabeled. Slice055 verifies actual normal Shutdown, revised copy/links, Retry leaving
+the service stopped and normal Android launch reconnecting retained pairing.
+Exact package/grants/denied notification preference, empty library/folder, owned
+installation/staging removal and zero tabs/windows pass. Four390/1200 report
+checks pass with browser/server reaped. Initial missing chooser and picker
+acceptance attempts remain explicit observations. Review the exact store-draft
+replacement next; no store submission/publication occurs.

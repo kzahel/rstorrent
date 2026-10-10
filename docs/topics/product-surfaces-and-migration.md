@@ -7,7 +7,10 @@ Full web typecheck/481 cases,56 extension cases, localization, companion/CSP
 build and exact local production1.1.3 packaging pass. Six320/390/1100 source
 renderer captures reproduce before contrast and pass after accessibility,
 keyboard/overflow/cleanup checks; transport/view dependencies are injected.
-Actual revised managed screens and store delivery remain under259. Uploaded
+Slice055 verifies actual managed27 Shutdown guidance/readable links, stopped
+service after Retry and normal app-launch retained reconnect. Exact package/
+grants/notification preference and scoped cleanup/zero tabs/windows pass; four
+report checks reap their browser/server. Store delivery remains under259. Uploaded
 1.1.2/public1.1.1 and signed desktop/Android source bindings remain unchanged.
 
 Fresh exact2b83 Mac ARM GUI and Linux x64 automatic HTTPS updating now pass
@@ -586,8 +589,8 @@ chooser labels and encoded uninstall title are recorded. The opt-out uninstall
 URL includes only version. Failed picker/capture/cross-surface driver assumptions
 are preserved; package-scoped native actions pass. Four390/1200px report checks
 pass and reap the browser/server. Tactical291 separately fixes the observed
-Shutdown instruction/link contrast in local1.1.3; its actual repeat/store update
-remain open. No store delivery, reboot/network loss or background upload claim.
+Shutdown instruction/link contrast in1.1.3; actual repeat passes under055,
+while store update remains open. No store delivery, reboot/network loss or background upload claim.
 
 
 ## Production Candidates, 2026-10-01
