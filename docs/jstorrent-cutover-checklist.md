@@ -15,13 +15,23 @@ copy and independent store timing.
 
 ## Current finish-line tasks, 2026-10-10
 
-Next executable stage: the prepared source push/nonpublishing signed build,
-three draft screenshot replacements and official old-extension/managed27 test
-await their concrete consolidated answer. Remote main/latest signed build stay
-A7, so no newer Windows qualification is implied. Slices038–041 pass their
-bounded managed/DMG checks;042 verifies all VMs off/claims available, both physical
-workspaces empty and private updater absent with ordinary routes unchanged.
-The full delivery/lifecycle/source/policy/shipment rows below remain open.
+The maintainer pushed main through `2b83ed91`, independently confirmed on
+2026-10-10. Fresh original-signed production-identity candidate
+[run38029276220](https://github.com/kzahel/rstorrent/actions/runs/38029276220)
+is in progress with candidate=true/publication=false. It includes Tactical290's
+Windows artwork; signature/artifact and focused installed/updater qualification
+remain pending. Existing A7 evidence stays bound to its original bytes.
+
+The maintainer confirmed unattended computer use and local extension host
+permissions. Slice044 records the actual published1.1.1/managed27 pair: generic old
+extension Offline/launch-to-Play fallback, usable native shelf return, normal
+Shutdown, owned extension removal, identity/grant retention and zero workspace.
+Imported-cohort update guidance and complete scenario acceptance remain open.
+Three prepared draft screenshot replacements are still outstanding. Slices038–041
+pass their bounded managed/DMG checks;042 verified all VMs off/claims available,
+both physical workspaces empty and the private updater absent with ordinary
+routes unchanged. The full delivery/lifecycle/source/policy/shipment rows below
+remain open.
 
 Tactical290 now corrects Windows installer artwork locally. Its actual native
 presentation harness passes, but it changes Windows packaging inputs after

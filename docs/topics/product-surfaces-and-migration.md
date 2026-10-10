@@ -1,18 +1,24 @@
 # Product Surfaces And JSTorrent Migration
 
-Slice042 independently verifies all three VMs off/claims available and both
-physical Chromebooks at zero tabs/native Close controls. The private updater
-root/configuration are absent, five trial payloads return404 and eight ordinary
-responses remain unchanged. Managed owned rows/files/markers are removed;
-selected empty folder/grant remain deliberately. Reports/screenshots stay ignored.
-Remote main/latest successful signed build remain A7; the newly branded Windows
-candidate is not available. Consolidated push/nonpublishing-build, draft graphic
-replacement and official old-extension installation/access answers remain pending.
-The next executable stage is that prepared candidate/draft/mixed-pair work;
-no push, dispatch or publication follows from qualification. Actual managed
-positive background/hour/upload, selected grant/provider/reboot/old-store cohorts,
-guided cohort-A recovery, native source/notices/public policy and final owner
-shipment/publication decisions keep the broader release checklist open.
+The maintainer pushed main through `2b83ed91`; fresh signed candidate
+[38029276220](https://github.com/kzahel/rstorrent/actions/runs/38029276220)
+builds that exact source with publication disabled. Original updater-root signing
+proof passes; final artifacts and Windows artwork install/updater checks remain.
+Local loopback/Crostini host permissions are confirmed for extension testing.
+
+Slice044 installs the actual official1.1.1 extension against Play-managed27,
+observes its generic Offline/Android-not-running menu and launch fallback into
+Play Store, and returns to the usable native Live library through the shelf.
+This empty, non-migrated managed profile has no migration-specific extension-update
+card, so imported-cohort guidance and complete mixed-scenario acceptance remain
+open. Normal Android Shutdown and removal of only the newly installed test
+extension retain package identity/install times and persisted grant identity/
+modes/time. Individual tabs/native windows close to zero; selected owned root
+stays empty. Original cleanup runner's older-archive selection assertion remains
+failed; independent review binds the actual uploaded ZIP and terminal cleanup.
+Reports/screenshots remain ignored. No app reset, sideload, reboot, store submission
+or publication occurs. B's pending OS update/SSH startup evidence remains a
+separate recovery concern. Prior Slice042 push/access-pending text is historical.
 
 Slice041 passes managed27 owned-folder unavailability/restoration with a
 verified1MiB paused payload. Normal Shutdown removes task/service before each

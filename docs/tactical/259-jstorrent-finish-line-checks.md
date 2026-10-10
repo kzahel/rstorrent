@@ -2,6 +2,50 @@
 
 ## Current restart checkpoint, 2026-10-10
 
+The maintainer's push through `2b83ed91` is independently confirmed.
+Slice043 starts the fresh signed production-identity candidate workflow
+[38029276220](https://github.com/kzahel/rstorrent/actions/runs/38029276220),
+source `2b83ed9137fc3b779fabcb3f20b421e59035fec9`, with candidate=true and
+publication=false. Its stopping condition is independently bound final artifacts,
+original updater/platform signature verification and focused Windows installed/
+updater evidence for Tactical290's artwork. No release, tag, feed or publication
+is authorized by this build. Existing A7 receipts remain exact-byte history.
+
+Slice044 resumes the actual published1.1.1 extension/managed Android27 test.
+The maintainer confirmed unattended control and local host permissions. Scope:
+normal official store installation on the previously empty B extension baseline,
+actual mixed-version recovery presentation, unchanged managed package identity/
+persisted folder grants, removal of only the newly installed owned test extension,
+and individually closed tabs followed by zero native windows. No app data reset,
+permission-policy change, sideload, reboot or store submission/publication.
+B's read-only doctor reports unlocked/native controls available but pending OS
+update and unhealthy current-boot automatic SSH evidence; this run qualifies
+current-session behavior only. Original Slice042 read-only receipts are preserved;
+the prior push/build/access-pending narrative below is historical.
+
+
+The maintainer pushed main through `2b83ed91`; fresh signed candidate
+[38029276220](https://github.com/kzahel/rstorrent/actions/runs/38029276220)
+builds that exact source with publication disabled. Original updater-root signing
+proof passes; final artifacts and Windows artwork install/updater checks remain.
+Local loopback/Crostini host permissions are confirmed for extension testing.
+
+Slice044 installs the actual official1.1.1 extension against Play-managed27,
+observes its generic Offline/Android-not-running menu and launch fallback into
+Play Store, and returns to the usable native Live library through the shelf.
+This empty, non-migrated managed profile has no migration-specific extension-update
+card, so imported-cohort guidance and complete mixed-scenario acceptance remain
+open. Normal Android Shutdown and removal of only the newly installed test
+extension retain package identity/install times and persisted grant identity/
+modes/time. Individual tabs/native windows close to zero; selected owned root
+stays empty. Original cleanup runner's older-archive selection assertion remains
+failed; independent review binds the actual uploaded ZIP and terminal cleanup.
+Reports/screenshots remain ignored. No app reset, sideload, reboot, store submission
+or publication occurs. B's pending OS update/SSH startup evidence remains a
+separate recovery concern. Prior Slice042 push/access-pending text is historical.
+
+### Earlier Slice042 checkpoint (before the maintainer push)
+
 Slice042 independently verifies all three VMs off/claims available and both
 physical Chromebooks at zero tabs/native Close controls. The private updater
 root/configuration are absent, five trial payloads return404 and eight ordinary
