@@ -25,6 +25,14 @@ and five package/notice inventories. It includes Tactical290's Windows artwork;
 focused actual Windows installed/updater checks remain. Existing A7 evidence stays
 bound to its original bytes.
 
+Slice047 now passes fresh signed NSIS Authenticode, actual welcome/location
+artwork and preinstall Cancel preservation, then eight populated manual migration
+checks/eight refusals and four-record native Quit/reopen with privacy off.
+Independent50-registry/seven-file restoration and VM-off/release pass. Ordinary
+HTTPS updating follows separately in049; recorded clipping/technical setup-error
+copy remain design notes. Broader delivery/associations/source/policy gates stay
+open.
+
 The maintainer confirmed unattended computer use and local extension host
 permissions. Slice044 records the actual published1.1.1/managed27 pair: generic old
 extension Offline/launch-to-Play fallback, usable native shelf return, normal

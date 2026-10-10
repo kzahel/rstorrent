@@ -1,5 +1,15 @@
 # Product Surfaces And JSTorrent Migration
 
+Slice047 independently qualifies fresh2b83 signed Windows NSIS Authenticode and
+actual branded welcome/location pages. Normal Cancel before installing Next
+preserves inherited scopes. Populated old0.2.1 manual replacement passes eight
+checks/eight refusal routes, four records and native Quit/reopen; statistics
+opt-out persists. Exact50-registry/seven-file restoration, owned firewall/staging
+cleanup, VM-off and claim-release pass. Separate actual screenshots/report
+retain Status/detail-tab clipping and technical registration-error copy as design
+notes. Four390/1200px report/index checks pass and terminate their browser/server.
+Fresh ordinary HTTPS updating remains a separate Slice049; no publication.
+
 Slice045 saves and reload-verifies the three reviewed current-UI screenshots in
 the existing Web Store item's draft: light Torrents, light Library, dark Torrents.
 Their exact opaque RGB1280×800 hashes match Slice019; DEMO DATA/adapter labels

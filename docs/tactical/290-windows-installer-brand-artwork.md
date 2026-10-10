@@ -2,6 +2,14 @@
 
 Status: complete locally, 2026-10-09; fresh production packaging remains separate.
 
+2026-10-10 follow-up: Tactical259 Slice047 qualifies the actual original-signed
+source2b83ed91 NSIS from run38029276220. Native Authenticode and both branded
+welcome/location captures pass; normal Cancel before installing Next preserves
+inherited scopes. Subsequent populated manual replacement passes eight checks/
+eight refusals, native Quit/reopen, privacy opt-out and exact restoration/off/
+release. The separate ignored report retains actual captures and design notes.
+Automatic updater qualification follows separately; no publication occurs.
+
 ## Scope and stopping condition
 
 The exact signed a7 Windows wizard uses generic NSIS artwork. Configure the

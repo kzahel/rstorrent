@@ -2,6 +2,28 @@
 
 ## Current restart checkpoint, 2026-10-10
 
+Slice049 qualifies the fresh exact Windows NSIS through the released0.2.1
+ordinary HTTPS updater with interrupted-download refusal and GUI valid retry,
+populated migration, privacy opt-out and native Quit/reopen. A separate owned
+2b83 trial maps only the existing fixed fixture IDs to these exact original-root
+signed payloads. Preserve eight ordinary HTTP responses and historical A7 trial
+material; disable/remove the private trial in finally and require payload404s.
+Only boot the off Windows VM after047 proves restoration/off/release; claim it
+for the bounded run, restore independent scopes, clean exact staging/firewall,
+then shut it down/release. Stop at exact installed/updater/restoration/route
+receipts and a separate report. No production feed, public release/tag or store
+publication; preserve backups on an unproved restoration.
+
+Slice048 reconciles the fresh two AppImages' exact native manifests/source
+package versions against the already downloaded descriptor-bound source cache.
+Rebind original notices, current first-party source/build/patch snapshot and
+selected unchanged outer-runtime material into a new local support capsule with
+independent member checksums. Preserve old capsules and original license texts;
+do not execute third-party source or launch VMs solely to collect it. Complete
+shipped-runtime relinking/per-package disposition/public-source delivery remain
+explicit if not proved; locators alone are not delivery. Stop at the exact-source
+review packet and separate concise report; no public upload or legal acceptance.
+
 Slice047 qualifies only the fresh original-signed x64 NSIS package from run
 38029276220/source2b83ed91: native Authenticode, real welcome/location artwork,
 Cancel before location Next (which installs), then the existing populated
@@ -12,6 +34,18 @@ shut down the initially off VM and release its bounded claim in finally.
 No legal agreement acceptance, automatic-updater claim or release publication.
 Stop at exact restored/off/released receipts and separate screenshots/report;
 retain recovery backups if restoration cannot be independently proved.
+
+Slice047 completes that scope: exact NSIS SHA
+`b7bca72f094abdb5bab0bf60101f44edbef256bc32dd1070254a60d10f982617`
+has valid original Kyle Graehl Authenticode/Microsoft timestamp. Actual branded
+welcome/location screenshots pass visual review; Cancel leaves inherited scopes
+equal. Eight migration assertions/eight refusals and four-record native Quit/
+reopen pass, with independently persisted disclosure version1/statistics off.
+Source/payload and50-registry/seven-file scopes restore exactly; owned staging/
+firewall clean up, VM off and claim released. Default Status/detail-tab clipping
+and deliberately obstructed registration's raw OS183 message remain design notes.
+Four390/1200px report/index checks pass; bundled browser/server terminate.
+Actual captures/receipts remain ignored; no automatic-updater/publication claim.
 
 Slice046 scopes the actual managed27 notifications-enabled background path on B:
 normal Enable/runtime notification choice and Power controls, a uniquely owned
