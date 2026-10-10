@@ -38,8 +38,9 @@ ignored separate reports, rather than this summary.
 - [x] Actual managed27 enabled-background hour:3,601.75 seconds/118 samples,
   hidden40MiB whole hash, service stop and normal return. Original harness
   failure retained; independent cleanup/settings/permission restoration pass.
-- [ ] Finish managed foreground upload, candidate extension/native pairing and
-  retained-folder repair. Physical sleep/network/reboot and populated old-store writers remain
+- [x] Managed foreground upload: independent4MiB whole hash with original source
+  absent, exact package/grant continuity, normal cleanup and empty workspace.
+- [ ] Finish candidate extension/native pairing and retained-folder repair. Physical sleep/network/reboot and populated old-store writers remain
   explicit. The other Chromebook stalls before app startup; guided recovery
   awaits confirmation of physical keyboard availability.
 - [x] Fresh Mac ARM GUI and Linux x64 automatic HTTPS updater/restart pass: ten

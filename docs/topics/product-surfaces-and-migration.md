@@ -547,6 +547,21 @@ and scoped passes. Physical sleep/network loss/reboot/background upload/store
 delivery remain unrun. Four390/1200px report checks pass and reap their browser.
 
 
+Slice051 completes managed27 foreground upload: an owned4MiB trackerless
+fixture independently hashes, its original source/listener closes, and a
+separate controlled leecher receives all4,194,304 bytes with the correct whole
+SHA-1 through the owned ADB/SSH forward. The actual listener is observed via
+normal Network settings. Original Incoming connections/denied notification
+preferences, package identity and exact persisted grant remain. Normal Pause,
+Keep data/removal and Shutdown clean up the row/file/marker; forwarding,
+controller temporaries/source are reaped and zero tabs/windows verify. The
+selected folder remains empty. Separate screenshot report records clear styled
+notification guidance and awkward wrapping of the long fixture name. Four
+390/1200px report/index checks pass and reap the bundled browser/server.
+This is foreground upload, not background upload/network loss/reboot/store
+update delivery.
+
+
 ## Production Candidates, 2026-10-01
 
 Tactical [250](../tactical/250-jstorrent-production-identity-candidates.md)

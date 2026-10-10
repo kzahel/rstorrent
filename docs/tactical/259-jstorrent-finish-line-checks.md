@@ -2,6 +2,20 @@
 
 ## Current restart checkpoint, 2026-10-10
 
+Slice051 completes managed27 foreground upload: an owned4MiB trackerless
+fixture independently hashes, its original source/listener closes, and a
+separate controlled leecher receives all4,194,304 bytes with the correct whole
+SHA-1 through the owned ADB/SSH forward. The actual listener is observed via
+normal Network settings. Original Incoming connections/denied notification
+preferences, package identity and exact persisted grant remain. Normal Pause,
+Keep data/removal and Shutdown clean up the row/file/marker; forwarding,
+controller temporaries/source are reaped and zero tabs/windows verify. The
+selected folder remains empty. Separate screenshot report records clear styled
+notification guidance and awkward wrapping of the long fixture name. Four
+390/1200px report/index checks pass and reap the bundled browser/server.
+This is foreground upload, not background upload/network loss/reboot/store
+update delivery.
+
 Slice046 completes actual Play-managed27 background evidence: ordinary OS
 Minimize keeps the controlled partial transfer detached for3,601.75 seconds;
 all118 samples retain the foreground service/peer and advancing payload. The
