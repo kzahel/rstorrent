@@ -1,5 +1,13 @@
 # Beta Release Readiness
 
+Tactical294 now qualifies the final native x64 recipe locally:130 TIFF tests,
+all240 original exported symbols/versions, relocation/codec/original-loader and
+offscreen GTK checks pass. The copied AppDir's source/notice/MIT gate passes;
+unchanged frozen bytes are refused. Both Linux lanes now build and attribute
+custom sources before signing and repeat the package gate. Separate063 owns
+exact evidence; owned roots/units/mounts are removed, VM off/released. Actual
+product tray, ARM and fresh original-signed packages remain open.
+
 The maintainer explicitly retains MIT on2026-10-10. Tactical294 supersedes the
 pending combined-GPL proposal with bounded native GPL-only dependency removal
 and new Linux package qualification. LGPL notice/source/relink and public source

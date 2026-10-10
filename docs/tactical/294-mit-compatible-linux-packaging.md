@@ -57,7 +57,22 @@ targeted GPL libraries and native closure. Check ordinary TIFF formats and tray
 menus/events. Add meaningful packaging refusals so the dependencies cannot
 silently return. Do not reject GPL text from unrelated tools/tests in a notice.
 
-Next: inspect exact source packages, prepare the smallest patch/build recipes
-and verifier, then run one bounded x64 prototype before changing production
-packaging. ARM and signed scope remain explicit. The MIT decision resolves the
+Separate063 now passes two bounded native x64 source builds. The final recipe
+retains all sixteen Debian TIFF patches, disables JBIG and the unused Ayatana
+desktop-shortcut path, and records original archives, copyrights, compiler,
+configuration and output hashes. All41 tray/199 TIFF exports and versions are
+retained, relocations resolve,130 TIFF tests and the owned offscreen GTK menu
+probe pass. Original GdkPixbuf TIFF loading and ordinary codecs pass.
+
+A copied frozen AppDir rejects before replacement and passes afterward with172
+selected components. Custom-source attribution, source/patch materials and the
+extracted MIT gate pass. The output hook replaces before attribution/signing;
+both Linux workflow lanes build exact sources and repeat the extracted gate.
+Historical signed packages remain untouched. Four new refusal/parser checks,
+26 distribution checks and existing release-tool checks run locally. Owned
+units/roots/mounts are removed, the VM is off and claims are released.
+
+Next: actual native x64 Show/background/Quit and window/tray captures against
+owned profiles using the rebuilt libraries. ARM and original-signed scope remain
+explicit. The MIT decision resolves the
 license-choice question; it does not authorize push or publication.

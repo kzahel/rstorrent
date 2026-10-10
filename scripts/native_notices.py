@@ -218,7 +218,7 @@ class DpkgProvenance:
         return path
 
 
-def collect(root, provenance=None):
+def collect(root, provenance=None, custom_build=None):
     root = root.resolve(strict=True)
     provenance = provenance or DpkgProvenance()
     selected = selected_files(root)
@@ -226,6 +226,10 @@ def collect(root, provenance=None):
             or len(DESKTOP_BINARIES.intersection(selected)) != 1):
         raise ValueError('AppDir lacks expected first-party binaries')
     components, packages, notices = [], {}, {}
+    custom = None
+    if custom_build is not None:
+        from linux_native import load_build
+        custom = load_build(custom_build)
     total = 0
 
     def copy_notice(source, destination):
@@ -258,6 +262,13 @@ def collect(root, provenance=None):
             copy_notice(APPRUN_LICENSE, APPRUN_NOTICE['copyright'])
             entry.update(kind='apprun', architecture=APPRUN[digest], **APPRUN_NOTICE)
         else:
+            rebuilt = next((b for b in custom['builds'] if name == 'usr/lib/' + b['soname']), None) if custom else None
+            if rebuilt:
+                if digest != rebuilt['sha256']:
+                    raise ValueError('AppDir custom native binary differs from source build')
+                entry.update(kind='custom-source-build', source_package=rebuilt['source_package'])
+                components.append(entry)
+                continue
             metadata = provenance.identify(root / name, digest)
             package = metadata['package']
             copyright_path = f'{NOTICE_ROOT}/packages/{package}/copyright'
@@ -267,12 +278,22 @@ def collect(root, provenance=None):
                 source_locator='https://launchpad.net/ubuntu/+source/' + quote(metadata['source_package'], safe='') + '/' + quote(metadata['source_version'], safe=''))
             entry.update(kind='distro', **metadata)
         components.append(entry)
+    if custom:
+        custom = json.loads(json.dumps(custom))
+        for name in custom['recipe_files']:
+            copy_notice(custom_build / 'source-materials' / name, f'{NOTICE_ROOT}/custom-source/{name}')
+        copy_notice(custom_build / 'provenance.json', f'{NOTICE_ROOT}/custom-source/provenance.json')
+        for build in custom['builds']:
+            build['copyright'] = f"{NOTICE_ROOT}/custom-source/{build['copyright']}"
+        custom['material_directory'] = f'{NOTICE_ROOT}/custom-source'
     result = {'schema': 1, 'components': components,
               'packages': sorted(packages.values(), key=lambda p: p['package']),
               'notices': sorted(notices.values(), key=lambda p: p['path']),
               'scope': 'Selected distro ELF files and copied xdg helpers; original copyright and referenced common-license texts.',
               'remaining_review': ['AppImage launcher and outer runtime provenance/source obligations',
                                    'Per-package redistribution and corresponding-source obligations; source locators are not a source offer']}
+    if custom:
+        result['custom_source_build'] = custom
     verify_security_floor(result['packages'])
     destination = root / MANIFEST
     if not destination.resolve().is_relative_to(root):
@@ -311,6 +332,30 @@ def verify(root):
         if size != item['bytes'] or sha(path) != item['sha256']:
             raise ValueError('native copyright differs from manifest')
     observed = set()
+    observed_custom = set()
+    custom = data.get('custom_source_build')
+    custom_builds = {b['source_package']: b for b in custom['builds']} if custom else {}
+    if custom:
+        if len(custom_builds) != 2 or custom.get('kind') != 'custom-source-build':
+            raise ValueError('incomplete custom native provenance')
+        directory = custom.get('material_directory')
+        if directory != f'{NOTICE_ROOT}/custom-source':
+            raise ValueError('custom source material directory differs')
+        if directory + '/provenance.json' not in notices:
+            raise ValueError('custom source-build receipt missing')
+        original = json.loads(safe_file(root, directory + '/provenance.json').read_text())
+        original['material_directory'] = directory
+        for build in original['builds']:
+            build['copyright'] = directory + '/' + build['copyright']
+        if custom != original:
+            raise ValueError('custom source-build attribution differs from original receipt')
+        for name, receipt in custom['recipe_files'].items():
+            notice = notices.get(directory + '/' + name)
+            if notice is None or any(notice[k] != receipt[k] for k in ('sha256', 'bytes')):
+                raise ValueError('custom source material missing or changed')
+        for build in custom_builds.values():
+            if build['copyright'] not in notices:
+                raise ValueError('custom native copyright missing')
     for item in data['components']:
         name = item['path']
         if item['kind'] == 'first-party':
@@ -329,9 +374,16 @@ def verify(root):
             if p['copyright'] not in notices or any(item[k] != p[k] for k in ('version', 'source_package', 'source_version')):
                 raise ValueError('native package attribution differs')
             observed.add(item['package'])
+        elif item['kind'] == 'custom-source-build':
+            build = custom_builds.get(item.get('source_package'))
+            if (build is None or name != 'usr/lib/' + build['soname']
+                    or item['sha256'] != build['sha256']):
+                raise ValueError('custom native attribution differs')
+            observed_custom.add(item['source_package'])
         else:
             raise ValueError('unknown native component kind')
-    if (observed != set(packages) or 'usr/bin/rstorrent-native-host' not in declared
+    if (observed != set(packages) or observed_custom != set(custom_builds)
+            or 'usr/bin/rstorrent-native-host' not in declared
             or len(DESKTOP_BINARIES.intersection(declared)) != 1):
         raise ValueError('native package provenance is incomplete')
     security = verify_security_floor(data['packages'])

@@ -1,5 +1,15 @@
 # Tactical 259: JSTorrent Finish-Line Checks
 
+Separate063 completes Tactical294's native x64 build/ABI/package prototype:
+130 TIFF tests,41 tray/199 TIFF exported symbols and versions, relocation,
+ordinary codecs/original loader and offscreen GTK checks pass. Both identified
+GPL-only dependency families are absent from the copied unsigned AppDir; its
+custom source/notice inventory and new MIT gate pass. Original frozen image is
+refused by that new gate. Source recipe/pre-signing replacement and both Linux
+workflow lanes are prepared locally. Owned units/roots/mounts removed, VM off
+and claims released. Actual native product tray, ARM and freshly signed Linux
+packages remain separate; no push or publication occurs.
+
 ## Current restart checkpoint, 2026-10-10
 
 The maintainer selects retaining MIT and rejects the proposed GPL-3 combined

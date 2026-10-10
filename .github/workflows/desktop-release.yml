@@ -146,7 +146,9 @@ jobs:
             scripts/apply-desktop-nightly-version.test.mjs
 
       - name: Verify dependency review tools
-        run: python3 -m unittest discover -s scripts -p test_distribution_review.py
+        run: |
+          python3 -m unittest discover -s scripts -p test_distribution_review.py
+          python3 -m unittest discover -s scripts -p test_linux_native.py
 
       - name: Audit tagged release dependencies
         if: needs.release-input.outputs.publish == 'true'
@@ -335,6 +337,18 @@ jobs:
         run: |
           mkdir -p clients/web/dist
           cargo test --locked --release -p rstorrent-desktop --test glib_backport
+
+      - name: Build reviewed Linux native libraries without GPL-only chains
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            cmake dpkg-dev patch libdbusmenu-gtk3-dev libgirepository1.0-dev \
+            libjpeg-dev liblzma-dev libzstd-dev libwebp-dev zlib1g-dev \
+            libdeflate-dev liblerc-dev
+          python3 scripts/build-linux-native.py \
+            --sources-dir "$RUNNER_TEMP/jstorrent-native-sources" \
+            --output "$RUNNER_TEMP/jstorrent-native-build" --download
+          echo "JSTORRENT_LINUX_NATIVE_BUILD=$RUNNER_TEMP/jstorrent-native-build" >> "$GITHUB_ENV"
 
       - name: Set up macOS code-signing keychain
         if: runner.os == 'macOS'
@@ -569,7 +583,7 @@ jobs:
             NATIVE_NOTICE_ARGS=()
             case "$kind" in
               appimage)
-                NATIVE_NOTICE_ARGS=(--require-native-notices)
+                NATIVE_NOTICE_ARGS=(--require-native-notices --require-mit-native)
                 PACKAGE=$(find target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' -print -quit)
                 PACKAGE=$(realpath "$PACKAGE")
                 (cd "$EXTRACT_DIR" && "$PACKAGE" --appimage-extract >/dev/null)

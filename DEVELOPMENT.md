@@ -1629,10 +1629,19 @@ source ~/.profile
 cargo install cargo-about --locked --version 0.9.2 --features cli
 python3 scripts/prepare-release-notices.py --target aarch64-apple-darwin
 python3 -m unittest discover -s scripts -p test_distribution_review.py
+python3 -m unittest discover -s scripts -p test_linux_native.py
 python3 scripts/inspect-distribution.py --root target/release/bundle/macos/RSTorrent.app --output artifacts/distribution/macos.json
 ```
 
 Use the target actually being packaged; Tauri's before-build hook supplies it.
+Linux AppImages additionally require the reviewed
+[native source builds](distribution/linux-native/README.md). Build them in a
+fresh owned Ubuntu24.04 directory and set `JSTORRENT_LINUX_NATIVE_BUILD` before
+Tauri bundling. The output hook replaces the two libraries, records their exact
+source/patch provenance and rejects the known GPL-only runtime chains before
+signing. After extraction, add `--require-native-notices --require-mit-native`
+to `inspect-distribution.py` for new Linux candidates. Historical images remain
+reviewable without the new MIT packaging flag.
 Generation fails on missing/unreviewed license evidence. The resource manifest
 records lock hashes and the exact notice hash. Native platform libraries and
 Android Maven/AAR packages have separate notice graphs. Tactical `217` adds
