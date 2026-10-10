@@ -65,8 +65,8 @@ ignored separate reports, rather than this summary.
   exact scope; physical Intel/Linux ARM/FUSE remain unrun.
 - [ ] Complete selected native redistribution/source/relink disposition and a
   real source-delivery route. Both AppImages bundle GPL JBIG through TIFF and
-  GPL-3 Ayatana through the tray library. GPL-3 combined-binary terms/full sources
-  versus removing all GPL library dependencies needs a maintainer choice.
+  GPL-3 Ayatana through the tray library. MIT is retained:294 owns removal of
+  those GPL-only runtime dependencies and fresh Linux package qualification.
   ARM relink and complete native instructions remain open. Verify accurate public privacy and obtainable
   website/download metadata before cutover; prepared pages are not deployed.
 - [ ] Review the exact shipment, supported gaps, soak/stop criteria and recovery

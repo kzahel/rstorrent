@@ -1,5 +1,11 @@
 # Beta Release Readiness
 
+The maintainer explicitly retains MIT on2026-10-10. Tactical294 supersedes the
+pending combined-GPL proposal with bounded native GPL-only dependency removal
+and new Linux package qualification. LGPL notice/source/relink and public source
+delivery remain separate requirements. Existing2b83 signed Linux receipts stay
+bound to their old bytes, not the future rebuilt package.
+
 Tactical [293](../tactical/293-appimage-source-delivery.md) adds a verified local
 frozen2b83 application source supplement:733 Cargo inputs,27 exact npm
 distributions and14 preferred archives/16 bindings. Offline metadata for both

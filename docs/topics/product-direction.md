@@ -2,6 +2,19 @@
 
 Topic: `product-direction`
 
+## MIT licensing retained, accepted 2026-10-10
+
+The maintainer explicitly retains MIT for this public, open-source project.
+Do not adopt GPL terms for the combined Linux application as a release shortcut.
+Remove the GPL-only runtime library dependencies found in the AppImages while
+preserving product behavior through a bounded packaging fix. LGPL libraries
+remain permissible with their notice, source and modification/relink obligations
+satisfied; public first-party source alone does not provide every bundled
+third-party library's corresponding source. GPL build tools and unused GPL files
+in an upstream archive are distinct from linked runtime code. Tactical
+[294](../tactical/294-mit-compatible-linux-packaging.md) owns this work.
+Best-effort Linux compatibility scope and the exclusion of iOS remain unchanged.
+
 ## Linux release scope accepted 2026-10-09
 
 Linux desktop support is best effort for the first JSTorrent replacement.

@@ -2,6 +2,13 @@
 
 Status: Active, 2026-10-10, beneath finish-line259.
 
+Maintainer decision, 2026-10-10: retain MIT. The proposed GPL-3 combined Linux
+binary route is rejected. Tactical [294](294-mit-compatible-linux-packaging.md)
+owns removal of the GPL-only runtime dependencies and new package qualification.
+The exact frozen2b83 receipts below remain historical evidence, not qualification
+of a future rebuilt Linux package. Remaining LGPL obligations still require
+notices and exact source/modification/relink materials.
+
 Owners: beta-release-readiness, desktop-jstorrent-replacement and
 product-surfaces-and-migration. Preserve accepted best-effort Linux scope.
 
@@ -116,8 +123,8 @@ claimed. This is headless x64 evidence, not ARM, FUSE or mounted product UI.
 Machine Control cleanup removes only owned roots/mounts and stops the owned
 unit; VM off, claim release and controller-root removal independently pass.
 
-Next: finish per-package native disposition and a usable native rebuild guide,
-then continue the selected licensing route after the maintainer's answer.
+Next: carry294's MIT-compatible native rebuild inputs into a new source binding,
+finish per-package native disposition and the native rebuild guide.
 Public delivery and ARM relink execution remain open. No source packet is
 uploaded, signed binary changed or signing material copied.
 

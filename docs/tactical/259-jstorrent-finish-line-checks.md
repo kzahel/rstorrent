@@ -2,6 +2,14 @@
 
 ## Current restart checkpoint, 2026-10-10
 
+The maintainer selects retaining MIT and rejects the proposed GPL-3 combined
+Linux binary route. Tactical294 owns bounded GPL-only runtime dependency
+removal, preserving the tray if a small build change suffices. Exact2b83
+AppImages remain historical receipts, not legal clearance or qualification of
+rebuilt Linux packages. LGPL notice/source/relink and real source delivery
+remain required. Original-signed Android28 build still awaits explicit push
+authorization; no release/publication is performed.
+
 Slice062 independently hashes all174 x64/173 ARM native manifest components
 and records173/172 ELF dependency sets. Ayatana appindicator requires a GPL-3
 indicator library; the frozen tray-loader crate verifies its Cargo checksum

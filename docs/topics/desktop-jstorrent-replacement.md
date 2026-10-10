@@ -1,5 +1,11 @@
 # Desktop JSTorrent Replacement
 
+Maintainer direction on2026-10-10 retains MIT. Tactical294 owns removing the
+GPL-only JBIG/tray dependencies rather than adopting combined-GPL Linux terms.
+Prefer a bounded native packaging change that preserves the tray; do not launch
+a broader Linux redesign. LGPL source/notices/relink and new package evidence
+remain required. Tactical293's frozen materials retain historical scope.
+
 Tactical [293](../tactical/293-appimage-source-delivery.md), beneath259, verifies
 local exact2b83 application source inputs and original-r0 x64 runtime source
 build/relink. The rebuilt runtime differs from shipped bytes; no reproducibility

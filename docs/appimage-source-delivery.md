@@ -1,6 +1,9 @@
 # AppImage source delivery preparation
 
 Status: local preparation, not a published or complete source offer.
+Maintainer decision: retain MIT; rebuild Linux packaging to remove GPL-only
+runtime dependencies under Tactical294. Frozen assets below are historical
+bindings and must be reconciled with that new package before shipping.
 Owner: [beta-release-readiness](topics/beta-release-readiness.md).
 Execution and remaining work: [Tactical293](tactical/293-appimage-source-delivery.md).
 Linux remains best effort; iOS is excluded.
@@ -61,9 +64,10 @@ remain unrun; none of these receipts establishes binary reproducibility.
 ## Remaining shipment work
 
 Both images bundle GPL-2+ JBIG through TIFF and GPL-3 Ayatana indicator through
-the tray library. The maintainer must select full sources with appropriate
-GPL-3 combined Linux binary terms, or remove all GPL library dependencies and
-requalify packages. Existing first-party MIT source terms remain unchanged.
+the tray library. The maintainer has selected retaining MIT and removing these
+GPL-only runtime dependencies under Tactical294, followed by new qualification.
+Existing first-party MIT source terms remain unchanged. Remaining LGPL libraries
+still require their notices and source/modification/relink materials.
 The final per-package disposition and distribution-ready instructions are open.
 
 The proposed delivery is versioned sources beside the AppImages, linked adjacent
