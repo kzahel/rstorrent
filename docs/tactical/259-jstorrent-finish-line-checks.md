@@ -2,6 +2,37 @@
 
 ## Current restart checkpoint, 2026-10-10
 
+The current checklist summary is shortened; historical execution remains here
+and in separate ignored reports. Fresh exact candidate identity/signature D-01/
+D-02 now close with independently bound Mac/Windows/original updater-root proofs.
+Installed/source/publication contracts remain separate. Six application tree/
+lock objects match A7-to2b83 exactly; actual binary inventories differ, so no
+artifact or old-receipt equivalence is asserted. Fresh Mac/Linux installed
+checks follow under053/054 rather than relabeling historical receipts.
+
+Slice052 prepares exact draft1.1.2 production-ID extension/managed27 pairing on
+the empty B browser baseline after046/051 cleanup. Independently bind the ZIP,
+manifest key/version and packaged files; stage only a new marker-owned folder
+through Machine Control, then use normal Load unpacked and reviewed optional
+ARC permission/pairing controls. Observe deny/retry/approve, native/browser same
+library, Shutdown/reconnect guidance and normal recovery where available.
+Preserve native package/folder grants and inherited extensions/preferences;
+remove only the owned installation/staging and close every tab/window. This is
+exact candidate unpacked evidence under the production ID, not Web Store update
+delivery or publication. Stop at actual candidate pairing/recovery and cleanup
+receipts or an explicit current refusal; no app reset, sideload or OS reboot.
+
+Slices053/054 qualify fresh exact2b83 Mac ARM ordinary GUI HTTPS updating and
+Linux x64 extract-and-run automatic updating using the existing bounded owned
+populated/restart harnesses. The same private fixed-fixture trial selects all
+five verified payloads; preserve ordinary responses and historical receipts.
+Claim each initially off VM only for its prepared executable checks. Review the
+actual unchecked disclosure before Save; require exact scoped restoration,
+owned staging/capture/server cleanup, VM-off/claim-release. Finally remove the
+private trial and verify five payload404s/eight unchanged ordinary routes.
+Stop with separate actual screenshots and terminal receipts; no Intel-native,
+Linux ARM/FUSE/distro campaign, store submission or production publication.
+
 Slice051 prepares actual managed27 foreground upload evidence after046 fully
 cleans up: one uniquely owned4MiB trackerless download, whole independent hash,
 reference source removal, actual Network listener observation and an independent

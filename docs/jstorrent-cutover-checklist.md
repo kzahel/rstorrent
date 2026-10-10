@@ -15,166 +15,52 @@ copy and independent store timing.
 
 ## Current finish-line tasks, 2026-10-10
 
-The maintainer pushed main through `2b83ed91`, independently confirmed on
-2026-10-10. Fresh original-signed production-identity candidate
-[run38029276220](https://github.com/kzahel/rstorrent/actions/runs/38029276220)
-passes all five signed lanes, source checks, signing proof and collector with
-candidate=true/publication=false. Independent checks bind15 assets, six original-
-root signatures/six wrong-root refusals,11 selectors, both Mac trust/notary/staples
-and five package/notice inventories. It includes Tactical290's Windows artwork;
-focused actual Windows installed/updater checks now pass below. Existing A7 evidence stays
-bound to its original bytes.
+The detailed contracts below remain authoritative. This short list is the
+current work; dated attempts and exact evidence belong to Tactical259 and the
+ignored separate reports, rather than this summary.
 
-Slice047 now passes fresh signed NSIS Authenticode, actual welcome/location
-artwork and preinstall Cancel preservation, then eight populated manual migration
-checks/eight refusals and four-record native Quit/reopen with privacy off.
-Independent50-registry/seven-file restoration and VM-off/release pass. Ordinary
-HTTPS updating passes separately in049; recorded clipping/technical setup-error
-copy remain design notes. Broader delivery/associations/source/policy gates stay
-open.
+- [x] Fresh desktop candidate: source `2b83ed91`,
+  [run38029276220](https://github.com/kzahel/rstorrent/actions/runs/38029276220),
+  five signed lanes/collector,15 hashes, six original-root signatures/wrong-root
+  refusals,11 selectors, both Mac trust/notary/staples and five package inventories.
+- [x] Fresh Windows installer artwork, native NSIS/MSI signatures, populated
+  manual replacement and interrupted-download/ordinary GUI updater retry.
+  Four-record Quit/reopen and exact restoration/off/release/trial removal pass.
+- [x] Actual Play26-to27 retained installation, disclosure opt-out, populated
+  Shutdown/cold recovery, verified download, notification-denied Minimize and
+  owned-folder outage/restoration. These are bounded managed27 checks.
+- [x] Existing Web Store draft1.1.2: exact ZIP, accurate description/permission
+  copy, reviewed data categories and all three current screenshots saved and
+  reload-verified. Published1.1.1 remains unchanged; no review submission.
+- [x] Fresh AppImage source review packet:89 descriptor-bound source versions,
+  original notices and unchanged outer-runtime binding; all736 members verify.
+  The packet remains local and does not clear the requirements below.
+- [ ] Finish actual managed27 enabled-background hour/hidden completion and
+  independent upload; candidate extension/native pairing and retained-folder
+  repair. Physical sleep/network/reboot and populated old-store writers remain
+  explicit. The other Chromebook stalls before app startup; guided recovery
+  awaits confirmation of physical keyboard availability.
+- [ ] Finish fresh Mac ARM GUI and Linux x64 automatic HTTPS updater/restart
+  checks. Historical A7 Mac/x64-under-Rosetta/Linux receipts retain their exact
+  scope. No physical Intel or older-distro campaign is implied.
+- [ ] Complete selected native redistribution/source/relink disposition and a
+  real source-delivery route. Verify accurate public privacy and obtainable
+  website/download metadata before cutover; prepared pages are not deployed.
+- [ ] Review the exact shipment, supported gaps, soak/stop criteria and recovery
+  owner. Submit/publish only the explicitly approved store/feed/release/website
+  scope; actual store-update canaries follow approved delivery.
 
-Slice049 passes fresh Windows interrupted-download preservation, ordinary GUI
-HTTPS retry, eleven checks/eight refusals and four-record Quit/reopen. Exact
-restoration, VM-off/release, private trial removal, five payload404s and eight
-unchanged ordinary responses verify. Read-only fresh MSI Authenticode also
-passes; MSI installation/associations remain separate. Slice048 verifies all736
-members of the new exact2b83 local source packet covering89 source versions;
-per-package disposition, shipped-r0/ARM relink and public source delivery remain
-open. Neither slice publishes anything.
+Linux is best effort, AppImage/headless; iOS is excluded. Application source
+inputs in crates/web/Android app/extension and their reviewed lockfiles are
+identical between A7 and2b83; this is source equivalence, not binary equivalence
+or permission to relabel old artifact receipts. Default Status/detail clipping,
+technical obstructed-registration errors and Android removed-detail navigation
+remain recorded design findings.
 
-The maintainer confirmed unattended computer use and local extension host
-permissions. Slice044 records the actual published1.1.1/managed27 pair: generic old
-extension Offline/launch-to-Play fallback, usable native shelf return, normal
-Shutdown, owned extension removal, identity/grant retention and zero workspace.
-Imported-cohort update guidance and complete scenario acceptance remain open.
-Slice045 replaces all three retired draft screenshots with the reviewed light
-Torrents, Library and dark Torrents images; save and reload verify their order.
-Original icon/copy/category/language/privacy remain; draft1.1.2 and published1.1.1
-are unchanged. No submission or publication. Slices038–041
-pass their bounded managed/DMG checks;042 verified all VMs off/claims available,
-both physical workspaces empty and the private updater absent with ordinary
-routes unchanged. The full delivery/lifecycle/source/policy/shipment rows below
-remain open.
-
-Tactical290 now corrects Windows installer artwork locally. Its actual native
-presentation harness passes, but it changes Windows packaging inputs after
-the frozen a7 build. Fresh original-signed Windows packaging and focused
-installed/updater checks now pass; existing a7 qualification is preserved
-as historical exact-byte evidence. All other package inputs stay unchanged.
-
-- [x] Complete branding and recovery-copy corrections, local web/extension
-  checks, actual controlled API35 upgrades and narrow-window/drawer captures.
-- [x] Prepare AppImage-only website handoff in its owning repository at
-  `c84fed4b`; descriptor stays disabled and the public website is unchanged.
-- [x] Deliver the reviewed Android27 AAB only to existing internal testers.
-  Play confirms availability; production23, testers and device counts are
-  unchanged. The generated APK independently verifies managed signing,
-  API28 minimum, both ABIs and16-KiB ZIP/ELF alignment.
-- [x] Observe physical Play26-to27 update on one retained Chromebook: UID,
-  first-install date, Play installer and URI grants remain unchanged. Its
-  actual managed27 normal Shutdown removes its task/service and normal reopen
-  returns Live after saving statistics opt-out. Exact grants remain unchanged;
-  populated-library and reboot acceptance are separate.
-- [x] Qualify actual managed27 controlled1MiB download/file confirmation and
-  three populated paused Shutdown/reopen cycles with independent hashes and
-  persisted folder grant retained. Exact owned row/file/marker cleanup passes;
-  the selected empty test folder remains. Removed-detail navigation polish is
-  recorded; background/hour/reboot and populated old-store migration stay open.
-- [x] Qualify managed27 real partial4MiB force-stop/source-paused cold recovery,
-  full independent SHA-256 and three completed paused force-stop/cold restarts.
-  Package identity/grant identity remain; exact owned cleanup and zero tab/window
-  inventory pass. Notifications stay denied; background/hour/reboot/upload remain
-  separate. Original fixture failures and scoped cleanup are preserved.
-- [x] Verify managed27 notification-denied ordinary Minimize closes its
-  service/controlled peer with source available and10-second stable upload;
-  foreground return retains partial intent/prefix and completes the whole hash.
-  Identity/grant and exact cleanup pass. Enabled-background/hour, sleep/reboot,
-  physical network loss and upload serving remain separate.
-- [x] Qualify managed27 owned default-folder outage without path recreation,
-  retained-library/Repair presentation and source-paused original-path recovery
-  with a full1MiB hash. Identity/grant and exact cleanup pass. Grant-loss/regrant,
-  completed Repair picking, second-tree/provider/reboot and opaque binding remain
-  separate; selected empty owned folder/grant retained.
-- [x] Verify actual extension inventories: B has none; A has unpacked1.1.1 and
-  stale unpacked Beta0.4.0. Close tabs individually before windows on both
-  Chromebooks; independent fresh launches restore only one new tab, then close
-  that too. These unpacked installations do not qualify actual store updates.
-- [x] Finish original-root signed desktop build and bounded identity/signature
-  qualification at
-  frozen `a7ee65ed`, [run37958746928](https://github.com/kzahel/rstorrent/actions/runs/37958746928).
-  All five lanes and collector pass, as does main CI37958695272. Independently
-  qualify15 core hashes, six original-root signatures/six wrong-root refusals,
-  11 selectors, both Mac trust/notary/staples and native Windows publishers.
-- [x] Repeat bounded signed Linux x64 and Mac ARM migration/restart with native
-  screenshots. Both pass eight assertions, stable four-row restart and preserved
-  source/payload; scoped restoration, staging removal, VM-off and claim-release
-  verify. These are manual replacement checks, not automatic-update acceptance.
-- [x] Qualify current signed MSI native manual-update guidance and tray
-  Quit/reopen. Cabinet binaries/notices match actual installation; independent
-  100-registry/nine-file restoration and off/release cleanup pass. Installer
-  wizard, legacy MSI migration and full associations remain separate.
-- [x] Repeat current signed Windows NSIS populated migration and tray Quit/reopen.
-  Eight assertions/eight refusal routes and nine actual captures pass;50-registry/
-  seven-file restoration, owned firewall/staging cleanup and off/release verify.
-- [x] Qualify the unchanged live HTTPS server’s private A7 selection and clean
-  disable; ordinary routes stay unchanged. Released Windows0.2.1 automatically
-  authenticates/installs exact A7, then native Quit/restart retains four fixture
-  records. Ten assertions/eight refusals and exact restoration/off/release pass.
-- [x] Qualify current Mac ARM and Linux x64 automatic HTTPS updates and native
-  Quit/reopen. Each passes ten assertions and scoped restoration/off/release;
-  private trials are removed. Ordinary GUI and unrun architectures stay separate.
-- [x] Correct website initial fragments,320px layout and conditional successor
-  No Play Store guidance. Fresh builds/guards/responsive captures pass locally;
-  real metadata stays disabled and the public website is unchanged.
-- [x] Qualify Windows wrong-signature refusal and valid retry against exact A7.
-  Eleven assertions, native Quit/reopen, preservation and exact restoration pass.
-  Earlier runner failures stay recorded; interrupted/ordinary GUI repeat is separate.
-- [x] Qualify Windows interrupted download and ordinary GUI valid retry against
-  exact A7. Eleven assertions/eight refusal routes, four-record native Quit/reopen,
-  privacy persistence and exact restoration/off/release/trial removal pass.
-  Original failure and guarded recovery remain separately recorded.
-- [x] Qualify exact A7 Mac ARM ordinary GUI Install & Restart, native Cmd-Q/
-  reopen, ten assertions/nine refusal routes and independent privacy persistence.
-  Exact scoped restoration, capture/server cleanup, VM-off/release and private
-  trial removal pass. Intel and DMG drag/drop remain separate.
-- [x] Qualify exact a7 Intel-app ordinary GUI updating under existing Rosetta:
-  ten assertions/nine refusals, four records, native Quit/reopen, independent
-  privacy persistence and exact restoration/off/release/trial removal pass.
-  Physical Intel hardware and DMG installation remain separate.
-- [x] Qualify exact A7 x64 DMG read-only standard app copying under existing
-  Rosetta: strict/deep signatures, independent thin-x64 archive/main match,
-  migration/refusals and native Quit/reopen. Exact restoration, staging/capture/
-  server cleanup and VM-off/release pass. Physical Intel/Finder drag-drop stay
-  unrun; these receipts do not qualify rebuilt bytes or a different architecture.
-- [x] Save/reload four conservative local-data categories in the unsubmitted
-  store draft: resettable identifier, authentication, activity and content.
-  Five other categories and existing three certifications remain unchanged.
-  Final owner certification and accurate deployed policy are still open.
-- [x] Save and reload-verify accurate draft Web Store single-purpose/permission
-  explanations and description; public version and certifications,
-  policy URL and graphic assets remain unchanged. Submission stays separate.
-- [ ] Build the newly branded Windows installer with the original signing
-  root, then qualify its actual wizard, install and updater behavior. The
-  pending push/nonpublishing-build answer blocks this step. Earlier signed a7
-  Windows/Mac/Linux updater passes remain valid for their exact old bytes.
-- [ ] Finish native security/notices/source delivery for the selected final
-  packages. A7 Linux x64 Noble extract-and-run and actual Mac ARM DMG copying
-  now pass with cleanup. The prepared local source capsules are not published
-  delivery or complete relink acceptance; Linux support remains best effort.
-- [x] Upload the exact approved extension1.1.2 ZIP to the existing draft item.
-  Actual package tables confirm draft1.1.2 and unchanged published1.1.1.
-  Submission, certifications, publication and installed-store updates stay separate.
-- [ ] Complete final managed/installed updates, mixed versions, Shutdown/reopen,
-  selected physical recovery and supported desktop cohorts below. Existing
-  inherited privacy choices and device policies require explicit disposition.
-- [ ] Review selected platform gaps, soak/stop criteria, recovery owner and the
-  exact shipment. Production store/feed/release/website publication is separate.
-
-Machine Control is the preferred machine-testbed interface. Use repository
-runners first, its common CLI/platform guides for native evidence, and shut down
-VMs and release claims between uses. Close all physical Chromebook tabs and
-application windows after every slice, then verify the empty inventory. Keep a
-separate report per slice; screenshots and detailed notes remain ignored. None of these local tasks closes a broader delivery row by itself.
+Machine Control is the preferred testbed interface. Prepare the next executable
+check before booting a VM; shut down/release between uses. Close Chromebook tabs
+individually before windows and verify empty inventories after every slice.
+Keep each detailed report and its screenshots under the ignored evidence path.
 
 Owner: [product-surfaces-and-migration](topics/product-surfaces-and-migration.md).
 Campaign: [231](tactical/231-jstorrent-migration-working-campaign.md).
@@ -187,25 +73,18 @@ they cannot satisfy production delivery. Keep private values out of public docs.
 
 ## Candidate Identity And Delivery
 
-- [ ] **D-01 Desktop identity:** JSTorrent name/icons, `com.jstorrent.desktop`,
-  existing Tauri updater trust root and `updates.jstorrent.com` route. Candidate
-  version exceeds every selected installed source. Beta route/key remain separate.
-  Frozen a7 signed five-target0.3.0 metadata, actual Mac/Windows package names,
-  both packaged Mac icons,2,040 display values/40 original assets, retained
-  ID/key/route and selected legacy0.2.1 ordering qualify. Native installed,
-  updater/launcher/pixel cohorts remain separate P gates.
-- [ ] **D-02 Desktop signatures:** retained updater key verifies final signatures;
-  wrong key fails. macOS Developer ID/team, notarization/stapling/Gatekeeper and
-  Windows publisher/signature match the accepted production delivery lane.
-  Exact a7 qualifies six retained-root signatures/six wrong-root refusals,
-  both Mac strict/deep signatures, Accepted notary CDHash bindings, DMG staples
-  and ARM-host Gatekeeper assessments. Native Windows x64 verifies exact
-  NSIS/MSI hashes, accepted-publisher Authenticode and Microsoft timestamps.
-  Five independently extracted formats reconcile binaries/notices; actual MSI
-  read-only metadata qualifies identity. Failed inspection-script assumptions
-  stay recorded; corrected checks reconcile the retained native observations.
-  Native source/redistribution review and installed acceptance remain R-05/P.
-  Reopened for tactical290’s new Windows packaging inputs; old a7 proofs stand.
+- [x] **D-01 Desktop identity:** fresh source2b83/run38029276220 retains
+  JSTorrent display/icon identity, `com.jstorrent.desktop`, original updater
+  trust/route and0.3.0 ordering above the selected released0.2.1 baseline.
+  Five-lane metadata, original assets and independent extracted package checks
+  pass. Incubation identity/root remain separate; installed acceptance is P.
+- [x] **D-02 Desktop signatures:** all six fresh updater signatures verify with
+  the retained key and refuse the incubation root. Both Mac architectures pass
+  strict/deep Developer ID/team, notary CDHash binding, app/DMG staples and
+  Gatekeeper. Native Windows verifies fresh NSIS/MSI Kyle Graehl publishers and
+  Microsoft timestamps. Independent hashes bind the actual final artifacts;
+  failed inspection/preflight assumptions remain recorded. Source/redistribution
+  and complete installed delivery remain R/P requirements, not signature claims.
 - [x] **D-03 Android identity:** `com.jstorrent.app`; versionCode exceeds all Play
   tracks, including closed/internal/testing, and selected GitHub APKs. Record
   upload certificate separately from the existing Play app-signing certificate.
