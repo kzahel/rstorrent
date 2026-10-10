@@ -2,6 +2,20 @@
 
 ## Current restart checkpoint, 2026-10-10
 
+Slices053/054 complete fresh exact2b83 HTTPS installed qualification: Mac ARM
+ordinary GUI Install & Restart and Ubuntu24.04.5 Linux x64 extract-and-run
+automatic update each pass ten checks, nine/six refusal routes and four-record
+native Quit/reopen. Actual unchecked disclosures are reviewed before Save and
+statistics off persists independently. Original scopes/source/payload restore;
+owned staging/captures/transports clean up, both VMs off and claims released.
+Shared private trial is removed; five payload404s/eight unchanged ordinary
+responses verify. Both first preflights failed before VM boot on an incorrect
+collector checksum key; those failures/disable remain, corrected digest binding
+passes. Actual separate reports retain clipping and Mac OS overlays already
+present in the old fixture capture. No physical Intel/Linux ARM/FUSE/DMG claim
+or production publication. Eight390/1200px report/index checks pass and reap
+their bundled browsers/servers. Reports/assets remain ignored.
+
 The current checklist summary is shortened; historical execution remains here
 and in separate ignored reports. Fresh exact candidate identity/signature D-01/
 D-02 now close with independently bound Mac/Windows/original updater-root proofs.

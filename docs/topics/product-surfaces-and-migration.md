@@ -1,5 +1,14 @@
 # Product Surfaces And JSTorrent Migration
 
+Fresh exact2b83 Mac ARM GUI and Linux x64 automatic HTTPS updating now pass
+under053/054: ten checks, nine/six refusals, four-record import/native Quit/reopen
+and independently persisted statistics off. Inherited source/payload/scopes
+restore exactly; owned staging/capture/transports are removed, both VMs shut
+down/release and the private trial is removed. Five payload404s/eight ordinary
+responses verify. First checksum-field preflights remain failed before VM boot;
+corrected digest-field retries pass. Separate actual reports retain clipping
+and pre-existing Mac OS overlays. No public feed/release/store publication.
+
 Slice050 freshly confirms the other Chromebook still stalls at the OS Play
 startup screen and canonical ADB refuses. Installed acceptance on that cohort
 remains blocked; no product failure is inferred. No pending-update reboot, app

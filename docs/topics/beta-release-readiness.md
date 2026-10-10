@@ -1,5 +1,12 @@
 # Beta Release Readiness
 
+Fresh exact2b83 Mac ARM ordinary GUI and Linux x64 automatic HTTPS updates
+also qualify in053/054: ten checks each, nine/six refusals, four-record native
+Quit/reopen and privacy opt-out. Exact restoration/owned cleanup, VM-off/release
+and private trial removal pass; ordinary routes remain unchanged. Actual report
+images retain clipping/pre-existing OS overlays; source/package/relink and
+public delivery remain separate. No production publication occurs.
+
 Fresh2b83 Windows qualification now passes actual signed NSIS wizard/cancel,
 populated manual replacement and released0.2.1 ordinary HTTPS updater retry
 after an interrupted download. Eleven updater assertions/eight refusals and

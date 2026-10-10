@@ -40,9 +40,10 @@ ignored separate reports, rather than this summary.
   repair. Physical sleep/network/reboot and populated old-store writers remain
   explicit. The other Chromebook stalls before app startup; guided recovery
   awaits confirmation of physical keyboard availability.
-- [ ] Finish fresh Mac ARM GUI and Linux x64 automatic HTTPS updater/restart
-  checks. Historical A7 Mac/x64-under-Rosetta/Linux receipts retain their exact
-  scope. No physical Intel or older-distro campaign is implied.
+- [x] Fresh Mac ARM GUI and Linux x64 automatic HTTPS updater/restart pass: ten
+  checks each, four-record native Quit/reopen, restoration/off/release and shared
+  private trial removal. Historical A7 x64-under-Rosetta receipts retain their
+  exact scope; physical Intel/Linux ARM/FUSE remain unrun.
 - [ ] Complete selected native redistribution/source/relink disposition and a
   real source-delivery route. Verify accurate public privacy and obtainable
   website/download metadata before cutover; prepared pages are not deployed.
