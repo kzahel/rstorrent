@@ -55,3 +55,14 @@ absent root Node typings; corrected selector and Astro checks pass without addin
 a dependency. Eleven collector/checksum/tag/source tests also pass: missing,
 duplicate, altered source bytes/hash/size, wrong version and incomplete checksum
 inventory refuse. The existing strict16-asset workflow path remains unchanged.
+
+## CI preparation correction
+
+Final-source full CI38050754548 and docs-head38053183299 fail both unsigned
+Linux packaging lanes; their source/Rust/web/Android/extension/Windows/Mac checks
+pass. The AppImage hook now requires custom native build inputs, but ordinary CI
+omits the preparation used by the successful signed workflow. Copy the exact
+reviewed preparation into both native Ubuntu lanes and require the extracted
+MIT native gate. This changes CI orchestration, not already signed product bytes.
+Validate workflow lint, focused native refusal tests and an actual hosted rerun;
+retain the original failures instead of describing them as green.

@@ -363,6 +363,18 @@ jobs:
       - name: Install pinned license notice generator
         run: cargo install cargo-about --locked --version 0.9.2 --features cli
 
+      - name: Build reviewed Linux native libraries without GPL-only chains
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            cmake dpkg-dev patch libdbusmenu-gtk3-dev libgirepository1.0-dev \
+            libjpeg-dev liblzma-dev libzstd-dev libwebp-dev zlib1g-dev \
+            libdeflate-dev liblerc-dev
+          python3 scripts/build-linux-native.py \
+            --sources-dir "$RUNNER_TEMP/jstorrent-native-sources" \
+            --output "$RUNNER_TEMP/jstorrent-native-build" --download
+          echo "JSTORRENT_LINUX_NATIVE_BUILD=$RUNNER_TEMP/jstorrent-native-build" >> "$GITHUB_ENV"
+
       - name: Build one unsigned native package
         working-directory: clients/desktop
         shell: bash
@@ -389,7 +401,7 @@ jobs:
               "$APPIMAGE" --appimage-extract >/dev/null
               test -x squashfs-root/usr/bin/rstorrent-native-host
               node scripts/smoke-native-host.mjs squashfs-root/usr/bin/rstorrent-native-host
-              python3 scripts/inspect-distribution.py --root squashfs-root --require-native-notices --output artifacts/distribution/linux.json
+              python3 scripts/inspect-distribution.py --root squashfs-root --require-native-notices --require-mit-native --output artifacts/distribution/linux.json
               rm -rf squashfs-root
               ;;
           esac
