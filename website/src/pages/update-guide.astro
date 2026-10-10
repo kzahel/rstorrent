@@ -11,7 +11,7 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site)
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#0f172a" />
-    <meta name="description" content="What to expect from the next JSTorrent update: supported devices, your library, folder access and browser pairing." />
+    <meta name="description" content="What to expect from the JSTorrent replacement update: supported devices, your library, folder access and browser pairing." />
     <link rel="canonical" href={canonicalUrl} />
     <link rel="icon" type="image/png" href="/jstorrent.png" />
     <title>{title}</title>
@@ -20,17 +20,17 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site)
     <main class="update-guide">
       <a class="guide-brand" href="/"><img src="/jstorrent.png" width="48" height="48" alt="" />JSTorrent</a>
       <header>
-        <p class="status"><span></span> Production updates are being qualified</p>
-        <h1>Preparing for the next update</h1>
+        <p class="status"><span></span> Desktop 0.3.0 is available</p>
+        <h1>Your JSTorrent update</h1>
         <p class="lead">The familiar JSTorrent, with a new Rust engine underneath.</p>
-        <p class="description">This guide describes the replacement being tested. Its release is not yet announced. Keep your existing app and downloaded files while qualification finishes.</p>
+        <p class="description">Desktop 0.3.0 is now available from the JSTorrent website and through desktop updates. Android and extension store updates may arrive separately. Keep your downloaded files and follow the recovery steps below if access needs repair.</p>
       </header>
 
       <section aria-labelledby="devices">
         <h2 id="devices">Your device and browser</h2>
         <div class="guide-cards">
-          <article><h3>Desktop</h3><p>The replacement is planned as an ordinary JSTorrent update for Windows, macOS and Linux. Desktop works on its own; the Chrome extension adds a browser view of the same library.</p></article>
-          <article><h3>Android and ChromeOS</h3><p>The replacement requires Android 9 or newer. On Android 7 or 8, keep the old app and use a supported OS or device to move to the replacement. An unavailable store update is not a failed download to retry.</p></article>
+          <article><h3>Desktop</h3><p>Desktop 0.3.0 is an ordinary JSTorrent update for Windows, macOS and Linux. Linux desktop support is best effort; AppImage and headless setup from source are described on the JSTorrent website. Desktop works on its own; the Chrome extension adds a browser view of the same library.</p></article>
+          <article><h3>Android and ChromeOS</h3><p>The Android replacement is in store review preparation and requires Android 9 or newer on a supported device. Some older 32-bit devices may retain the old app. On Android 7 or 8, keep the old app and use a supported OS or device to move to the replacement. An unavailable store update is not a failed download to retry.</p></article>
           <article><h3>ChromeOS Linux</h3><p>Choose the Linux setup explicitly when it is supported on your Chromebook. Android and Linux keep separate libraries. Switching backends does not automatically transfer torrents, files or folder access.</p></article>
         </div>
         <p>iOS is outside this release. Preview builds remain experimental and are separate from production updates.</p>

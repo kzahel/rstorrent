@@ -1349,3 +1349,18 @@ active-row membership, local endpoint posture, semantic view selection, and
 suspension recovery. The implemented view-set limits and remaining delivery
 choices are recorded in
 [`application-view-api.md`](application-view-api.md).
+
+
+## Public desktop cutover presentation, 2026-10-10
+
+Shipment295 activates exact public desktop0.3.0 downloads on the main website
+with phone/wide Windows, both Mac, both Linux and source-link captures. The
+project website and update guide now describe actual desktop availability
+while Android/extension store arrivals remain separate. Astro checks/build
+and phone/wide geometry pass; the original box and navy/blue design remain.
+
+Final Mac ARM capture079 retains narrow Storage Unavailable truncation and
+a horizontally scrolled details tab row as design follow-ups. Actual signed
+Android28 store capture084 retains a tight priority-button/file-name gap in
+the Files row. Current listing images use library/intake/details instead;
+these notes do not imply new package bytes or hidden runtime failures.

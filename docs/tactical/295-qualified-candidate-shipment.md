@@ -129,3 +129,12 @@ Latest returns204, and preview Stable/Latest response hashes remain unchanged.
 Play privacy URL is saved as https://jstorrent.com/privacy.html and is ready
 to send for review; this saved change is not public delivery. Android28
 compatibility choice and final background hour remain separate open checks.
+
+
+The project landing page/update guide now describe actual desktop availability
+rather than saying the release is unannounced. Astro check/build and four
+390/1200 local geometry/brand captures pass under085. Play reviewer instructions
+now explain standalone native review and optional updated extension pairing;
+saved access/privacy changes remain queued. Exact signed Android28 controlled
+example captures pass one whole hash, normal Shutdown and owned emulator/AVD
+cleanup. Separate084 owns current listing assets and the Files spacing note.

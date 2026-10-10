@@ -1,8 +1,9 @@
 # RSTorrent
 
 RSTorrent is a functional alpha BitTorrent client built around a first-party
-Rust engine. Public signed desktop incubation builds exist, but the product is
-not yet a supported beta and is not feature-complete.
+Rust engine. The qualified JSTorrent desktop 0.3.0 replacement is now public. Android and
+extension store delivery remain in progress; feature support stays bounded by
+the recorded capability evidence.
 
 The current product can perform real v1 downloads from magnet intake through
 verified direct content, with tracker and DHT discovery, multiple peers,
@@ -17,14 +18,13 @@ and [protocol support matrix](docs/topics/protocol-support.md).
   important capabilities and product behavior remain unfinished. The
   [capability readiness record](docs/topics/capability-readiness.md) is the
   authoritative checklist and work queue.
-- **Public incubation releases, not a supported beta.** Signed desktop
-  `0.1.3` is the current public package. Native Linux x86_64 passes the public
-  `0.1.1` → `0.1.3` update, picker, relaunch and payload-preserving removal.
-  Windows fresh signed startup and firewall Cancel pass, but its older-profile
-  update fails during catalog reset. The source repair passes native tests;
-  a repaired signed update remains unqualified. See the
-  [beta release ledger](docs/topics/beta-release-readiness.md) and
-  [support, privacy and recovery guidance](docs/user-support.md).
+- **Qualified JSTorrent desktop replacement is public.** Desktop `0.3.0`
+  preserves the existing application identity and updater trust root. Exact
+  signed packages, corresponding sources and all public download hashes pass;
+  website links and production updater selectors are verified. Installed
+  qualification and remaining store/physical gates are recorded in the
+  [cutover checklist](docs/jstorrent-cutover-checklist.md). Separate incubation
+  packages remain experimental and retain their own routes and signing root.
 - **Platforms are at different readiness levels.** Desktop/web is the leading
   product and inspection surface. Android is functional with native engine and
   durable storage integration but still has product gaps. A non-latest

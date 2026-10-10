@@ -1,6 +1,20 @@
 # Tactical 259: JSTorrent Finish-Line Checks
 
-## Current restart checkpoint: managed Play and final sources, 2026-10-10
+## Current restart checkpoint: public desktop cutover, 2026-10-10
+
+Shipment [295](295-qualified-candidate-shipment.md) now owns the live checkpoint.
+Exactff632 desktop0.3.0 and final AppImage sources are public;17 downloaded
+assets pass whole-file hashes. Websitee0cb8a3c and all11 production updater
+selectors pass, with original roots and byte-identical preview offers. Exact
+Mac ARM manual migration/reopen/restoration/off passes under079. Hosted CI37a
+passes; skipped jobs remain skips. Reports079–083 are separate and ignored.
+
+Next: finish the already running managed Android28 background hour and owned
+cleanup, resolve the recorded32-bit device scope, finish accurate Play listing
+and held review submission, then actual store approval/update canaries and the
+24-hour staged soak. Unrun physical-device recovery remains explicit.
+
+## Earlier checkpoint: managed Play and final sources, 2026-10-10
 
 The maintainer now authorizes proceeding through the described final checks and
 staged store/release/website cutover, beyond the earlier artifact-only boundary.
