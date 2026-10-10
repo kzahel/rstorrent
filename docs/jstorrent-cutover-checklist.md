@@ -47,8 +47,10 @@ ignored separate reports, rather than this summary.
   normal launch/retained reconnect and scoped cleanup/zero tabs/windows pass.
 - [x] Exact1.1.3 replaces the uploaded Web Store draft; native Reload verifies
   draft1.1.3/public1.1.1, reviewed listing/screenshots/privacy retained.
-- [ ] Fix and requalify retained-folder picker repair: managed27 unexpectedly
-  resumes a paused torrent (Tactical292); independent fixture cleanup passes.
+- [x] Local retained-folder repair fix: unchanged API35 regression fails; fixed
+  paused/running controls and cold reopens pass, with bytes/source cleanup.
+- [ ] Qualify a new signed Android candidate above27 and re-run managed repair.
+  Actual managed27 retains the paused-intent failure; fixture cleanup passes.
   Physical sleep/network/reboot and
   populated old-store writers remain explicit. The other Chromebook stalls before app startup; guided recovery
   awaits confirmation of physical keyboard availability.

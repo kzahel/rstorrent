@@ -2,6 +2,15 @@
 
 Topic: `client-persistence`
 
+[Tactical292](../tactical/292-android-repair-paused-intent.md) completes a bounded
+Android correction: root probes reconcile durable run intent; delayed
+AwaitingStorage presentation no longer dispatches Resume. Unchanged API35
+normal Repair reproduces managed27's paused-to-Seeding failure. Fixed paused
+and running controls retain bytes and intent through Repair/cold reopen with
+the source closed. Android build/122 JVM cases/lint and owned AVD cleanup pass.
+This is debug/local qualification; new original-signed code>27 and managed
+repair evidence remain required. No Rust/JNI/schema or new grant policy changes.
+
 Tactical
 [253](../tactical/253-chromeos-onboarding-recovery-and-physical-qualification.md)
 adds bounded current-candidate source-offline byte retention on cohort A,

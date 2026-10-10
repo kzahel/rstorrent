@@ -2084,10 +2084,9 @@ class ProductEngineService : Service() {
                     completeCompanionRootSelection(companionRequestId, repairRootId)
                 }
                 if (!storageRootHealthy) return@launch
+                // The native probe reconciles durable run intent. A delayed
+                // AwaitingStorage view must not become a new Resume request.
                 advanceSaf(mutableState.value)
-                mutableState.value.torrents.values
-                    .filter { it.state == TorrentState.AWAITING_STORAGE }
-                    .forEach { resume(it.torrentId) }
             } catch (error: Throwable) {
                 if (companionRequestId != null && clientOpen) {
                     client.failCompanionRootRequest(
@@ -2474,10 +2473,6 @@ class ProductEngineService : Service() {
                     ProductSafRootRegistry.rollbackRepair(this)
                     releaseFailedSafSelection(operation)
                     client.probeSafStorageRoots()
-                    mutableState.value.torrents.values
-                        .filter { it.storageRoot == operation.rootId }
-                        .filter { it.state == TorrentState.AWAITING_STORAGE }
-                        .forEach { resume(it.torrentId) }
                 }
                 ProductSafRootOperationKind.SET_DEFAULT ->
                     ProductSafRootRegistry.abandonPendingDefault(this)

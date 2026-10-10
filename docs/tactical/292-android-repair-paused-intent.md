@@ -1,6 +1,7 @@
 # Tactical 292: Preserve Paused Intent Through Android Folder Repair
 
-Status: Active, 2026-10-10, beneath finish-line259. Managed27 slice056
+Status: Complete locally, 2026-10-10; new signed/managed delivery open.
+Beneath finish-line259. Managed27 slice056
 reproduces a paused complete torrent becoming Seeding after normal Repair.
 
 ## Scope and stopping condition
@@ -57,7 +58,21 @@ grants/package/denied notification, empty library/folder, released alias grant,
 Portrait restored, stopped service and zero tabs/windows. Normal original-grant
 retake advances its creation time.
 
-Next: reproduce the normal paused-repair journey
-in an owned API35 emulator, remove the stale-view Resume loops, then repeat with
-paused and running controls. Preserve old artifact receipts; managed27 is not
-relabeled as fixed. A changed production Android candidate must exceed code27.
+The unchanged debug APK reproduces the same failure in a fresh owned API35 AVD
+(attempt4): before Paused, after Repair Seeding; bytes independently identical
+and original source closed. The bounded fix removes both stale-view Resume
+loops. A second fresh AVD verifies Paused through Repair/cold reopen, then
+explicit Resume and Seeding through another Repair/cold reopen. All four normal
+Shutdowns join. Both owned emulators and temporary AVDs are reaped/removed.
+Early first-use/control/menu assumptions fail before Repair and remain recorded.
+
+Validation: Gradle assembleDebug/testDebugUnitTest/lintDebug,122 JVM cases,
+zero lint errors (99 warnings),24 Android packaging-script cases and debug
+notice integrity (83 Maven/205 Rust/six native libraries) pass. Rust, generated
+JNI/API, schema, permissions and dependencies are unchanged. Slice058 contains
+exact before/after APK hashes and screenshots; reports/images stay ignored.
+No full engine/workspace test or new signed/store qualification is claimed.
+
+Next: prepare a production code above27 containing this fix, qualify its exact
+signed artifacts and re-run managed repair after authorized delivery. Existing
+managed27/source68e and desktop2b83 receipts retain their original scope.

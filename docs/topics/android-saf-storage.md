@@ -10,6 +10,15 @@ health/replacement evidence does not qualify paused intent for this candidate.
 
 Topic: `android-saf-storage`
 
+[Tactical292](../tactical/292-android-repair-paused-intent.md) completes a bounded
+Android correction: root probes reconcile durable run intent; delayed
+AwaitingStorage presentation no longer dispatches Resume. Unchanged API35
+normal Repair reproduces managed27's paused-to-Seeding failure. Fixed paused
+and running controls retain bytes and intent through Repair/cold reopen with
+the source closed. Android build/122 JVM cases/lint and owned AVD cleanup pass.
+This is debug/local qualification; new original-signed code>27 and managed
+repair evidence remain required. No Rust/JNI/schema or new grant policy changes.
+
 Tactical259 now adds actual Play-managed code27 owned-folder outage/restoration
 on physical cohort B. A normally closed, marker/inventory-checked test tree is
 renamed; the original path is not recreated and Library/Storage show retained

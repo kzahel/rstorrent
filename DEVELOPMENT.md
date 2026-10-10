@@ -713,6 +713,23 @@ Release identity/signing stay unchanged. Verify the APK's actual package before
 installation and remove only this owned test package afterward. This is a
 sideloaded controlled cohort, never a real Play installation/update pass.
 
+Check saved run intent through normal folder repair in a fresh owned API35
+emulator with:
+
+```bash
+source ~/.profile
+uv run --project tests/interop --locked python tests/interop/android_saf_repair_intent.py \
+  --apk clients/android/app/build/outputs/apk/debug/app-debug.apk \
+  --output .local/android-saf-repair-intent
+```
+
+The output directory must not exist. Install the host-native API35 Google APIs
+system image first. This checks a real controlled download, closes its source,
+uses normal Shutdown and folder Repair, and independently verifies paused and
+running intent plus bytes through cold reopen. Screenshots and receipts remain
+local. It owns and reaps the emulator and temporary AVD; it never installs into
+an inherited device or qualifies production store delivery.
+
 The packaged portable failure journeys use an owned test Chromium:
 
 ```bash

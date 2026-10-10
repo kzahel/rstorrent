@@ -2,6 +2,15 @@
 
 ## Current restart checkpoint, 2026-10-10
 
+Slice058 completes Tactical292 locally: unchanged debug code27/API35 reproduces
+unwanted Resume after normal Repair. The bounded Kotlin correction preserves
+Paused and Seeding controls through separate repairs and cold reopens, with the
+original source closed and independent whole hashes. Both owned emulators and
+temporary AVDs are reaped/removed. Android build/122 JVM cases/lint (zero errors),
+24 packaging-script cases and exact notices pass. Early driver assumptions stay
+failed. No Rust/JNI/permission/schema change or new managed-store pass is claimed.
+Next: prepare a new signed Android version above27, then actual managed repair.
+
 Slice057 uploads exact400,520-byte1.1.3 ZIP with SHA-256
 432b6084afa12106ad38518d5120ad5a8952b157d480e3d7af7f4c01466eadc5
 to the existing production item through authenticated native Chrome UI. Normal
