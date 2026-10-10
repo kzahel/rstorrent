@@ -6,6 +6,11 @@ distributions and14 preferred archives/16 bindings. Offline metadata for both
 Linux targets and frozen web build/CSP pass; owned mutable staging is removed.
 Actual TIFF dependencies in both images confirm GPL-2+ JBIG. Combined-binary
 terms versus rebuilding without that codec awaits a maintainer decision.
+Separate062 also confirms GPL-3 Ayatana indicator through the tray library;
+the full174/173 component hashes and173/172 ELF inventories pass. The frozen
+loader source verifies. Removing JBIG alone is insufficient; the updated
+pending choice is full sources/GPL-3 Linux binary terms versus removing all
+GPL library dependencies. Owned extraction is removed; no license changes.
 Original-r0 x64 source-build/relink executes successfully with24 exports/seven
 static libraries verified; rebuilt bytes differ from the shipped runtime beyond
 its named digest. VM off/release and owned cleanup pass. ARM, final per-package

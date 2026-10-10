@@ -64,8 +64,9 @@ ignored separate reports, rather than this summary.
   private trial removal. Historical A7 x64-under-Rosetta receipts retain their
   exact scope; physical Intel/Linux ARM/FUSE remain unrun.
 - [ ] Complete selected native redistribution/source/relink disposition and a
-  real source-delivery route. Both AppImages actually link GPL JBIG through
-  TIFF; combined-binary terms versus a codec rebuild needs a maintainer choice.
+  real source-delivery route. Both AppImages bundle GPL JBIG through TIFF and
+  GPL-3 Ayatana through the tray library. GPL-3 combined-binary terms/full sources
+  versus removing all GPL library dependencies needs a maintainer choice.
   ARM relink and complete native instructions remain open. Verify accurate public privacy and obtainable
   website/download metadata before cutover; prepared pages are not deployed.
 - [ ] Review the exact shipment, supported gaps, soak/stop criteria and recovery

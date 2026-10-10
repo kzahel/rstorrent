@@ -67,6 +67,20 @@ rebuild without JBIG; no first-party license or signed binary has changed.
 The [GNU library guidance](https://www.gnu.org/licenses/gpl-faq.en.html#IfLibraryIsGPL)
 requires assessing the combined work separately from compatible module licenses.
 
+Separate062 extends the check to every manifest component:174 x64/173 ARM
+hashes verify, with173/172 ELF dependency inventories. Bundled Ayatana
+appindicator also requires libayatana-indicator3, whose actual library sources
+declare GPL-3. Frozen libappindicator-sys0.9.0 source verifies its Cargo checksum
+and loads the Ayatana appindicator library first. No new execution/dlopen trace
+is inferred. Both temporary extractions are removed without VM use.
+The earlier JBIG-only alternative is insufficient; the updated pending choice
+is full sources/appropriate GPL-3 combined Linux binary terms versus removing
+all GPL library dependencies and requalifying packages. GPL-2-or-later permits
+GPL-3 under [GNU version guidance](https://www.gnu.org/licenses/quick-guide-gplv3.html);
+this does not clear every remaining file's compatibility. GPL-3's
+[source definition and delivery terms](https://www.gnu.org/licenses/gpl-3.0.html)
+own that source route. No license disposition has been selected or implemented.
+
 Frozen2b83 Cargo vendoring supplies733 packages/38,217 files. Empty-Cargo-home,
 locked offline metadata succeeds for both Linux targets; the portable relative
 config is also verified. The source graph includes build/test/unused-platform
@@ -106,3 +120,9 @@ Next: finish per-package native disposition and a usable native rebuild guide,
 then continue the selected licensing route after the maintainer's answer.
 Public delivery and ARM relink execution remain open. No source packet is
 uploaded, signed binary changed or signing material copied.
+
+The short [source preparation guide](../appimage-source-delivery.md) records
+the two unchanged asset hashes, extraction/checksum contract, relative Cargo
+layout and a concrete exact native descriptor example. It preserves which
+commands have actually executed and does not call preparatory instructions or
+unpublished assets a complete corresponding-source offer.

@@ -2,6 +2,15 @@
 
 ## Current restart checkpoint, 2026-10-10
 
+Slice062 independently hashes all174 x64/173 ARM native manifest components
+and records173/172 ELF dependency sets. Ayatana appindicator requires a GPL-3
+indicator library; the frozen tray-loader crate verifies its Cargo checksum
+and loads appindicator. Both original library notices bind exactly. Static
+chains/source inspection are not a new execution/dlopen trace. Owned temporary
+extractions are removed; no VM or signed-byte change. The updated pending
+choice is full sources/GPL-3 combined Linux binary terms versus removing all
+GPL library dependencies; removing JBIG alone would be insufficient.
+
 Slices060/061 advance Tactical293's local AppImage source inputs. All225 native
 package notices bind to89 exact source/version pairs; actual ELF dependencies
 confirm GPL-2+ JBIG through TIFF in both AppImages. The maintainer's combined

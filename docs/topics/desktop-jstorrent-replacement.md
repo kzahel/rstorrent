@@ -9,6 +9,11 @@ images. Combined-binary terms versus a codec rebuild awaits a maintainer choice;
 no source license or signed binary changes. Final per-package disposition,
 complete native instructions, ARM execution and public delivery remain open.
 Best-effort Linux scope remains AppImage/headless without older-distro work.
+Separate062's complete native manifest hashes/dependency inventory also confirms
+GPL-3 Ayatana indicator through the tray library, with frozen loader source
+verified. The pending full-source/GPL-3 route versus removal of all GPL library
+dependencies supersedes the insufficient JBIG-only alternative. Temporary
+extractions are removed; no package/license changes or publication occur.
 
 Slice024 passes exact a7 Intel-app ordinary GUI HTTPS updating under existing
 Rosetta on the ARM VM: ten assertions/nine refusals, four records, native
